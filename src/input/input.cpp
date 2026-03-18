@@ -24,11 +24,11 @@ void Input::update(flecs::iter& it, size_t, InputFlags& flags) {
     const auto& events = it.world().get<EventQueue>();
     for (const auto& event : events) {
         switch (event.type) {
-            case SDL_EVENT_KEY_DOWN:
-                if (event.key.key == SDLK_SPACE && !event.key.repeat) {
-                    flags |= InputFlags::Shoot;
-                }
-                break;
+        case SDL_EVENT_KEY_DOWN:
+            if (event.key.key == SDLK_SPACE && !event.key.repeat) {
+                flags |= InputFlags::Shoot;
+            }
+            break;
         }
     }
 
