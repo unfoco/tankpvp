@@ -25,7 +25,7 @@ Interface::Interface(flecs::world& world) {
 
     world.set(InterfacePage::Main);
     world.set<InterfacePrevious>({
-        .page = InterfacePage::None,
+        .page = InterfacePage::Main,
     });
 
     world.system<InterfaceState>("interface::frame")

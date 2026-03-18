@@ -26,7 +26,6 @@ Clay_RenderCommandArray Interface::main(flecs::iter& it, InterfaceState& state, 
         menuBtn.fontSize = 20;
 
         if (Interface::button(state, CLAY_ID("BtnPlay"), "Host / Singleplayer", menuBtn)) {
-            prev.page = page;
             page = InterfacePage::Ingame;
         }
 
