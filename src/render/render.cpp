@@ -79,9 +79,9 @@ void Render::init(flecs::iter& it, size_t) {
         };
     }, &font);
 
-    SDL_Texture* tankBaseTexture = IMG_LoadTexture(renderer, "asset/tank/base.png");
-    SDL_Texture* tankTurretTexture = IMG_LoadTexture(renderer, "asset/tank/turret0.png");
-    SDL_Texture* weaponBulletTexture = IMG_LoadTexture(renderer, "asset/weapon/bullet.png");
+    SDL_Texture* tankBaseTexture = IMG_LoadTexture(renderer, "asset/texture/tank/base.png");
+    SDL_Texture* tankTurretTexture = IMG_LoadTexture(renderer, "asset/texture/tank/turret0.png");
+    SDL_Texture* weaponBulletTexture = IMG_LoadTexture(renderer, "asset/texture/weapon/bullet.png");
 
     it.world().set(RenderState{
         .window = window,
