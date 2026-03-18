@@ -1,0 +1,44 @@
+namespace schema;
+
+struct Entity {
+    id: uint32;
+    x: float;
+    y: float;
+    angle: float;
+}
+
+table Snapshot {
+    tick: uint64;
+    entities: [Entity];
+}
+
+table Input {
+    flags: ubyte;
+    tick: uint64;
+}
+
+table Join {
+    id: uint32;
+}
+
+table Leave {
+    id: uint32;
+}
+
+table Welcome {
+    id: uint32;
+}
+
+union Payload {
+    Snapshot,
+    Input,
+    Join,
+    Leave,
+    Welcome,
+}
+
+table Packet {
+    payload: Payload;
+}
+
+root_type Packet;

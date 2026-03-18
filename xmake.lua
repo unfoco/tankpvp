@@ -1,0 +1,16 @@
+add_rules("mode.debug", "mode.release")
+
+add_requires("clay", "enet", "flatbuffers", "flecs", "glm", "libsdl3", "libsdl3_image", "libsdl3_ttf")
+
+target("tankpvp")
+    set_kind("binary")
+    set_languages("c23", "c++23")
+    set_rundir("$(projectdir)")
+    add_includedirs("include")
+    add_files("src/**.cpp")
+
+    add_packages("clay", "enet", "flatbuffers", "flecs", "glm", "libsdl3", "libsdl3_image", "libsdl3_ttf")
+
+    if is_plat("macosx") then
+        add_frameworks("Metal", "QuartzCore", "Cocoa")
+    end
