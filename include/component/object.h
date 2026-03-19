@@ -19,7 +19,7 @@ struct Color {
 };
 
 struct Decay {
-    int seconds;
+    float seconds;
 };
 
 struct Bullet {};

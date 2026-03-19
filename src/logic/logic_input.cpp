@@ -19,7 +19,7 @@ void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Posi
         it.world().entity()
             .set(Position{.value = pos.value + 30.0f * glm::normalize(forward)})
             .set(Velocity{.value = glm::normalize(forward) * 300.0f})
-            .set(Decay{.seconds = 5})
+            .set(Decay{.seconds = 5.0})
             .add<Bullet>()
             .child_of(it.entities()[i]);
     }

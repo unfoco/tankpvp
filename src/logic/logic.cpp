@@ -10,7 +10,7 @@ Logic::Logic(flecs::world& world) {
         .kind(flecs::OnUpdate)
         .each(Logic::velocity);
     world.system<Decay>("input::decay")
-        .interval(1.0)
+        .interval(0.1)
         .kind(flecs::OnUpdate)
         .each(Logic::decay);
 }
