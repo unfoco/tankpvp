@@ -22,7 +22,9 @@ void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, Position& 
 
     if ((flags & InputFlags::Shoot) != InputFlags::None) {
         it.world().entity()
-            .set(Position{.value = pos.value})
+            .set(Position{.value = pos.value + 30.0f * glm::normalize(forward)})
+            .set(Velocity{.value = glm::normalize(forward)})
+            .set(Decay{.seconds = 5})
             .add<Bullet>()
             .child_of(it.entities()[i]);
     }

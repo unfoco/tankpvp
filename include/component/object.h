@@ -2,8 +2,8 @@
 
 #include <glm/glm.hpp>
 
-struct Color {
-    glm::vec3 value;
+struct Velocity {
+    glm::vec2 value;
 };
 
 struct Position {
@@ -12,6 +12,14 @@ struct Position {
 
 struct Rotation {
     float angle;
+};
+
+struct Color {
+    glm::vec3 value;
+};
+
+struct Decay {
+    int seconds;
 };
 
 struct Bullet {};
