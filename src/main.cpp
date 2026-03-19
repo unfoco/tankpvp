@@ -30,6 +30,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
 
     state->world.entity()
         .set(Color{.value = {255.0, 50.0, 50.0}})
+        .set(Velocity{.value = {0.0, 0.0}})
         .set(Position{.value = {250.0, 400.0}})
         .set(Rotation{.angle = -100})
         .set(InputFlags::None)
@@ -38,6 +39,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
 
     state->world.entity()
         .set(Color{.value = {50.0, 200.0, 150.0}})
+        .set(Velocity{.value = {0.0, 0.0}})
         .set(Position{.value = {200.0, 200.0}})
         .set(Rotation{.angle = 0})
         .set(InputFlags::Left)
@@ -45,6 +47,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
 
     state->world.entity()
         .set(Color{.value = {0.0, 200.0, 200.0}})
+        .set(Velocity{.value = {0.0, 0.0}})
         .set(Position{.value = {500.0, 250.0}})
         .set(Rotation{.angle = -100})
         .set(InputFlags::Right)
