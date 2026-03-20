@@ -10,9 +10,9 @@ Clay_RenderCommandArray Interface::pause(flecs::iter& it, InterfaceState& state,
         .layout = {
             .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_GROW() },
             .padding = { 0, 0, 100, 0 },
-            .layoutDirection = CLAY_TOP_TO_BOTTOM,
+            .childGap = 16,
             .childAlignment = { .x = CLAY_ALIGN_X_CENTER },
-            .childGap = 16
+            .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
         .backgroundColor = { 20, 20, 25, 128 }
     }) {

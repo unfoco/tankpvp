@@ -32,7 +32,11 @@ Clay_RenderCommandArray Interface::ingame(flecs::iter& it, InterfaceState& state
         CLAY({ .layout = { .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_GROW() } } }) {}
 
         CLAY({
-            .layout = { .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_FIT() }, .layoutDirection = CLAY_LEFT_TO_RIGHT, .childAlignment = {.y = CLAY_ALIGN_Y_BOTTOM} }
+            .layout = {
+                .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_FIT() },
+                .childAlignment = {.y = CLAY_ALIGN_Y_BOTTOM},
+                .layoutDirection = CLAY_LEFT_TO_RIGHT,
+            }
         }) {
             CLAY({
                 .id = CLAY_ID("HealthBarContainer"),

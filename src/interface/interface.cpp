@@ -108,8 +108,8 @@ bool Interface::toggle(InterfaceState& state, Clay_ElementId id, bool& value, To
         .layout = {
             .sizing = { .width = CLAY_SIZING_FIXED(s.width), .height = CLAY_SIZING_FIXED(s.height) },
             .padding = {p, p, p, p},
-            .layoutDirection = CLAY_LEFT_TO_RIGHT,
             .childAlignment = { .y = CLAY_ALIGN_Y_CENTER },
+            .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         .backgroundColor = value ? s.onColor : s.offColor,
         .cornerRadius = CLAY_CORNER_RADIUS(s.height / 2),

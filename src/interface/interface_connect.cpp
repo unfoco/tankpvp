@@ -11,9 +11,9 @@ Clay_RenderCommandArray Interface::connect(flecs::iter& it, InterfaceState& stat
         .id = CLAY_ID("ConnectContainer"),
         .layout = {
             .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_GROW() },
-            .layoutDirection = CLAY_TOP_TO_BOTTOM,
+            .childGap = 20,
             .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
-            .childGap = 20
+            .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
         .backgroundColor = { 20, 20, 25, 255 }
     }) {
@@ -22,8 +22,8 @@ Clay_RenderCommandArray Interface::connect(flecs::iter& it, InterfaceState& stat
             .layout = {
                 .sizing = { CLAY_SIZING_FIXED(400), CLAY_SIZING_FIT() },
                 .padding = { 30, 30, 30, 30 },
+                .childGap = 16,
                 .layoutDirection = CLAY_TOP_TO_BOTTOM,
-                .childGap = 16
             },
             .backgroundColor = { 35, 35, 40, 255 },
             .cornerRadius = CLAY_CORNER_RADIUS(12)
@@ -41,8 +41,8 @@ Clay_RenderCommandArray Interface::connect(flecs::iter& it, InterfaceState& stat
             CLAY({
                 .layout = {
                     .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_FIT() },
-                    .layoutDirection = CLAY_LEFT_TO_RIGHT,
                     .childGap = 10,
+                    .layoutDirection = CLAY_LEFT_TO_RIGHT,
                 }
             }) {
                 if (Interface::button(state, CLAY_ID("BtnBack"), "Back")) {

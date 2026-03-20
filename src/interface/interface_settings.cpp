@@ -11,9 +11,9 @@ Clay_RenderCommandArray Interface::settings(flecs::iter& it, InterfaceState& sta
         .id = CLAY_ID("SettingsContainer"),
         .layout = {
             .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_GROW() },
-            .layoutDirection = CLAY_TOP_TO_BOTTOM,
+            .childGap = 20,
             .childAlignment = { .x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER },
-            .childGap = 20
+            .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
         .backgroundColor = { 20, 20, 25, 255 }
     }) {
@@ -22,8 +22,8 @@ Clay_RenderCommandArray Interface::settings(flecs::iter& it, InterfaceState& sta
             .layout = {
                 .sizing = { CLAY_SIZING_FIXED(500), CLAY_SIZING_FIT() },
                 .padding = { 30, 30, 30, 30 },
+                .childGap = 24,
                 .layoutDirection = CLAY_TOP_TO_BOTTOM,
-                .childGap = 24
             },
             .backgroundColor = { 35, 35, 40, 255 },
             .cornerRadius = CLAY_CORNER_RADIUS(12)
@@ -37,8 +37,8 @@ Clay_RenderCommandArray Interface::settings(flecs::iter& it, InterfaceState& sta
                         .width = CLAY_SIZING_GROW(), \
                         .height = CLAY_SIZING_FIXED(30) \
                     }, \
+                    .childAlignment = { .y = CLAY_ALIGN_Y_CENTER }, \
                     .layoutDirection = CLAY_LEFT_TO_RIGHT, \
-                    .childAlignment = { .y = CLAY_ALIGN_Y_CENTER } \
                 } \
             })
 
