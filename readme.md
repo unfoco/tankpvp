@@ -2,4 +2,7 @@
 
 todo:
   - move over and cleanup network stuff from the old project
-  - implement walls
+  - connect & host interface functionality
+  - walls
+  - sounds
+  - more multithreading?

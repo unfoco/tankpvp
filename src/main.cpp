@@ -47,7 +47,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         .add<Tank>()
         .add<Local>();
 
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 1000; i++) {
         state->world.entity()
             .set(Color{.value = {rand()%255, rand()%255, rand()%255}})
             .set(Position{.value = {200.0, 200.0}})

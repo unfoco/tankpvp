@@ -6,4 +6,3 @@ void Logic::hit(flecs::iter& it, size_t, const PhysicsEvents& events) {
         tank.destruct();
     }
 }
-
