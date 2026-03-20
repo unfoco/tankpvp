@@ -3,10 +3,11 @@
 
 void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Position& pos, const Rotation& rot, VelocityLinear& vel, VelocityAngular& ang) {
     ang.value = 0;
-    if ((flags & InputFlags::Left) != InputFlags::None)  ang.value -= 3.0f;
+    if ((flags & InputFlags::Left) != InputFlags::None) ang.value -= 3.0f;
     if ((flags & InputFlags::Right) != InputFlags::None) ang.value += 3.0f;
 
     glm::vec2 fwd(glm::cos(rot.angle), glm::sin(rot.angle));
+
     vel.value = {0, 0};
     if ((flags & InputFlags::Forward) != InputFlags::None)
         vel.value = fwd * 100.0f;

@@ -18,14 +18,14 @@ struct Camera {
     glm::vec2 position;
     float zoom;
 
-    inline glm::vec2 worldToScreen(const glm::vec2& worldPos, int windowW, int windowH) const {
+    glm::vec2 worldToScreen(const glm::vec2& worldPos, int windowW, int windowH) const {
         return glm::vec2(
             (worldPos.x - position.x) * zoom + (windowW / 2.0f),
             (worldPos.y - position.y) * zoom + (windowH / 2.0f)
         );
     }
 
-    inline glm::vec2 screenToWorld(const glm::vec2& screenPos, int windowW, int windowH) const {
+    glm::vec2 screenToWorld(const glm::vec2& screenPos, int windowW, int windowH) const {
         return glm::vec2(
             (screenPos.x - (windowW / 2.0f)) / zoom + position.x,
             (screenPos.y - (windowH / 2.0f)) / zoom + position.y

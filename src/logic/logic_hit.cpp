@@ -1,8 +1,9 @@
 #include "logic.h"
 
 void Logic::hit(flecs::iter& it, size_t, const PhysicsEvents& events) {
-    events.eachSensor<Bullet, Tank>([](flecs::entity bullet, flecs::entity tank) {
-        tank.destruct();
+    for (auto [bullet, tank] : events.sensor<Bullet, Tank>()) {
         bullet.destruct();
-    });
+        tank.destruct();
+    }
 }
+

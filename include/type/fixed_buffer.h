@@ -5,7 +5,7 @@ struct FixedBuffer {
     T data[N];
     int count = 0;
 
-    void push(const T& v) { if (count < N) data[count++] = v; }
+    void push(const T& v)  { if (count < N) data[count++] = v; }
     void clear()           { count = 0; }
 
     bool full() const      { return count >= N; }

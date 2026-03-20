@@ -44,43 +44,51 @@ struct ContactEvent {
 };
 
 struct PhysicsEvents {
-    FixedBuffer<ContactEvent, 64> contactBegin, contactEnd;
-    FixedBuffer<ContactEvent, 64> sensorBegin, sensorEnd;
+    FixedBuffer<ContactEvent, 64> contactBegin, sensorBegin;
+    FixedBuffer<ContactEvent, 64> contactEnd, sensorEnd;
 
-    inline void clear() {
-        contactBegin.clear(); contactEnd.clear();
-        sensorBegin.clear(); sensorEnd.clear();
+    void clear() {
+        contactBegin.clear(); sensorBegin.clear();
+        contactEnd.clear(); sensorEnd.clear();
     }
 
-    template<typename A, typename B, typename F>
-    inline void eachContact(F&& fn) const {
-        each<A, B>(contactBegin, fn);
-    }
+    template<typename A, typename B>
+    struct View {
+        const ContactEvent* ptr;
+        const ContactEvent* last;
 
-    template<typename A, typename B, typename F>
-    inline void eachContactWnd(F&& fn) const {
-        each<A, B>(contactEnd, fn);
-    }
-
-    template<typename A, typename B, typename F>
-    inline void eachSensor(F&& fn) const {
-        each<A, B>(sensorBegin, fn);
-    }
-
-    template<typename A, typename B, typename F>
-    inline void eachSensorEnd(F&& fn) const {
-        each<A, B>(sensorEnd, fn);
-    }
-
-private:
-    template<typename A, typename B, int N, typename F>
-    inline static void each(const FixedBuffer<ContactEvent, N>& buf, F&& fn) {
-        for (auto& c : buf) {
-            if (!c.entityA.is_alive() || !c.entityB.is_alive()) continue;
-            if (c.entityA.template has<A>() && c.entityB.template has<B>()) fn(c.entityA, c.entityB);
-            else if (c.entityB.template has<A>() && c.entityA.template has<B>()) fn(c.entityB, c.entityA);
+        void skip() {
+            while (ptr != last) {
+                if (
+                    ptr->entityA.is_alive() && ptr->entityB.is_alive() &&
+                    (
+                        (ptr->entityA.template has<A>() && ptr->entityB.template has<B>()) ||
+                        (ptr->entityB.template has<A>() && ptr->entityA.template has<B>())
+                    )
+                ) return;
+                ++ptr;
+            }
         }
-    }
+
+        std::pair<flecs::entity, flecs::entity> operator*() const {
+            if (ptr->entityA.template has<A>()) return {ptr->entityA, ptr->entityB};
+            return {ptr->entityB, ptr->entityA};
+        }
+        View& operator++() { ++ptr; skip(); return *this; }
+        bool operator!=(const View& o) const { return ptr != o.ptr; }
+
+        View begin() const { View v{ptr, last}; v.skip(); return v; }
+        View end() const { return {last, last}; }
+    };
+
+    template<typename A, typename B>
+    auto sensor() const { return View<A, B>{sensorBegin.begin(), sensorBegin.end()}; }
+    template<typename A, typename B>
+    auto contact() const { return View<A, B>{contactBegin.begin(), contactBegin.end()}; }
+    template<typename A, typename B>
+    auto sensor_end() const { return View<A, B>{sensorEnd.begin(), sensorEnd.end()}; }
+    template<typename A, typename B>
+    auto contact_end() const { return View<A, B>{contactEnd.begin(), contactEnd.end()}; }
 };
 
 struct RaycastRequest {
