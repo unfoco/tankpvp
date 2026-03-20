@@ -7,11 +7,13 @@
 #include "component/event.h"
 #include "component/input.h"
 #include "component/object.h"
+#include "component/physics.h"
 #include "component/settings.h"
 
 #include "input/input.h"
 #include "logic/logic.h"
 #include "render/render.h"
+#include "physics/physics.h"
 #include "network/network.h"
 #include "interface/interface.h"
 
@@ -30,32 +32,46 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
 
     state->world.entity()
         .set(Color{.value = {255.0, 50.0, 50.0}})
-        .set(Velocity{.value = {0.0, 0.0}})
         .set(Position{.value = {250.0, 400.0}})
         .set(Rotation{.angle = -100})
+        .set(LinearVelocity{})
+        .set(AngularVelocity{})
+        .set(ColliderBox{.half_width = 20, .half_height = 15})
+        .set(LinearDamping{.value = 5.0f})
+        .set(AngularDamping{.value = 5.0f})
         .set(InputFlags::None)
+        .add<Dynamic>()
         .add<Tank>()
         .add<Local>();
-
     state->world.entity()
         .set(Color{.value = {50.0, 200.0, 150.0}})
-        .set(Velocity{.value = {0.0, 0.0}})
         .set(Position{.value = {200.0, 200.0}})
         .set(Rotation{.angle = 0})
+        .set(LinearVelocity{})
+        .set(AngularVelocity{})
+        .set(ColliderBox{.half_width = 20, .half_height = 15})
+        .set(LinearDamping{.value = 5.0f})
+        .set(AngularDamping{.value = 5.0f})
         .set(InputFlags::Left)
+        .add<Dynamic>()
         .add<Tank>();
-
     state->world.entity()
         .set(Color{.value = {0.0, 200.0, 200.0}})
-        .set(Velocity{.value = {0.0, 0.0}})
         .set(Position{.value = {500.0, 250.0}})
         .set(Rotation{.angle = -100})
+        .set(LinearVelocity{})
+        .set(AngularVelocity{})
+        .set(ColliderBox{.half_width = 20, .half_height = 15})
+        .set(LinearDamping{.value = 5.0f})
+        .set(AngularDamping{.value = 5.0f})
         .set(InputFlags::Right)
+        .add<Dynamic>()
         .add<Tank>();
 
     state->world.import<Logic>();
     state->world.import<Input>();
     state->world.import<Render>();
+    state->world.import<Physics>();
     state->world.import<Network>();
     state->world.import<Interface>();
 

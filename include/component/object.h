@@ -2,10 +2,6 @@
 
 #include <glm/glm.hpp>
 
-struct Velocity {
-    glm::vec2 value;
-};
-
 struct Position {
     glm::vec2 value;
 };
