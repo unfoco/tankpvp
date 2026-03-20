@@ -47,26 +47,38 @@ struct PhysicsEvents {
     FixedBuffer<ContactEvent, 64> contactBegin, contactEnd;
     FixedBuffer<ContactEvent, 64> sensorBegin, sensorEnd;
 
-    void clear() {
+    inline void clear() {
         contactBegin.clear(); contactEnd.clear();
-        sensorBegin.clear();  sensorEnd.clear();
-    }
-
-    template<typename A, typename B, typename F>
-    inline void eachSensor(F&& fn) const {
-        for (auto& c : sensorBegin) {
-            if (!c.entityA.is_alive() || !c.entityB.is_alive()) continue;
-            if (c.entityA.has<A>() && c.entityB.has<B>()) fn(c.entityA, c.entityB);
-            else if (c.entityB.has<A>() && c.entityA.has<B>()) fn(c.entityB, c.entityA);
-        }
+        sensorBegin.clear(); sensorEnd.clear();
     }
 
     template<typename A, typename B, typename F>
     inline void eachContact(F&& fn) const {
-        for (auto& c : contactBegin) {
+        each<A, B>(contactBegin, fn);
+    }
+
+    template<typename A, typename B, typename F>
+    inline void eachContactWnd(F&& fn) const {
+        each<A, B>(contactEnd, fn);
+    }
+
+    template<typename A, typename B, typename F>
+    inline void eachSensor(F&& fn) const {
+        each<A, B>(sensorBegin, fn);
+    }
+
+    template<typename A, typename B, typename F>
+    inline void eachSensorEnd(F&& fn) const {
+        each<A, B>(sensorEnd, fn);
+    }
+
+private:
+    template<typename A, typename B, int N, typename F>
+    inline static void each(const FixedBuffer<ContactEvent, N>& buf, F&& fn) {
+        for (auto& c : buf) {
             if (!c.entityA.is_alive() || !c.entityB.is_alive()) continue;
-            if (c.entityA.has<A>() && c.entityB.has<B>()) fn(c.entityA, c.entityB);
-            else if (c.entityB.has<A>() && c.entityA.has<B>()) fn(c.entityB, c.entityA);
+            if (c.entityA.template has<A>() && c.entityB.template has<B>()) fn(c.entityA, c.entityB);
+            else if (c.entityB.template has<A>() && c.entityA.template has<B>()) fn(c.entityB, c.entityA);
         }
     }
 };
