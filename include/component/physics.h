@@ -9,7 +9,7 @@ struct Static {};
 struct Dynamic {};
 struct Kinematic {};
 
-struct CollisionBox { float half_width = 0.5f; float half_height = 0.5f; };
+struct CollisionBox { float width = 1.0f; float height = 1.0f; };
 struct CollisionRing { float radius = 0.5f; };
 
 struct VelocityLinear { glm::vec2 value{0}; };
@@ -39,16 +39,16 @@ struct PhysicsConfig {
 };
 
 struct ContactEvent {
-    flecs::entity entity_a, entity_b;
+    flecs::entity entityA, entityB;
     glm::vec2 point{0}, normal{0};
 };
 
 struct PhysicsEvents {
-    FixedBuffer<ContactEvent, 64> contact_begin, contact_end;
-    FixedBuffer<ContactEvent, 64> sensor_begin, sensor_end;
+    FixedBuffer<ContactEvent, 64> contactBegin, contactEnd;
+    FixedBuffer<ContactEvent, 64> sensorBegin, sensorEnd;
     void clear() {
-        contact_begin.clear(); contact_end.clear();
-        sensor_begin.clear();  sensor_end.clear();
+        contactBegin.clear(); contactEnd.clear();
+        sensorBegin.clear();  sensorEnd.clear();
     }
 };
 

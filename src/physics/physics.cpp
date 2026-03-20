@@ -97,7 +97,7 @@ void Physics::init(flecs::iter& it, size_t i, const Position& pos, const Rotatio
 
     b2BodyId body = b2CreateBody(eng.world_id, &def);
     if (auto* c = e.try_get<CollisionBox>()) {
-        auto sd = shape_def_for(e); b2Polygon poly = b2MakeBox(c->half_width, c->half_height);
+        auto sd = shape_def_for(e); b2Polygon poly = b2MakeBox(c->width/2, c->height/2);
         b2CreatePolygonShape(body, &sd, &poly);
     }
     if (auto* c = e.try_get<CollisionRing>()) {
@@ -162,14 +162,14 @@ void Physics::event(flecs::iter& it) {
         b2ContactEvents contacts = b2World_GetContactEvents(eng.world_id);
         for (int j = 0; j < contacts.beginCount; j++) {
             auto& c = contacts.beginEvents[j];
-            ev.contact_begin.push({
+            ev.contactBegin.push({
                 entity_from_body(w, b2Shape_GetBody(c.shapeIdA)),
                 entity_from_body(w, b2Shape_GetBody(c.shapeIdB)),
             });
         }
         for (int j = 0; j < contacts.endCount; j++) {
             auto& c = contacts.endEvents[j];
-            ev.contact_end.push({
+            ev.contactEnd.push({
                 entity_from_body(w, b2Shape_GetBody(c.shapeIdA)),
                 entity_from_body(w, b2Shape_GetBody(c.shapeIdB)),
             });
@@ -177,14 +177,14 @@ void Physics::event(flecs::iter& it) {
         b2SensorEvents sensors = b2World_GetSensorEvents(eng.world_id);
         for (int j = 0; j < sensors.beginCount; j++) {
             auto& s = sensors.beginEvents[j];
-            ev.sensor_begin.push({
+            ev.sensorBegin.push({
                 entity_from_body(w, b2Shape_GetBody(s.sensorShapeId)),
                 entity_from_body(w, b2Shape_GetBody(s.visitorShapeId)),
             });
         }
         for (int j = 0; j < sensors.endCount; j++) {
             auto& s = sensors.endEvents[j];
-            ev.sensor_end.push({
+            ev.sensorEnd.push({
                 entity_from_body(w, b2Shape_GetBody(s.sensorShapeId)),
                 entity_from_body(w, b2Shape_GetBody(s.visitorShapeId)),
             });

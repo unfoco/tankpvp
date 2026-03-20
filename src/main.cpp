@@ -39,37 +39,28 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         .set(Rotation{.angle = -100})
         .set(VelocityLinear{})
         .set(VelocityAngular{})
-        .set(CollisionBox{.half_width = 20, .half_height = 15})
+        .set(CollisionBox{.width = 40, .height = 30})
         .set(DampingLinear{.value = 5.0f})
         .set(DampingAngular{.value = 5.0f})
         .set(InputFlags::None)
         .add<Dynamic>()
         .add<Tank>()
         .add<Local>();
-    state->world.entity()
-        .set(Color{.value = {50.0, 200.0, 150.0}})
-        .set(Position{.value = {200.0, 200.0}})
-        .set(Rotation{.angle = 0})
-        .set(VelocityLinear{})
-        .set(VelocityAngular{})
-        .set(CollisionBox{.half_width = 20, .half_height = 15})
-        .set(DampingLinear{.value = 5.0f})
-        .set(DampingAngular{.value = 5.0f})
-        .set(InputFlags::Left)
-        .add<Dynamic>()
-        .add<Tank>();
-    state->world.entity()
-        .set(Color{.value = {0.0, 200.0, 200.0}})
-        .set(Position{.value = {500.0, 250.0}})
-        .set(Rotation{.angle = -100})
-        .set(VelocityLinear{})
-        .set(VelocityAngular{})
-        .set(CollisionBox{.half_width = 20, .half_height = 15})
-        .set(DampingLinear{.value = 5.0f})
-        .set(DampingAngular{.value = 5.0f})
-        .set(InputFlags::Right)
-        .add<Dynamic>()
-        .add<Tank>();
+
+    for (int i = 0; i < 1000; i++) {
+        state->world.entity()
+            .set(Color{.value = {rand()%255, rand()%255, rand()%255}})
+            .set(Position{.value = {200.0, 200.0}})
+            .set(Rotation{.angle = 0})
+            .set(VelocityLinear{})
+            .set(VelocityAngular{})
+            .set(CollisionBox{.width = 40, .height = 30})
+            .set(DampingLinear{.value = 5.0f})
+            .set(DampingAngular{.value = 5.0f})
+            .set(InputFlags::Left)
+            .add<Dynamic>()
+            .add<Tank>();
+    }
 
     state->world.import<Logic>();
     state->world.import<Input>();
