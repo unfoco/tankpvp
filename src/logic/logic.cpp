@@ -11,7 +11,7 @@ Logic::Logic(flecs::world& world) {
         .interval(0.1)
         .kind(flecs::OnUpdate)
         .each(Logic::decay);
-    world.system("logic::hit")
+    world.system<PhysicsEvents>("logic::hit")
         .kind(flecs::PostUpdate)
         .each(Logic::hit);
 }

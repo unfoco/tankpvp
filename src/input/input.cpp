@@ -29,7 +29,7 @@ void Input::update(flecs::iter& it, size_t, InputFlags& flags) {
         if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) flags |= InputFlags::Right;
     }
 
-    const auto& events = it.world().get<EventQueue>();
+    const auto& events = it.world().get<WindowEvents>();
     for (const auto& event : events) {
         switch (event.type) {
         case SDL_EVENT_KEY_DOWN:

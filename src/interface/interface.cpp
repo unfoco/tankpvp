@@ -32,23 +32,23 @@ Interface::Interface(flecs::world& world) {
         .kind(flecs::PreFrame)
         .each(Interface::frame);
 
-    world.system<InterfaceState, EventQueue>("interface::event")
+    world.system<InterfaceState, WindowEvents>("interface::event")
         .kind(flecs::PreUpdate)
         .each(Interface::event);
 
-    world.system<InterfaceState, InterfaceCommands, InterfacePage, InterfacePrevious, EventQueue>("interface::build")
+    world.system<InterfaceState, InterfaceCommands, InterfacePage, InterfacePrevious, WindowEvents>("interface::build")
         .kind(flecs::OnUpdate)
         .each(Interface::build);
 }
 
 void Interface::frame(flecs::iter&, size_t, InterfaceState& state) {
-    state.mouseJustPressed = false;
+    state.mousePressed = false;
 }
 
-void Interface::event(flecs::iter&, size_t, InterfaceState& state, const EventQueue& queue) {
-    for (const auto& event : queue) {
+void Interface::event(flecs::iter&, size_t, InterfaceState& state, const WindowEvents& events) {
+    for (const auto& event : events) {
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
-            state.mouseJustPressed = true;
+            state.mousePressed = true;
             state.mouseDown = true;
             state.focusedId = 0;
         } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
@@ -61,22 +61,22 @@ void Interface::event(flecs::iter&, size_t, InterfaceState& state, const EventQu
     }
 }
 
-void Interface::build(flecs::iter& it, size_t, InterfaceState& state, InterfaceCommands& commands, InterfacePage& page, InterfacePrevious& prev, const EventQueue& queue) {
+void Interface::build(flecs::iter& it, size_t, InterfaceState& state, InterfaceCommands& commands, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
     switch (page) {
     case InterfacePage::Main:
-        commands.list = Interface::main(it, state, page, prev, queue);
+        commands.list = Interface::main(it, state, page, prev, events);
         break;
     case InterfacePage::Pause:
-        commands.list = Interface::pause(it, state, page, prev, queue);
+        commands.list = Interface::pause(it, state, page, prev, events);
         break;
     case InterfacePage::Ingame:
-        commands.list = Interface::ingame(it, state, page, prev, queue);
+        commands.list = Interface::ingame(it, state, page, prev, events);
         break;
     case InterfacePage::Connect:
-        commands.list = Interface::connect(it, state, page, prev, queue);
+        commands.list = Interface::connect(it, state, page, prev, events);
         break;
     case InterfacePage::Settings:
-        commands.list = Interface::settings(it, state, page, prev, queue);
+        commands.list = Interface::settings(it, state, page, prev, events);
         break;
     case InterfacePage::None:
         commands.list = {};
@@ -91,7 +91,7 @@ bool Interface::button(InterfaceState& state, Clay_ElementId id, const char* lab
         .backgroundColor = s.color,
         .cornerRadius = CLAY_CORNER_RADIUS(s.cornerRadius),
     }) {
-        if (Clay_Hovered() && state.mouseJustPressed) clicked = true;
+        if (Clay_Hovered() && state.mousePressed) clicked = true;
         CLAY_TEXT(Str(label), CLAY_TEXT_CONFIG({
             .textColor = s.textColor, .fontSize = s.fontSize,
         }));
@@ -114,7 +114,7 @@ bool Interface::toggle(InterfaceState& state, Clay_ElementId id, bool& value, To
         .backgroundColor = value ? s.onColor : s.offColor,
         .cornerRadius = CLAY_CORNER_RADIUS(s.height / 2),
     }) {
-        if (Clay_Hovered() && state.mouseJustPressed) { value = !value; toggled = true; }
+        if (Clay_Hovered() && state.mousePressed) { value = !value; toggled = true; }
         if (value) { CLAY({ .layout = { .sizing = { CLAY_SIZING_GROW() } } }) {} }
         CLAY({
             .layout = { .sizing = { CLAY_SIZING_FIXED(knob), CLAY_SIZING_FIXED(knob) } },
@@ -142,7 +142,7 @@ bool Interface::slider(InterfaceState& state, Clay_ElementId id, float& value, f
             .childAlignment = { .y = CLAY_ALIGN_Y_CENTER },
         },
     }) {
-        if (Clay_Hovered() && state.mouseJustPressed) {
+        if (Clay_Hovered() && state.mousePressed) {
             state.activeId = id.id; state.dragStartX = state.mouseX; state.dragStartVal = value;
         }
         CLAY({
@@ -165,20 +165,20 @@ bool Interface::slider(InterfaceState& state, Clay_ElementId id, float& value, f
     return value != old;
 }
 
-bool Interface::input(InterfaceState& state, const EventQueue& queue, Clay_ElementId id, std::string& value, const char* placeholder, InputStyle s) {
+bool Interface::input(InterfaceState& state, const WindowEvents& events, Clay_ElementId id, std::string& value, const char* placeholder, InputStyle s) {
     if (state.focusedId == id.id) {
-        for (const auto& e : queue) {
-            if (e.type == SDL_EVENT_TEXT_INPUT) {
-                value += e.text.text;
-            } else if (e.type == SDL_EVENT_KEY_DOWN) {
-                bool ctrl = (e.key.mod & SDL_KMOD_CTRL) != 0;
-                if ((e.key.key == SDLK_RETURN || e.key.key == SDLK_KP_ENTER) && !e.key.repeat) {
+        for (const auto& event : events) {
+            if (event.type == SDL_EVENT_TEXT_INPUT) {
+                value += event.text.text;
+            } else if (event.type == SDL_EVENT_KEY_DOWN) {
+                bool ctrl = (event.key.mod & SDL_KMOD_CTRL) != 0;
+                if ((event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER) && !event.key.repeat) {
                     value += '\n';
-                } else if (e.key.key == SDLK_TAB && !e.key.repeat) {
+                } else if (event.key.key == SDLK_TAB && !event.key.repeat) {
                     value += '\t';
-                } else if (e.key.key == SDLK_BACKSPACE) {
+                } else if (event.key.key == SDLK_BACKSPACE) {
                     PopUtf8(value);
-                } else if (ctrl && e.key.key == SDLK_V && !e.key.repeat) {
+                } else if (ctrl && event.key.key == SDLK_V && !event.key.repeat) {
                     const char* cb = SDL_GetClipboardText();
                     if (cb && cb[0]) value += cb;
                 }
@@ -197,7 +197,7 @@ bool Interface::input(InterfaceState& state, const EventQueue& queue, Clay_Eleme
             .padding = s.padding,
             .layoutDirection = CLAY_LEFT_TO_RIGHT
         },
-        .backgroundColor = s.bgColor,
+        .backgroundColor = s.backgroundColor,
         .border = {
             .color = border,
             .width = {
@@ -208,7 +208,7 @@ bool Interface::input(InterfaceState& state, const EventQueue& queue, Clay_Eleme
             }
         },
     }) {
-        if (Clay_Hovered() && state.mouseJustPressed) {
+        if (Clay_Hovered() && state.mousePressed) {
             state.focusedId = id.id; clicked = true;
         }
         CLAY_TEXT(empty ? Str(placeholder) : Str(value),

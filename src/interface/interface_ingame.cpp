@@ -1,6 +1,6 @@
 #include "interface.h"
 
-Clay_RenderCommandArray Interface::ingame(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const EventQueue& queue) {
+Clay_RenderCommandArray Interface::ingame(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
     prev.page = InterfacePage::Pause;
 
     Clay_BeginLayout();

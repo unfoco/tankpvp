@@ -2,7 +2,7 @@
 
 #include "component/settings.h"
 
-Clay_RenderCommandArray Interface::settings(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const EventQueue& queue) {
+Clay_RenderCommandArray Interface::settings(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
     auto& settings = it.world().get_mut<Settings>();
 
     Clay_BeginLayout();
@@ -45,7 +45,7 @@ Clay_RenderCommandArray Interface::settings(flecs::iter& it, InterfaceState& sta
             InputStyle inputStyle = { .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_FIT() } };
 
             CLAY_TEXT(Str("Player Name"), CLAY_TEXT_CONFIG({ .textColor = { 200, 200, 200, 255 }, .fontSize = 14 }));
-            Interface::input(state, queue, CLAY_ID("NameInput"), settings.username, "Enter name...", inputStyle);
+            Interface::input(state, events, CLAY_ID("NameInput"), settings.username, "Enter name...", inputStyle);
 
             SETTING_ROW("RowVolume") {
                 CLAY_TEXT(Str("Master Volume"), CLAY_TEXT_CONFIG({ .textColor = { 255, 255, 255, 255 }, .fontSize = 16 }));

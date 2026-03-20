@@ -2,7 +2,7 @@
 
 #include "component/network.h"
 
-Clay_RenderCommandArray Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const EventQueue& queue) {
+Clay_RenderCommandArray Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
     auto& target = it.world().get_mut<NetworkTarget>();
 
     Clay_BeginLayout();
@@ -33,10 +33,10 @@ Clay_RenderCommandArray Interface::connect(flecs::iter& it, InterfaceState& stat
             InputStyle inputStyle = { .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_FIT() } };
 
             CLAY_TEXT(Str("Address"), CLAY_TEXT_CONFIG({ .textColor = { 200, 200, 200, 255 }, .fontSize = 14 }));
-            Interface::input(state, queue, CLAY_ID("AddressInput"), target.address, "e.g. 127.0.0.1", inputStyle);
+            Interface::input(state, events, CLAY_ID("AddressInput"), target.address, "e.g. 127.0.0.1", inputStyle);
 
             CLAY_TEXT(Str("Port"), CLAY_TEXT_CONFIG({ .textColor = { 200, 200, 200, 255 }, .fontSize = 14 }));
-            Interface::input(state, queue, CLAY_ID("PortInput"), target.port, "e.g. 5000", inputStyle);
+            Interface::input(state, events, CLAY_ID("PortInput"), target.port, "e.g. 5000", inputStyle);
 
             CLAY({
                 .layout = {

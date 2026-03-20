@@ -27,7 +27,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     // todo: set to core count?
     state->world.set_threads(4);
 
-    state->world.set<EventQueue>({});
+    state->world.set<WindowEvents>({});
     state->world.set<Settings>({
         .volume = 1.0,
         .test = true,
@@ -47,7 +47,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         .add<Tank>()
         .add<Local>();
 
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 100; i++) {
         state->world.entity()
             .set(Color{.value = {rand()%255, rand()%255, rand()%255}})
             .set(Position{.value = {200.0, 200.0}})
@@ -80,7 +80,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
         return SDL_APP_SUCCESS;
     }
 
-    auto& queue = state->world.get_mut<EventQueue>();
+    auto& queue = state->world.get_mut<WindowEvents>();
     queue.push(*event);
 
     return SDL_APP_CONTINUE;
@@ -91,7 +91,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
     state->world.progress();
 
-    auto& queue = state->world.get_mut<EventQueue>();
+    auto& queue = state->world.get_mut<WindowEvents>();
     queue.clear();
 
     return SDL_APP_CONTINUE;

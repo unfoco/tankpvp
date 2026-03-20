@@ -46,9 +46,28 @@ struct ContactEvent {
 struct PhysicsEvents {
     FixedBuffer<ContactEvent, 64> contactBegin, contactEnd;
     FixedBuffer<ContactEvent, 64> sensorBegin, sensorEnd;
+
     void clear() {
         contactBegin.clear(); contactEnd.clear();
         sensorBegin.clear();  sensorEnd.clear();
+    }
+
+    template<typename A, typename B, typename F>
+    inline void eachSensor(F&& fn) const {
+        for (auto& c : sensorBegin) {
+            if (!c.entityA.is_alive() || !c.entityB.is_alive()) continue;
+            if (c.entityA.has<A>() && c.entityB.has<B>()) fn(c.entityA, c.entityB);
+            else if (c.entityB.has<A>() && c.entityA.has<B>()) fn(c.entityB, c.entityA);
+        }
+    }
+
+    template<typename A, typename B, typename F>
+    inline void eachContact(F&& fn) const {
+        for (auto& c : contactBegin) {
+            if (!c.entityA.is_alive() || !c.entityB.is_alive()) continue;
+            if (c.entityA.has<A>() && c.entityB.has<B>()) fn(c.entityA, c.entityB);
+            else if (c.entityB.has<A>() && c.entityA.has<B>()) fn(c.entityB, c.entityA);
+        }
     }
 };
 
