@@ -1,9 +1,9 @@
 #include "logic.h"
+
 #include "component/object.h"
-#include "component/physics.h"
 
 Logic::Logic(flecs::world& world) {
-    world.system<InputFlags, Position, Rotation, LinearVelocity, AngularVelocity>("logic::input")
+    world.system<InputFlags, Position, Rotation, VelocityLinear, VelocityAngular>("logic::input")
         .kind(flecs::PreUpdate)
         .with<Tank>()
         .each(Logic::input);

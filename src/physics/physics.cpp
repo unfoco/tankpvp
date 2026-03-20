@@ -1,4 +1,5 @@
 #include "physics.h"
+
 #include <box2d/box2d.h>
 
 struct B2Body { b2BodyId id = b2_nullBodyId; };
@@ -54,7 +55,7 @@ Physics::Physics(flecs::world& world) {
         .kind(PI).each(Physics::init);
     world.system<const B2Body, const Position, const Rotation>("physics::teleport")
         .with<Teleport>().kind(PP).each(Physics::teleport);
-    world.system<const B2Body, const LinearVelocity, const AngularVelocity>("physics::sync")
+    world.system<const B2Body, const VelocityLinear, const VelocityAngular>("physics::sync")
         .kind(PP).each(Physics::sync);
     world.system<const B2Body, const ExternalForce>("physics::force")
         .kind(PP).each(Physics::force);
@@ -64,7 +65,7 @@ Physics::Physics(flecs::world& world) {
         .kind(PS).run(Physics::step);
     world.system<const B2Body, Position, Rotation>("physics::transform")
         .kind(PO).multi_threaded().each(Physics::transform);
-    world.system<const B2Body, LinearVelocity, AngularVelocity>("physics::velocity")
+    world.system<const B2Body, VelocityLinear, VelocityAngular>("physics::velocity")
         .kind(PO).multi_threaded().each(Physics::velocity);
     world.system("physics::event")
         .kind(PO).run(Physics::event);
@@ -76,8 +77,8 @@ Physics::Physics(flecs::world& world) {
         .without<ExplosionResult>().kind(PO).each(Physics::explosion);
 
     world.observer<B2Body>("physics::cleanup").event(flecs::OnRemove).each(Physics::cleanup);
-    world.observer<const B2Body, const LinearDamping>("physics::ldamp").event(flecs::OnSet).each(Physics::ldamp);
-    world.observer<const B2Body, const AngularDamping>("physics::adamp").event(flecs::OnSet).each(Physics::adamp);
+    world.observer<const B2Body, const DampingLinear>("physics::ldamp").event(flecs::OnSet).each(Physics::ldamp);
+    world.observer<const B2Body, const DampingAngular>("physics::adamp").event(flecs::OnSet).each(Physics::adamp);
 }
 
 void Physics::init(flecs::iter& it, size_t i, const Position& pos, const Rotation& rot) {
@@ -89,22 +90,22 @@ void Physics::init(flecs::iter& it, size_t i, const Position& pos, const Rotatio
     def.position = {pos.value.x, pos.value.y};
     def.rotation = b2MakeRot(rot.angle);
     def.userData = reinterpret_cast<void*>(static_cast<uintptr_t>(e.id()));
-    def.fixedRotation = e.has<FixedRotation>();
-    def.isBullet = e.has<ContinuousCollision>();
-    if (auto* v = e.try_get<LinearDamping>()) def.linearDamping  = v->value;
-    if (auto* v = e.try_get<AngularDamping>()) def.angularDamping = v->value;
+    def.fixedRotation = e.has<RotationFixed>();
+    def.isBullet = e.has<CollisionContinuous>();
+    if (auto* v = e.try_get<DampingLinear>()) def.linearDamping  = v->value;
+    if (auto* v = e.try_get<DampingAngular>()) def.angularDamping = v->value;
 
     b2BodyId body = b2CreateBody(eng.world_id, &def);
-    if (auto* c = e.try_get<ColliderBox>()) {
+    if (auto* c = e.try_get<CollisionBox>()) {
         auto sd = shape_def_for(e); b2Polygon poly = b2MakeBox(c->half_width, c->half_height);
         b2CreatePolygonShape(body, &sd, &poly);
     }
-    if (auto* c = e.try_get<ColliderRing>()) {
+    if (auto* c = e.try_get<CollisionRing>()) {
         auto sd = shape_def_for(e); b2Circle circ = {{0, 0}, c->radius};
         b2CreateCircleShape(body, &sd, &circ);
     }
-    if (auto* v = e.try_get<LinearVelocity>())  b2Body_SetLinearVelocity(body, {v->value.x, v->value.y});
-    if (auto* v = e.try_get<AngularVelocity>()) b2Body_SetAngularVelocity(body, v->value);
+    if (auto* v = e.try_get<VelocityLinear>())  b2Body_SetLinearVelocity(body, {v->value.x, v->value.y});
+    if (auto* v = e.try_get<VelocityAngular>()) b2Body_SetAngularVelocity(body, v->value);
     e.set(B2Body{.id = body});
 }
 
@@ -113,7 +114,7 @@ void Physics::teleport(flecs::entity e, const B2Body& b, const Position& pos, co
     e.remove<Teleport>();
 }
 
-void Physics::sync(const B2Body& b, const LinearVelocity& lv, const AngularVelocity& av) {
+void Physics::sync(const B2Body& b, const VelocityLinear& lv, const VelocityAngular& av) {
     b2Body_SetLinearVelocity(b.id, {lv.value.x, lv.value.y});
     b2Body_SetAngularVelocity(b.id, av.value);
 }
@@ -145,7 +146,7 @@ void Physics::transform(const B2Body& b, Position& pos, Rotation& rot) {
     rot.angle = b2Rot_GetAngle(b2Body_GetRotation(b.id));
 }
 
-void Physics::velocity(const B2Body& b, LinearVelocity& lv, AngularVelocity& av) {
+void Physics::velocity(const B2Body& b, VelocityLinear& lv, VelocityAngular& av) {
     b2Vec2 v = b2Body_GetLinearVelocity(b.id);
     lv.value = {v.x, v.y};
     av.value = b2Body_GetAngularVelocity(b.id);
@@ -278,5 +279,5 @@ void Physics::explosion(flecs::entity e, const ExplosionRequest& req) {
 }
 
 void Physics::cleanup(B2Body& b) { if (b2Body_IsValid(b.id)) b2DestroyBody(b.id); }
-void Physics::ldamp(const B2Body& b, const LinearDamping& d) { b2Body_SetLinearDamping(b.id, d.value); }
-void Physics::adamp(const B2Body& b, const AngularDamping& d) { b2Body_SetAngularDamping(b.id, d.value); }
+void Physics::ldamp(const B2Body& b, const DampingLinear& d) { b2Body_SetLinearDamping(b.id, d.value); }
+void Physics::adamp(const B2Body& b, const DampingAngular& d) { b2Body_SetAngularDamping(b.id, d.value); }

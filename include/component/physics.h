@@ -9,27 +9,27 @@ struct Static {};
 struct Dynamic {};
 struct Kinematic {};
 
-struct ColliderBox { float half_width = 0.5f; float half_height = 0.5f; };
-struct ColliderRing { float radius = 0.5f; };
+struct CollisionBox { float half_width = 0.5f; float half_height = 0.5f; };
+struct CollisionRing { float radius = 0.5f; };
 
-struct LinearVelocity { glm::vec2 value{0}; };
-struct AngularVelocity { float value = 0; };
+struct VelocityLinear { glm::vec2 value{0}; };
+struct VelocityAngular { float value = 0; };
 struct ExternalForce { glm::vec2 value{0}; };
 struct ExternalImpulse { glm::vec2 value{0}; };
 
 struct Density { float value = 1.0f; };
 struct Friction { float value = 0.3f; };
 struct Restitution { float value = 0.0f; };
-struct LinearDamping { float value = 0.0f; };
-struct AngularDamping { float value = 0.0f; };
+struct DampingLinear { float value = 0.0f; };
+struct DampingAngular { float value = 0.0f; };
 
 struct CollisionLayers {
     uint64_t memberships = 0x0001;
     uint64_t filter = 0xFFFFFFFFFFFFFFFF;
 };
 
-struct ContinuousCollision {};
-struct FixedRotation {};
+struct CollisionContinuous {};
+struct RotationFixed {};
 struct Teleport {};
 struct Sensor {};
 

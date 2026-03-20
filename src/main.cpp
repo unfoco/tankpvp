@@ -24,6 +24,9 @@ struct State {
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     State* state = new State();
 
+    // todo: set to core count?
+    state->world.set_threads(4);
+
     state->world.set<EventQueue>({});
     state->world.set<Settings>({
         .volume = 1.0,
@@ -34,11 +37,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         .set(Color{.value = {255.0, 50.0, 50.0}})
         .set(Position{.value = {250.0, 400.0}})
         .set(Rotation{.angle = -100})
-        .set(LinearVelocity{})
-        .set(AngularVelocity{})
-        .set(ColliderBox{.half_width = 20, .half_height = 15})
-        .set(LinearDamping{.value = 5.0f})
-        .set(AngularDamping{.value = 5.0f})
+        .set(VelocityLinear{})
+        .set(VelocityAngular{})
+        .set(CollisionBox{.half_width = 20, .half_height = 15})
+        .set(DampingLinear{.value = 5.0f})
+        .set(DampingAngular{.value = 5.0f})
         .set(InputFlags::None)
         .add<Dynamic>()
         .add<Tank>()
@@ -47,11 +50,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         .set(Color{.value = {50.0, 200.0, 150.0}})
         .set(Position{.value = {200.0, 200.0}})
         .set(Rotation{.angle = 0})
-        .set(LinearVelocity{})
-        .set(AngularVelocity{})
-        .set(ColliderBox{.half_width = 20, .half_height = 15})
-        .set(LinearDamping{.value = 5.0f})
-        .set(AngularDamping{.value = 5.0f})
+        .set(VelocityLinear{})
+        .set(VelocityAngular{})
+        .set(CollisionBox{.half_width = 20, .half_height = 15})
+        .set(DampingLinear{.value = 5.0f})
+        .set(DampingAngular{.value = 5.0f})
         .set(InputFlags::Left)
         .add<Dynamic>()
         .add<Tank>();
@@ -59,11 +62,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         .set(Color{.value = {0.0, 200.0, 200.0}})
         .set(Position{.value = {500.0, 250.0}})
         .set(Rotation{.angle = -100})
-        .set(LinearVelocity{})
-        .set(AngularVelocity{})
-        .set(ColliderBox{.half_width = 20, .half_height = 15})
-        .set(LinearDamping{.value = 5.0f})
-        .set(AngularDamping{.value = 5.0f})
+        .set(VelocityLinear{})
+        .set(VelocityAngular{})
+        .set(CollisionBox{.half_width = 20, .half_height = 15})
+        .set(DampingLinear{.value = 5.0f})
+        .set(DampingAngular{.value = 5.0f})
         .set(InputFlags::Right)
         .add<Dynamic>()
         .add<Tank>();
