@@ -6,3 +6,5 @@ todo:
   - walls
   - sounds
   - more multithreading?
+  - ai players? (bt? ml?)
+  - labyrinth generator
