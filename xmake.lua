@@ -1,6 +1,7 @@
 add_rules("mode.debug", "mode.release")
 
-add_requires("box2d", "clay", "enet", "flatbuffers", "flecs", "glm", "libsdl3", "libsdl3_image", "libsdl3_ttf")
+add_requires("flecs", {configs = {debug = is_mode("debug")}})
+add_requires("box2d", "clay", "enet", "flatbuffers", "glm", "libsdl3", "libsdl3_image", "libsdl3_ttf")
 
 target("tankpvp")
     set_kind("binary")

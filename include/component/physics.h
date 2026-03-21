@@ -9,7 +9,7 @@ struct Static {};
 struct Dynamic {};
 struct Kinematic {};
 
-struct CollisionBox { float width = 1.0f; float height = 1.0f; };
+struct CollisionBox { float height = 1.0f; float width = 1.0f; };
 struct CollisionRing { float radius = 0.5f; };
 
 struct VelocityLinear { glm::vec2 value{0}; };

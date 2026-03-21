@@ -24,6 +24,18 @@ struct State {
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     State* state = new State();
 
+    state->world.component<Position>()
+        .member<float>("x")
+        .member<float>("y");
+    state->world.component<Rotation>()
+        .member<float>("angle");
+    state->world.component<Color>()
+        .member<float>("r")
+        .member<float>("g")
+        .member<float>("b");
+    state->world.component<Decay>()
+        .member<float>("seconds");
+
     // todo: set to core count?
     state->world.set_threads(4);
 
@@ -39,35 +51,38 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         .set(Rotation{.angle = -100})
         .set(VelocityLinear{})
         .set(VelocityAngular{})
-        .set(CollisionBox{.width = 40, .height = 30})
+        .set(CollisionBox{.height = 30, .width = 40})
         .set(DampingLinear{.value = 5.0f})
         .set(DampingAngular{.value = 5.0f})
-        .set(InputFlags::None)
+        .add<InputFlags>()
         .add<Dynamic>()
         .add<Tank>()
         .add<Local>();
 
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 100; i++) {
         state->world.entity()
             .set(Color{.value = {rand()%255, rand()%255, rand()%255}})
-            .set(Position{.value = {200.0, 200.0}})
+            .set(Position{.value = {200.0 + rand()%255, 200.0 + rand()%255}})
             .set(Rotation{.angle = 0})
             .set(VelocityLinear{})
             .set(VelocityAngular{})
-            .set(CollisionBox{.width = 40, .height = 30})
+            .set(CollisionBox{.height = 30, .width = 40})
             .set(DampingLinear{.value = 5.0f})
             .set(DampingAngular{.value = 5.0f})
-            .set(InputFlags::Left)
+            .set<InputFlags>(InputFlags::Left)
             .add<Dynamic>()
             .add<Tank>();
     }
 
+    state->world.import<flecs::stats>();
+    state->world.set<flecs::Rest>({});
+
+    state->world.import<Interface>();
+    state->world.import<Network>();
+    state->world.import<Physics>();
+    state->world.import<Render>();
     state->world.import<Logic>();
     state->world.import<Input>();
-    state->world.import<Render>();
-    state->world.import<Physics>();
-    state->world.import<Network>();
-    state->world.import<Interface>();
 
     *appstate = state;
     return SDL_APP_CONTINUE;

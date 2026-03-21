@@ -2,27 +2,21 @@
 
 #include <cstdint>
 
-enum class InputFlags : std::uint8_t {
-    None     = 0,
-    Backward = 1 << 0,
-    Forward  = 1 << 1,
-    Left     = 1 << 2,
-    Right    = 1 << 3,
-    Shoot    = 1 << 4,
+#include <flecs.h>
+
+struct InputFlags : flecs::bitmask {
+    static constexpr uint32_t None     = 0;
+    static constexpr uint32_t Left     = 1 << 0;
+    static constexpr uint32_t Right    = 1 << 1;
+    static constexpr uint32_t Backward = 1 << 2;
+    static constexpr uint32_t Forward  = 1 << 3;
+    static constexpr uint32_t Shoot    = 1 << 4;
+
+    InputFlags(uint32_t value = None) {
+        this->value = value;
+    }
+
+    bool has(const uint32_t flag) const {
+        return (this->value & flag) != InputFlags::None;
+    }
 };
-
-inline InputFlags operator~(InputFlags a) {
-    return static_cast<InputFlags>(~static_cast<uint8_t>(a));
-}
-
-inline InputFlags operator&(InputFlags a, InputFlags b) {
-    return static_cast<InputFlags>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
-}
-
-inline InputFlags operator|(InputFlags a, InputFlags b) {
-    return static_cast<InputFlags>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
-}
-
-inline InputFlags& operator|=(InputFlags& a, InputFlags b) {
-    return a = a | b;
-}

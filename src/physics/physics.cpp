@@ -34,6 +34,33 @@ static flecs::entity entity_from_body(const flecs::world& w, b2BodyId body) {
 }
 
 Physics::Physics(flecs::world& world) {
+    world.component<CollisionBox>()
+        .member<float>("height")
+        .member<float>("width");
+    world.component<CollisionRing>()
+        .member<float>("radius");
+    world.component<VelocityLinear>()
+        .member<float>("x")
+        .member<float>("y");
+    world.component<VelocityAngular>()
+        .member<float>("value");
+    world.component<ExternalForce>()
+        .member<float>("x")
+        .member<float>("y");
+    world.component<ExternalImpulse>()
+        .member<float>("x")
+        .member<float>("y");
+    world.component<Density>()
+        .member<float>("value");
+    world.component<Friction>()
+        .member<float>("value");
+    world.component<Restitution>()
+        .member<float>("value");
+    world.component<DampingLinear>()
+        .member<float>("value");
+    world.component<DampingAngular>()
+        .member<float>("value");
+
     world.component<B2Body>();
     world.component<PhysicsEngine>();
 
