@@ -46,7 +46,7 @@ Clay_RenderCommandArray Interface::settings(flecs::iter& it, InterfaceState& sta
 
             CLAY_TEXT(Str("Player Name"), CLAY_TEXT_CONFIG({ .textColor = { 200, 200, 200, 255 }, .fontSize = 14 }));
             Interface::input(state, events, CLAY_ID("NameInput"), settings.username, {
-                .len = 16, .placeholder = "Enter name...",
+                .maxLength = 16, .placeholder = "Enter name...", .multiline = true,
                 .allow = InputFilter::Printable
             }, inputStyle);
 
