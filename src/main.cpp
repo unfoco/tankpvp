@@ -39,7 +39,6 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     // todo: set to core count?
     state->world.set_threads(4);
 
-    state->world.set<WindowEvents>({});
     state->world.set<Settings>({
         .volume = 1.0,
         .test = true,

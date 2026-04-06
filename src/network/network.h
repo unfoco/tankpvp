@@ -1,6 +1,9 @@
 #pragma once
 
 #include <flecs.h>
+#include <enet/enet.h>
+
+#include "component/network.h"
 
 // server mode: Logic module + NetworkHost
 // client mode: NetworkClient (just replication)
@@ -10,4 +13,8 @@ struct Network {
     Network(flecs::world&);
 
 private:
+
+    static void host(flecs::entity, const NetworkEventHost&);
+    static void join(flecs::entity, const NetworkEventJoin&);
+    static void quit(flecs::entity, const NetworkEventQuit&);
 };

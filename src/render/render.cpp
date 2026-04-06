@@ -1,5 +1,6 @@
 #include "render.h"
-#include "SDL3/SDL_render.h"
+
+#include "component/event.h"
 
 #include <SDL3_image/SDL_image.h>
 
@@ -42,7 +43,7 @@ void Render::init(flecs::iter& it, size_t) {
 
     if (!SDL_SetRenderVSync(renderer, true)) {
         SDL_Log("Failed to enable vsync");
-        return;
+        exit(EXIT_FAILURE);
     }
 
     float scale = SDL_GetWindowDisplayScale(window);
@@ -54,6 +55,7 @@ void Render::init(flecs::iter& it, size_t) {
     Clay_Initialize(arena, {}, {
         .errorHandlerFunction = [](Clay_ErrorData err) {
             SDL_Log("Clay error: %.*s", err.errorText.length, err.errorText.chars);
+            exit(EXIT_FAILURE);
         }
     });
 
@@ -62,7 +64,7 @@ void Render::init(flecs::iter& it, size_t) {
     font = TTF_OpenFont("asset/font.ttf", 16);
     if (!font) {
         SDL_Log("Failed to load font: %s", SDL_GetError());
-        return;
+        exit(EXIT_FAILURE);
     }
 
     auto textEngine = TTF_CreateRendererTextEngine(renderer);
@@ -83,6 +85,9 @@ void Render::init(flecs::iter& it, size_t) {
     SDL_Texture* tankTurretTexture = IMG_LoadTexture(renderer, "asset/texture/tank/turret0.png");
     SDL_Texture* weaponBulletTexture = IMG_LoadTexture(renderer, "asset/texture/weapon/bullet.png");
 
+    it.world().set<WindowEvents>({
+        .target = window,
+    });
     it.world().set(RenderState{
         .window = window,
         .target = renderer,

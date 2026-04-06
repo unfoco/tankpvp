@@ -8,3 +8,4 @@ todo:
   - more multithreading?
   - ai players? (bt? ml?)
   - labyrinth generator
+  - settings load/save

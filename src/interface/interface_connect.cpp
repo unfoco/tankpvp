@@ -33,10 +33,17 @@ Clay_RenderCommandArray Interface::connect(flecs::iter& it, InterfaceState& stat
             InputStyle inputStyle = { .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_FIT() } };
 
             CLAY_TEXT(Str("Address"), CLAY_TEXT_CONFIG({ .textColor = { 200, 200, 200, 255 }, .fontSize = 14 }));
-            Interface::input(state, events, CLAY_ID("AddressInput"), target.address, "e.g. 127.0.0.1", inputStyle);
+            Interface::input(state, events, CLAY_ID("AddressInput"), target.address, {
+                .len = 253, .placeholder = "e.g. 127.0.0.1",
+                .allow = InputFilter::Address,
+            }, inputStyle);
+
 
             CLAY_TEXT(Str("Port"), CLAY_TEXT_CONFIG({ .textColor = { 200, 200, 200, 255 }, .fontSize = 14 }));
-            Interface::input(state, events, CLAY_ID("PortInput"), target.port, "e.g. 5000", inputStyle);
+            Interface::input(state, events, CLAY_ID("PortInput"), target.port, {
+                .min = 1, .max = 65535, .len = 5, .placeholder = "e.g. 5000",
+                .allow = InputFilter::Unsigned
+            }, inputStyle);
 
             CLAY({
                 .layout = {

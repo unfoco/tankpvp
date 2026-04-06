@@ -4,4 +4,6 @@
 
 #include <type/fixed_buffer.h>
 
-struct WindowEvents : FixedBuffer<SDL_Event, 256> {};
+struct WindowEvents : FixedBuffer<SDL_Event, 256> {
+    SDL_Window* target;
+};
