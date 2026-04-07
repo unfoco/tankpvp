@@ -20,12 +20,16 @@ inline Clay_String Str(const std::string& s) { return {.length = (int32_t)s.size
 struct InputField {
     std::string editBuf;
     Clay_BoundingBox bounds = {};
+
     size_t cursor = 0;
     size_t anchor = 0;
 
+    float scrollX = 0;
+    float scrollY = 0;
+
     bool hasSelection()      const { return cursor != anchor; }
-    size_t selectionStart()  const { return std::min(cursor, anchor); }
-    size_t selectionEnd()    const { return std::max(cursor, anchor); }
+    size_t selectionStart()        const { return std::min(cursor, anchor); }
+    size_t selectionEnd()          const { return std::max(cursor, anchor); }
     void collapseSelection()       { anchor = cursor; }
 };
 
@@ -110,8 +114,10 @@ struct InputFilter {
 struct InputConfig {
     float  min       = -FLT_MAX;
     float  max       =  FLT_MAX;
+
     size_t maxLength = 0;
-    size_t maxLines  = 0;
+    size_t maxHeight = 0;
+    size_t maxLine   = 0;
 
     bool multiline     = false;
     bool commitOnEnter = true;

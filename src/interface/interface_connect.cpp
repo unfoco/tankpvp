@@ -41,7 +41,7 @@ Clay_RenderCommandArray Interface::connect(flecs::iter& it, InterfaceState& stat
             CLAY_TEXT(Str("Port"), CLAY_TEXT_CONFIG({ .textColor = { 200, 200, 200, 255 }, .fontSize = 14 }));
             Interface::input(state, events, CLAY_ID("PortInput"), target.port, {
                 .min = 1, .max = 65535, .maxLength = 5, .placeholder = "e.g. 5000",
-                .allow = InputFilter::Unsigned
+                .allow = InputFilter::Unsigned,
             }, inputStyle);
 
             CLAY({

@@ -281,8 +281,8 @@ bool Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
         TTF_SetFontSize(state.font, st.fontSize);
 
         int lh = measureLine();
-        float relX = std::max(0.f, mx - f.bounds.x - (float)st.padding.left);
-        float relY = std::max(0.f, my - f.bounds.y - (float)st.padding.top);
+        float relX = std::max(0.f, mx - f.bounds.x - (float)st.padding.left + f.scrollX);
+        float relY = std::max(0.f, my - f.bounds.y - (float)st.padding.top  + f.scrollY);
         int targetLine = (int)(relY / (float)lh);
 
         size_t cpOff = 0, pos = 0;
@@ -395,7 +395,7 @@ bool Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
                 } else if (cfg.multiline) {
                     int lines = 1;
                     for (char c : buf) if (c == '\n') ++lines;
-                    if (!cfg.maxLines || lines < (int)cfg.maxLines) {
+                    if (!cfg.maxLine || lines < (int)cfg.maxLine) {
                         eraseSelection();
                         Utf8Insert(buf, f.cursor, "\n", 1);
                         ++f.cursor;
@@ -447,24 +447,79 @@ bool Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
         }
     }
 
+    if (focusLose) {
+        f.scrollX = 0;
+        f.scrollY = 0;
+    }
+
     if (state.mouseDown && !state.mousePressed && state.focusedId == id.id && state.font)
         f.cursor = hitTest(state.mouseX, state.mouseY);
 
     bool empty = buf.empty();
     Clay_Sizing sizing = st.sizing;
     Clay_Color border = focused ? st.focusBorderColor : st.borderColor;
+    int lh = measureLine();
 
-    if (!cfg.multiline) {
+    if (!cfg.multiline)
         sizing.height = CLAY_SIZING_FIXED((float)st.fontSize + st.padding.top + st.padding.bottom);
+
+    float cursorPx = 0, cursorPy = 0;
+    if (focused && state.font && f.cursor > 0) {
+        size_t bytePos = Utf8ToBytes(buf, f.cursor);
+        std::string_view textToCursor(buf.data(), bytePos);
+        auto lastNl = textToCursor.rfind('\n');
+        const char* lineStart = (lastNl == std::string_view::npos) ? textToCursor.data() : textToCursor.data() + lastNl + 1;
+        size_t lineBytes = (lastNl == std::string_view::npos) ? textToCursor.size() : textToCursor.size() - lastNl - 1;
+
+        int w = 0, h = 0;
+        TTF_GetStringSize(state.font, lineStart, lineBytes, &w, &h);
+        cursorPx = (float)w;
+
+        int lineNum = 0;
+        for (char c : textToCursor) if (c == '\n') ++lineNum;
+        cursorPy = (float)(lineNum * lh);
     }
 
-    if (cfg.multiline && focused) {
-        int lines = 1;
-        for (char c : buf) if (c == '\n') ++lines;
-        int lh = measureLine();
-        float contentH = (float)(lines * lh) + st.padding.top + st.padding.bottom;
+    int totalLines = 1;
+    for (char c : buf) if (c == '\n') ++totalLines;
+
+    if (cfg.multiline) {
+        int displayLines = (cfg.maxHeight > 0) ? std::min(totalLines, (int)cfg.maxHeight) : totalLines;
+        float h = (float)(displayLines * lh) + st.padding.top + st.padding.bottom;
         sizing.height = CLAY_SIZING_FIT();
-        sizing.height.size.minMax.min = contentH;
+        sizing.height.size.minMax.min = h;
+        if (cfg.maxHeight > 0) {
+            sizing.height.size.minMax.max = (float)((int)cfg.maxHeight * lh) + st.padding.top + st.padding.bottom;
+        }
+    }
+
+    if (focused) {
+        float contentW = (f.bounds.width > 0) ? f.bounds.width - st.padding.left - st.padding.right : 0;
+
+        float contentH;
+        if (!cfg.multiline) {
+            contentH = (float)st.fontSize;
+        } else if (cfg.maxHeight > 0) {
+            contentH = (float)((int)cfg.maxHeight * lh);
+        } else {
+            contentH = (float)(totalLines * lh);
+        }
+
+        if (contentW > 0) {
+            if (cursorPx - f.scrollX > contentW) f.scrollX = cursorPx - contentW;
+            if (cursorPx - f.scrollX < 0)        f.scrollX = cursorPx;
+            if (f.scrollX < 0)                    f.scrollX = 0;
+        }
+        if (cfg.multiline && contentH > 0) {
+            float cursorBottom = cursorPy + (float)lh;
+            if (cursorBottom - f.scrollY > contentH) f.scrollY = cursorBottom - contentH;
+            if (cursorPy - f.scrollY < 0)            f.scrollY = cursorPy;
+
+            float maxScroll = std::max(0.f, (float)(totalLines * lh) - contentH);
+            f.scrollY = std::clamp(f.scrollY, 0.f, maxScroll);
+        } else {
+            f.scrollY = 0;
+        }
     }
 
     bool clicked = false;
@@ -478,8 +533,18 @@ bool Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
             .layoutDirection = CLAY_LEFT_TO_RIGHT,
         },
         .backgroundColor = st.bgColor,
-        .border = {.color = border, .width = {st.borderWidth, st.borderWidth, st.borderWidth, st.borderWidth}},
+        .clip = {.horizontal = true, .vertical = cfg.multiline, .childOffset = {-f.scrollX, -f.scrollY}},
     }) {
+        CLAY({
+            .layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_GROW()}},
+            .border = {.color = border, .width = {st.borderWidth, st.borderWidth, st.borderWidth, st.borderWidth}},
+            .floating = {
+                .attachPoints = {.element = CLAY_ATTACH_POINT_LEFT_TOP, .parent = CLAY_ATTACH_POINT_LEFT_TOP},
+                .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
+                .attachTo = CLAY_ATTACH_TO_PARENT,
+            },
+        }) {}
+
         if (Clay_Hovered() && state.mousePressed) {
             state.focusedId = id.id;
             state.focusConsumed = true;
@@ -492,33 +557,18 @@ bool Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
         if (empty) {
             CLAY_TEXT(Str(cfg.placeholder), CLAY_TEXT_CONFIG({
                 .textColor = st.placeholderColor, .fontSize = st.fontSize,
+                .wrapMode = CLAY_TEXT_WRAP_NONE,
             }));
         } else {
             CLAY_TEXT(Str(buf), CLAY_TEXT_CONFIG({
                 .textColor = st.textColor, .fontSize = st.fontSize,
+                .wrapMode = cfg.multiline ? CLAY_TEXT_WRAP_WORDS : CLAY_TEXT_WRAP_NONE,
             }));
 
             if (focused) {
-                int lh = measureLine();
-
-                float cursorX = (float)st.padding.left;
-                float cursorY = (float)st.padding.top;
-
-                if (state.font && f.cursor > 0) {
-                    size_t bytePos = Utf8ToBytes(buf, f.cursor);
-                    std::string_view textToCursor(buf.data(), bytePos);
-                    auto lastNl = textToCursor.rfind('\n');
-                    const char* lineStart = (lastNl == std::string_view::npos) ? textToCursor.data() : textToCursor.data() + lastNl + 1;
-                    size_t lineBytes = (lastNl == std::string_view::npos) ? textToCursor.size() : textToCursor.size() - lastNl - 1;
-
-                    int w = 0, h = 0;
-                    TTF_GetStringSize(state.font, lineStart, lineBytes, &w, &h);
-                    cursorX += (float)w;
-
-                    int lineNum = 0;
-                    for (char c : textToCursor) if (c == '\n') ++lineNum;
-                    cursorY += (float)(lineNum * lh);
-                }
+                float ox = (float)st.padding.left - f.scrollX;
+                float centerY = cfg.multiline ? 0.f : ((float)st.fontSize - (float)lh) / 2.f;
+                float oy = (float)st.padding.top + centerY - f.scrollY;
 
                 if (f.hasSelection()) {
                     size_t lo = f.selectionStart(), hi = f.selectionEnd();
@@ -549,10 +599,11 @@ bool Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
                                 .layout = {.sizing = {CLAY_SIZING_FIXED(selW), CLAY_SIZING_FIXED((float)lh)}},
                                 .backgroundColor = {70, 130, 255, 128},
                                 .floating = {
-                                    .offset = {(float)st.padding.left + xStart, (float)st.padding.top + (float)(line * lh)},
-                                    .parentId = id.id,
+                                    .offset = {ox + xStart, oy + (float)(line * lh)},
                                     .attachPoints = {.element = CLAY_ATTACH_POINT_LEFT_TOP, .parent = CLAY_ATTACH_POINT_LEFT_TOP},
-                                    .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
+                                    .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
+                                    .attachTo = CLAY_ATTACH_TO_PARENT,
+                                    .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT,
                                 },
                             }) {}
                         }
@@ -567,10 +618,11 @@ bool Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
                         .layout = {.sizing = {CLAY_SIZING_FIXED(1), CLAY_SIZING_FIXED((float)lh)}},
                         .backgroundColor = st.textColor,
                         .floating = {
-                            .offset = {cursorX, cursorY},
-                            .parentId = id.id,
+                            .offset = {ox + cursorPx, oy + cursorPy},
                             .attachPoints = {.element = CLAY_ATTACH_POINT_LEFT_TOP, .parent = CLAY_ATTACH_POINT_LEFT_TOP},
-                            .attachTo = CLAY_ATTACH_TO_ELEMENT_WITH_ID,
+                            .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
+                            .attachTo = CLAY_ATTACH_TO_PARENT,
+                            .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT,
                         },
                     }) {}
                 }
