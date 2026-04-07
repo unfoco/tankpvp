@@ -9,3 +9,4 @@ todo:
   - ai players? (bt? ml?)
   - labyrinth generator
   - settings load/save
+  - move interface helpers into a seperate library?
