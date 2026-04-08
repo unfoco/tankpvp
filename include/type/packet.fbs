@@ -1,0 +1,36 @@
+namespace schema;
+
+struct Entity {
+    id: uint32;
+    x: float; y: float; angle: float;
+}
+
+struct Spawn {
+    id: uint32;
+    type: uint8;
+    x: float; y: float; angle: float;
+    r: uint8; g: uint8; b: uint8;
+}
+
+table Update {
+    tick: uint64;
+    spawns: [Spawn];
+    updates: [Entity];
+    despawns: [uint32];
+}
+
+table Input {
+    flags: ubyte;
+    tick: uint64;
+}
+
+table Welcome {
+    id: uint32;
+    tick: uint64;
+}
+
+union Payload { Update, Input, Welcome }
+
+table Packet { payload: Payload; }
+
+root_type Packet;

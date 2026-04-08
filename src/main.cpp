@@ -5,9 +5,7 @@
 #include <flecs.h>
 
 #include "component/event.h"
-#include "component/input.h"
 #include "component/object.h"
-#include "component/physics.h"
 #include "component/settings.h"
 
 #include "input/input.h"
@@ -43,38 +41,6 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
         .volume = 1.0,
         .test = true,
     });
-
-    state->world.entity()
-        .set(Color{.value = {255.0, 50.0, 50.0}})
-        .set(Position{.value = {250.0, 400.0}})
-        .set(Rotation{.angle = -100})
-        .set(VelocityLinear{})
-        .set(VelocityAngular{})
-        .set(CollisionBox{.height = 30, .width = 40})
-        .set(DampingLinear{.value = 5.0f})
-        .set(DampingAngular{.value = 5.0f})
-        .add<InputFlags>()
-        .add<Dynamic>()
-        .add<Tank>()
-        .add<Local>();
-
-    for (int i = 0; i < 100; i++) {
-        state->world.entity()
-            .set(Color{.value = {rand()%255, rand()%255, rand()%255}})
-            .set(Position{.value = {200.0 + rand()%255, 200.0 + rand()%255}})
-            .set(Rotation{.angle = 0})
-            .set(VelocityLinear{})
-            .set(VelocityAngular{})
-            .set(CollisionBox{.height = 30, .width = 40})
-            .set(DampingLinear{.value = 5.0f})
-            .set(DampingAngular{.value = 5.0f})
-            .set<InputFlags>(InputFlags::Left)
-            .add<Dynamic>()
-            .add<Tank>();
-    }
-
-    state->world.import<flecs::stats>();
-    state->world.set<flecs::Rest>({});
 
     state->world.import<Interface>();
     state->world.import<Network>();

@@ -17,17 +17,13 @@ namespace schema {
 
 struct Entity;
 
-struct Snapshot;
-struct SnapshotBuilder;
+struct Spawn;
+
+struct Update;
+struct UpdateBuilder;
 
 struct Input;
 struct InputBuilder;
-
-struct Join;
-struct JoinBuilder;
-
-struct Leave;
-struct LeaveBuilder;
 
 struct Welcome;
 struct WelcomeBuilder;
@@ -37,34 +33,28 @@ struct PacketBuilder;
 
 enum Payload : uint8_t {
   Payload_NONE = 0,
-  Payload_Snapshot = 1,
+  Payload_Update = 1,
   Payload_Input = 2,
-  Payload_Join = 3,
-  Payload_Leave = 4,
-  Payload_Welcome = 5,
+  Payload_Welcome = 3,
   Payload_MIN = Payload_NONE,
   Payload_MAX = Payload_Welcome
 };
 
-inline const Payload (&EnumValuesPayload())[6] {
+inline const Payload (&EnumValuesPayload())[4] {
   static const Payload values[] = {
     Payload_NONE,
-    Payload_Snapshot,
+    Payload_Update,
     Payload_Input,
-    Payload_Join,
-    Payload_Leave,
     Payload_Welcome
   };
   return values;
 }
 
 inline const char * const *EnumNamesPayload() {
-  static const char * const names[7] = {
+  static const char * const names[5] = {
     "NONE",
-    "Snapshot",
+    "Update",
     "Input",
-    "Join",
-    "Leave",
     "Welcome",
     nullptr
   };
@@ -81,20 +71,12 @@ template<typename T> struct PayloadTraits {
   static const Payload enum_value = Payload_NONE;
 };
 
-template<> struct PayloadTraits<schema::Snapshot> {
-  static const Payload enum_value = Payload_Snapshot;
+template<> struct PayloadTraits<schema::Update> {
+  static const Payload enum_value = Payload_Update;
 };
 
 template<> struct PayloadTraits<schema::Input> {
   static const Payload enum_value = Payload_Input;
-};
-
-template<> struct PayloadTraits<schema::Join> {
-  static const Payload enum_value = Payload_Join;
-};
-
-template<> struct PayloadTraits<schema::Leave> {
-  static const Payload enum_value = Payload_Leave;
 };
 
 template<> struct PayloadTraits<schema::Welcome> {
@@ -141,68 +123,169 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) Entity FLATBUFFERS_FINAL_CLASS {
 };
 FLATBUFFERS_STRUCT_END(Entity, 16);
 
-struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
-  typedef SnapshotBuilder Builder;
+FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) Spawn FLATBUFFERS_FINAL_CLASS {
+ private:
+  uint32_t id_;
+  uint8_t type_;
+  int8_t padding0__;  int16_t padding1__;
+  float x_;
+  float y_;
+  float angle_;
+  uint8_t r_;
+  uint8_t g_;
+  uint8_t b_;
+  int8_t padding2__;
+
+ public:
+  Spawn()
+      : id_(0),
+        type_(0),
+        padding0__(0),
+        padding1__(0),
+        x_(0),
+        y_(0),
+        angle_(0),
+        r_(0),
+        g_(0),
+        b_(0),
+        padding2__(0) {
+    (void)padding0__;
+    (void)padding1__;
+    (void)padding2__;
+  }
+  Spawn(uint32_t _id, uint8_t _type, float _x, float _y, float _angle, uint8_t _r, uint8_t _g, uint8_t _b)
+      : id_(::flatbuffers::EndianScalar(_id)),
+        type_(::flatbuffers::EndianScalar(_type)),
+        padding0__(0),
+        padding1__(0),
+        x_(::flatbuffers::EndianScalar(_x)),
+        y_(::flatbuffers::EndianScalar(_y)),
+        angle_(::flatbuffers::EndianScalar(_angle)),
+        r_(::flatbuffers::EndianScalar(_r)),
+        g_(::flatbuffers::EndianScalar(_g)),
+        b_(::flatbuffers::EndianScalar(_b)),
+        padding2__(0) {
+    (void)padding0__;
+    (void)padding1__;
+    (void)padding2__;
+  }
+  uint32_t id() const {
+    return ::flatbuffers::EndianScalar(id_);
+  }
+  uint8_t type() const {
+    return ::flatbuffers::EndianScalar(type_);
+  }
+  float x() const {
+    return ::flatbuffers::EndianScalar(x_);
+  }
+  float y() const {
+    return ::flatbuffers::EndianScalar(y_);
+  }
+  float angle() const {
+    return ::flatbuffers::EndianScalar(angle_);
+  }
+  uint8_t r() const {
+    return ::flatbuffers::EndianScalar(r_);
+  }
+  uint8_t g() const {
+    return ::flatbuffers::EndianScalar(g_);
+  }
+  uint8_t b() const {
+    return ::flatbuffers::EndianScalar(b_);
+  }
+};
+FLATBUFFERS_STRUCT_END(Spawn, 24);
+
+struct Update FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef UpdateBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
     VT_TICK = 4,
-    VT_ENTITIES = 6
+    VT_SPAWNS = 6,
+    VT_UPDATES = 8,
+    VT_DESPAWNS = 10
   };
   uint64_t tick() const {
     return GetField<uint64_t>(VT_TICK, 0);
   }
-  const ::flatbuffers::Vector<const schema::Entity *> *entities() const {
-    return GetPointer<const ::flatbuffers::Vector<const schema::Entity *> *>(VT_ENTITIES);
+  const ::flatbuffers::Vector<const schema::Spawn *> *spawns() const {
+    return GetPointer<const ::flatbuffers::Vector<const schema::Spawn *> *>(VT_SPAWNS);
+  }
+  const ::flatbuffers::Vector<const schema::Entity *> *updates() const {
+    return GetPointer<const ::flatbuffers::Vector<const schema::Entity *> *>(VT_UPDATES);
+  }
+  const ::flatbuffers::Vector<uint32_t> *despawns() const {
+    return GetPointer<const ::flatbuffers::Vector<uint32_t> *>(VT_DESPAWNS);
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint64_t>(verifier, VT_TICK, 8) &&
-           VerifyOffset(verifier, VT_ENTITIES) &&
-           verifier.VerifyVector(entities()) &&
+           VerifyOffset(verifier, VT_SPAWNS) &&
+           verifier.VerifyVector(spawns()) &&
+           VerifyOffset(verifier, VT_UPDATES) &&
+           verifier.VerifyVector(updates()) &&
+           VerifyOffset(verifier, VT_DESPAWNS) &&
+           verifier.VerifyVector(despawns()) &&
            verifier.EndTable();
   }
 };
 
-struct SnapshotBuilder {
-  typedef Snapshot Table;
+struct UpdateBuilder {
+  typedef Update Table;
   ::flatbuffers::FlatBufferBuilder &fbb_;
   ::flatbuffers::uoffset_t start_;
   void add_tick(uint64_t tick) {
-    fbb_.AddElement<uint64_t>(Snapshot::VT_TICK, tick, 0);
+    fbb_.AddElement<uint64_t>(Update::VT_TICK, tick, 0);
   }
-  void add_entities(::flatbuffers::Offset<::flatbuffers::Vector<const schema::Entity *>> entities) {
-    fbb_.AddOffset(Snapshot::VT_ENTITIES, entities);
+  void add_spawns(::flatbuffers::Offset<::flatbuffers::Vector<const schema::Spawn *>> spawns) {
+    fbb_.AddOffset(Update::VT_SPAWNS, spawns);
   }
-  explicit SnapshotBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+  void add_updates(::flatbuffers::Offset<::flatbuffers::Vector<const schema::Entity *>> updates) {
+    fbb_.AddOffset(Update::VT_UPDATES, updates);
+  }
+  void add_despawns(::flatbuffers::Offset<::flatbuffers::Vector<uint32_t>> despawns) {
+    fbb_.AddOffset(Update::VT_DESPAWNS, despawns);
+  }
+  explicit UpdateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
   }
-  ::flatbuffers::Offset<Snapshot> Finish() {
+  ::flatbuffers::Offset<Update> Finish() {
     const auto end = fbb_.EndTable(start_);
-    auto o = ::flatbuffers::Offset<Snapshot>(end);
+    auto o = ::flatbuffers::Offset<Update>(end);
     return o;
   }
 };
 
-inline ::flatbuffers::Offset<Snapshot> CreateSnapshot(
+inline ::flatbuffers::Offset<Update> CreateUpdate(
     ::flatbuffers::FlatBufferBuilder &_fbb,
     uint64_t tick = 0,
-    ::flatbuffers::Offset<::flatbuffers::Vector<const schema::Entity *>> entities = 0) {
-  SnapshotBuilder builder_(_fbb);
+    ::flatbuffers::Offset<::flatbuffers::Vector<const schema::Spawn *>> spawns = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<const schema::Entity *>> updates = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint32_t>> despawns = 0) {
+  UpdateBuilder builder_(_fbb);
   builder_.add_tick(tick);
-  builder_.add_entities(entities);
+  builder_.add_despawns(despawns);
+  builder_.add_updates(updates);
+  builder_.add_spawns(spawns);
   return builder_.Finish();
 }
 
-inline ::flatbuffers::Offset<Snapshot> CreateSnapshotDirect(
+inline ::flatbuffers::Offset<Update> CreateUpdateDirect(
     ::flatbuffers::FlatBufferBuilder &_fbb,
     uint64_t tick = 0,
-    const std::vector<schema::Entity> *entities = nullptr) {
-  auto entities__ = entities ? _fbb.CreateVectorOfStructs<schema::Entity>(*entities) : 0;
-  return schema::CreateSnapshot(
+    const std::vector<schema::Spawn> *spawns = nullptr,
+    const std::vector<schema::Entity> *updates = nullptr,
+    const std::vector<uint32_t> *despawns = nullptr) {
+  auto spawns__ = spawns ? _fbb.CreateVectorOfStructs<schema::Spawn>(*spawns) : 0;
+  auto updates__ = updates ? _fbb.CreateVectorOfStructs<schema::Entity>(*updates) : 0;
+  auto despawns__ = despawns ? _fbb.CreateVector<uint32_t>(*despawns) : 0;
+  return schema::CreateUpdate(
       _fbb,
       tick,
-      entities__);
+      spawns__,
+      updates__,
+      despawns__);
 }
 
 struct Input FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -257,102 +340,23 @@ inline ::flatbuffers::Offset<Input> CreateInput(
   return builder_.Finish();
 }
 
-struct Join FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
-  typedef JoinBuilder Builder;
-  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
-    VT_ID = 4
-  };
-  uint32_t id() const {
-    return GetField<uint32_t>(VT_ID, 0);
-  }
-  template <bool B = false>
-  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
-    return VerifyTableStart(verifier) &&
-           VerifyField<uint32_t>(verifier, VT_ID, 4) &&
-           verifier.EndTable();
-  }
-};
-
-struct JoinBuilder {
-  typedef Join Table;
-  ::flatbuffers::FlatBufferBuilder &fbb_;
-  ::flatbuffers::uoffset_t start_;
-  void add_id(uint32_t id) {
-    fbb_.AddElement<uint32_t>(Join::VT_ID, id, 0);
-  }
-  explicit JoinBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
-        : fbb_(_fbb) {
-    start_ = fbb_.StartTable();
-  }
-  ::flatbuffers::Offset<Join> Finish() {
-    const auto end = fbb_.EndTable(start_);
-    auto o = ::flatbuffers::Offset<Join>(end);
-    return o;
-  }
-};
-
-inline ::flatbuffers::Offset<Join> CreateJoin(
-    ::flatbuffers::FlatBufferBuilder &_fbb,
-    uint32_t id = 0) {
-  JoinBuilder builder_(_fbb);
-  builder_.add_id(id);
-  return builder_.Finish();
-}
-
-struct Leave FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
-  typedef LeaveBuilder Builder;
-  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
-    VT_ID = 4
-  };
-  uint32_t id() const {
-    return GetField<uint32_t>(VT_ID, 0);
-  }
-  template <bool B = false>
-  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
-    return VerifyTableStart(verifier) &&
-           VerifyField<uint32_t>(verifier, VT_ID, 4) &&
-           verifier.EndTable();
-  }
-};
-
-struct LeaveBuilder {
-  typedef Leave Table;
-  ::flatbuffers::FlatBufferBuilder &fbb_;
-  ::flatbuffers::uoffset_t start_;
-  void add_id(uint32_t id) {
-    fbb_.AddElement<uint32_t>(Leave::VT_ID, id, 0);
-  }
-  explicit LeaveBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
-        : fbb_(_fbb) {
-    start_ = fbb_.StartTable();
-  }
-  ::flatbuffers::Offset<Leave> Finish() {
-    const auto end = fbb_.EndTable(start_);
-    auto o = ::flatbuffers::Offset<Leave>(end);
-    return o;
-  }
-};
-
-inline ::flatbuffers::Offset<Leave> CreateLeave(
-    ::flatbuffers::FlatBufferBuilder &_fbb,
-    uint32_t id = 0) {
-  LeaveBuilder builder_(_fbb);
-  builder_.add_id(id);
-  return builder_.Finish();
-}
-
 struct Welcome FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef WelcomeBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
-    VT_ID = 4
+    VT_ID = 4,
+    VT_TICK = 6
   };
   uint32_t id() const {
     return GetField<uint32_t>(VT_ID, 0);
+  }
+  uint64_t tick() const {
+    return GetField<uint64_t>(VT_TICK, 0);
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint32_t>(verifier, VT_ID, 4) &&
+           VerifyField<uint64_t>(verifier, VT_TICK, 8) &&
            verifier.EndTable();
   }
 };
@@ -363,6 +367,9 @@ struct WelcomeBuilder {
   ::flatbuffers::uoffset_t start_;
   void add_id(uint32_t id) {
     fbb_.AddElement<uint32_t>(Welcome::VT_ID, id, 0);
+  }
+  void add_tick(uint64_t tick) {
+    fbb_.AddElement<uint64_t>(Welcome::VT_TICK, tick, 0);
   }
   explicit WelcomeBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
@@ -377,8 +384,10 @@ struct WelcomeBuilder {
 
 inline ::flatbuffers::Offset<Welcome> CreateWelcome(
     ::flatbuffers::FlatBufferBuilder &_fbb,
-    uint32_t id = 0) {
+    uint32_t id = 0,
+    uint64_t tick = 0) {
   WelcomeBuilder builder_(_fbb);
+  builder_.add_tick(tick);
   builder_.add_id(id);
   return builder_.Finish();
 }
@@ -396,17 +405,11 @@ struct Packet FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     return GetPointer<const void *>(VT_PAYLOAD);
   }
   template<typename T> const T *payload_as() const;
-  const schema::Snapshot *payload_as_Snapshot() const {
-    return payload_type() == schema::Payload_Snapshot ? static_cast<const schema::Snapshot *>(payload()) : nullptr;
+  const schema::Update *payload_as_Update() const {
+    return payload_type() == schema::Payload_Update ? static_cast<const schema::Update *>(payload()) : nullptr;
   }
   const schema::Input *payload_as_Input() const {
     return payload_type() == schema::Payload_Input ? static_cast<const schema::Input *>(payload()) : nullptr;
-  }
-  const schema::Join *payload_as_Join() const {
-    return payload_type() == schema::Payload_Join ? static_cast<const schema::Join *>(payload()) : nullptr;
-  }
-  const schema::Leave *payload_as_Leave() const {
-    return payload_type() == schema::Payload_Leave ? static_cast<const schema::Leave *>(payload()) : nullptr;
   }
   const schema::Welcome *payload_as_Welcome() const {
     return payload_type() == schema::Payload_Welcome ? static_cast<const schema::Welcome *>(payload()) : nullptr;
@@ -421,20 +424,12 @@ struct Packet FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
 };
 
-template<> inline const schema::Snapshot *Packet::payload_as<schema::Snapshot>() const {
-  return payload_as_Snapshot();
+template<> inline const schema::Update *Packet::payload_as<schema::Update>() const {
+  return payload_as_Update();
 }
 
 template<> inline const schema::Input *Packet::payload_as<schema::Input>() const {
   return payload_as_Input();
-}
-
-template<> inline const schema::Join *Packet::payload_as<schema::Join>() const {
-  return payload_as_Join();
-}
-
-template<> inline const schema::Leave *Packet::payload_as<schema::Leave>() const {
-  return payload_as_Leave();
 }
 
 template<> inline const schema::Welcome *Packet::payload_as<schema::Welcome>() const {
@@ -478,20 +473,12 @@ inline bool VerifyPayload(::flatbuffers::VerifierTemplate<B> &verifier, const vo
     case Payload_NONE: {
       return true;
     }
-    case Payload_Snapshot: {
-      auto ptr = reinterpret_cast<const schema::Snapshot *>(obj);
+    case Payload_Update: {
+      auto ptr = reinterpret_cast<const schema::Update *>(obj);
       return verifier.VerifyTable(ptr);
     }
     case Payload_Input: {
       auto ptr = reinterpret_cast<const schema::Input *>(obj);
-      return verifier.VerifyTable(ptr);
-    }
-    case Payload_Join: {
-      auto ptr = reinterpret_cast<const schema::Join *>(obj);
-      return verifier.VerifyTable(ptr);
-    }
-    case Payload_Leave: {
-      auto ptr = reinterpret_cast<const schema::Leave *>(obj);
       return verifier.VerifyTable(ptr);
     }
     case Payload_Welcome: {
