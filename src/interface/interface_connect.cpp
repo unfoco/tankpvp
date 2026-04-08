@@ -60,7 +60,8 @@ Clay_RenderCommandArray Interface::connect(flecs::iter& it, InterfaceState& stat
 
                 ButtonStyle connectBtn = { .color = { 70, 130, 255, 255 } };
                 if (Interface::button(state, CLAY_ID("BtnDoConnect"), "Connect", connectBtn)) {
-                    // todo
+                    it.world().entity().set(NetworkRequestJoin{.address = target.address, .port = target.port});
+                    page = InterfacePage::Ingame;
                 }
             }
         }

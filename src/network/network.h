@@ -14,7 +14,7 @@ struct Network {
 
 private:
 
-    static void host(flecs::entity, const NetworkEventHost&);
-    static void join(flecs::entity, const NetworkEventJoin&);
-    static void quit(flecs::entity, const NetworkEventQuit&);
+    static void host(flecs::entity, const NetworkRequestHost&);
+    static void join(flecs::entity, const NetworkRequestJoin&);
+    static void quit(flecs::entity, const NetworkRequestQuit&);
 };

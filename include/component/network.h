@@ -4,16 +4,26 @@
 
 #include <enet/enet.h>
 
-struct NetworkTarget { std::string address; uint16_t port; };
-struct NetworkEventHost{ std::string address; uint16_t port; };
-struct NetworkEventJoin{ std::string address; uint16_t port; };
-struct NetworkEventQuit{};
+struct Remote {};
+struct Controls {};
 
-struct NetworkHost{
-    ENetHost* target;
-    bool server;
+struct NetworkId { uint32_t value = 0; };
+
+struct NetworkServer {
+    ENetHost* host = nullptr;
 };
 
-struct NetworkConnection{
-    ENetPeer* peer;
+struct NetworkPeer {
+    ENetPeer* peer = nullptr;
 };
+
+struct NetworkClient {
+    ENetHost* host = nullptr;
+    ENetPeer* server = nullptr;
+};
+
+struct NetworkRequestHost { std::string address; uint16_t port; };
+struct NetworkRequestJoin { std::string address; uint16_t port; };
+struct NetworkRequestQuit {};
+
+struct NetworkTarget { std::string address; uint16_t port = 0; };

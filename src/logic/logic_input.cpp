@@ -1,4 +1,3 @@
-#include "component/physics.h"
 #include "logic.h"
 
 void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Position& pos, const Rotation& rot, VelocityLinear& vel, VelocityAngular& ang) {

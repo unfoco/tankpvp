@@ -1,6 +1,7 @@
 #include "network.h"
 
 #include "SDL3/SDL_log.h"
+#include "component/network.h"
 
 Network::Network(flecs::world& world) {
     if (enet_initialize() != 0) {
@@ -12,7 +13,7 @@ Network::Network(flecs::world& world) {
     world.set<NetworkTarget>({});
 }
 
-void Network::host(flecs::entity, const NetworkEventHost& target) {
+void Network::host(flecs::entity, const NetworkRequestHost& target) {
     auto address = ENetAddress{
         .port = target.port
     };
@@ -25,7 +26,7 @@ void Network::host(flecs::entity, const NetworkEventHost& target) {
     }
 }
 
-void Network::join(flecs::entity, const NetworkEventJoin&) {
+void Network::join(flecs::entity, const NetworkRequestJoin&) {
     auto client = enet_host_create(NULL, 1, 2, 0, 0);
 
     if (!client) {
@@ -34,7 +35,7 @@ void Network::join(flecs::entity, const NetworkEventJoin&) {
     }
 }
 
-void Network::quit(flecs::entity, const NetworkEventQuit&) {
+void Network::quit(flecs::entity, const NetworkRequestQuit&) {
     //enet_host_destroy(server);
     //enet_host_destroy(client);
 }

@@ -1,5 +1,7 @@
 #include "interface.h"
 
+#include "component/network.h"
+
 Clay_RenderCommandArray Interface::main(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
     Clay_BeginLayout();
 
@@ -26,6 +28,7 @@ Clay_RenderCommandArray Interface::main(flecs::iter& it, InterfaceState& state, 
         menuBtn.fontSize = 20;
 
         if (Interface::button(state, CLAY_ID("BtnPlay"), "Host / Singleplayer", menuBtn)) {
+            it.world().entity().set(NetworkRequestHost{.address = "0.0.0.0", .port = 5000});
             page = InterfacePage::Ingame;
         }
 
