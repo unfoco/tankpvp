@@ -1,6 +1,7 @@
 # tankpvp
 
 todo:
+  - strip system definitions from module headers to prevent internal dependencies to leak
   - move over and cleanup network stuff from the old project
   - connect & host interface functionality
   - walls
