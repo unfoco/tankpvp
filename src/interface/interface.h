@@ -28,8 +28,8 @@ struct InputField {
     float scrollY = 0;
 
     bool hasSelection()      const { return cursor != anchor; }
-    size_t selectionStart()        const { return std::min(cursor, anchor); }
-    size_t selectionEnd()          const { return std::max(cursor, anchor); }
+    size_t selectionStart()  const { return std::min(cursor, anchor); }
+    size_t selectionEnd()    const { return std::max(cursor, anchor); }
     void collapseSelection()       { anchor = cursor; }
 };
 
@@ -112,8 +112,8 @@ struct InputFilter {
 };
 
 struct InputConfig {
-    float  min       = -FLT_MAX;
-    float  max       =  FLT_MAX;
+    float min = -FLT_MAX;
+    float max =  FLT_MAX;
 
     size_t maxLength = 0;
     size_t maxHeight = 0;

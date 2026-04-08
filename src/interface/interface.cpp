@@ -422,6 +422,19 @@ bool Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
         }
     }
 
+    if constexpr (kNumeric) {
+        if (focused && !buf.empty()) {
+            char* end = nullptr;
+            if constexpr (std::is_floating_point_v<T>) {
+                double d = strtod(buf.c_str(), &end);
+                if (end != buf.c_str()) value = std::clamp(static_cast<T>(d), static_cast<T>(cfg.min), static_cast<T>(cfg.max));
+            } else {
+                long long ll = strtoll(buf.c_str(), &end, 10);
+                if (end != buf.c_str()) value = std::clamp(static_cast<T>(ll), static_cast<T>(cfg.min), static_cast<T>(cfg.max));
+            }
+        }
+    }
+
     bool committed = false;
     if constexpr (kNumeric) {
         if (focusLose || enterCommit) {
