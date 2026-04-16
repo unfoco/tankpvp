@@ -2,9 +2,7 @@
 
 #include <clay.h>
 
-#include "component/event.h"
 #include "component/object.h"
-#include "component/interface.h"
 
 Input::Input(flecs::world& world) {
     world.component<InputFlags>()
@@ -14,16 +12,17 @@ Input::Input(flecs::world& world) {
         .bit("Forward", InputFlags::Forward)
         .bit("Shoot", InputFlags::Shoot);
 
-    world.system<InputFlags>("input::update")
-        .kind(flecs::PostUpdate)
+    world.system<InputFlags>("input::tank")
+        .kind(flecs::PreUpdate)
         .with<Local>()
-        .each(Input::update);
+        .each(Input::tank);
+    world.system<InterfacePrevious, InterfacePage, WindowEvents>("input::screen")
+        .kind(flecs::PreUpdate)
+        .each(Input::screen);
 }
 
-void Input::update(flecs::iter& it, size_t, InputFlags& flags) {
-    const auto& prev = it.world().get<InterfacePrevious>();
-    auto& page = it.world().get_mut<InterfacePage>();
-
+void Input::tank(flecs::iter& it, size_t, InputFlags& flags) {
+    const auto& page = it.world().get<InterfacePage>();
     bool ingame = page == InterfacePage::Ingame;
 
     if (ingame) {
@@ -43,7 +42,15 @@ void Input::update(flecs::iter& it, size_t, InputFlags& flags) {
             if (ingame && event.key.key == SDLK_SPACE && !event.key.repeat) {
                 flags.value |= InputFlags::Shoot;
             }
+            break;
+        }
+    }
+}
 
+void Input::screen(flecs::iter& it, size_t, const InterfacePrevious& prev, InterfacePage& page, const WindowEvents& events) {
+    for (const auto& event : events) {
+        switch (event.type) {
+        case SDL_EVENT_KEY_DOWN:
             if (event.key.key == SDLK_ESCAPE && !event.key.repeat) {
                 page = prev.page;
             }
