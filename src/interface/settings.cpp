@@ -41,7 +41,7 @@ auto Interface::settings(flecs::iter& it, InterfaceState& state, InterfacePage& 
             bool inSession = (prev.page == InterfacePage::Pause);
 
             CLAY_TEXT(Str("Player Name"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
-            Interface::input(state, events, CLAY_ID("NameInput"), settings.username, {.maxLength = 16, .placeholder = "Enter name...", .allow = InputFilter::Name, .disabled = inSession}, inputStyle);
+            Interface::input(state, events, CLAY_ID("NameInput"), settings.username, {.maxLength = 16, .disabled = inSession, .placeholder = "Enter name...", .allow = InputFilter::Name}, inputStyle);
 
             SETTING_ROW("RowVolume") {
                 CLAY_TEXT(Str("Master Volume"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32}));

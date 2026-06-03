@@ -1,6 +1,7 @@
 #include "interface.h"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <string_view>
 #include <utility>
