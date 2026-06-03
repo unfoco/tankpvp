@@ -25,11 +25,11 @@ auto Interface::host(flecs::iter& it, InterfaceState& state, InterfacePage& page
                   },
               .backgroundColor = {35, 35, 40, 255},
               .cornerRadius = CLAY_CORNER_RADIUS(12)}) {
-            CLAY_TEXT(Str("HOST SERVER"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 24}));
+            CLAY_TEXT(Str("HOST SERVER"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32}));
 
             InputStyle inputStyle = {.sizing = {.width = CLAY_SIZING_GROW(), .height = CLAY_SIZING_FIT()}};
 
-            CLAY_TEXT(Str("Address"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 14}));
+            CLAY_TEXT(Str("Address"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
             Interface::input(state, events, CLAY_ID("AddressInput"), target.address,
                              {
                                  .maxLength = 253,
@@ -38,7 +38,7 @@ auto Interface::host(flecs::iter& it, InterfaceState& state, InterfacePage& page
                              },
                              inputStyle);
 
-            CLAY_TEXT(Str("Port"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 14}));
+            CLAY_TEXT(Str("Port"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
             Interface::input(state, events, CLAY_ID("PortInput"), target.port,
                              {
                                  .min = 1,

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "component/interface.h"
 #include "component/input.h"
 #include "component/network.h"
 #include "component/object.h"
@@ -221,6 +222,11 @@ void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* pack
         case Message::Structural:
             if (conn.welcomed) {
                 apply_structural(world, conn, r);
+            }
+            break;
+        case Message::Chat:
+            if (ChatLog* log = world.try_get_mut<ChatLog>()) {
+                log->push(util::decode<MessageChat>(r).text);
             }
             break;
         default:

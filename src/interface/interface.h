@@ -6,6 +6,7 @@
 #include <flecs.h>
 
 #include <cfloat>
+#include <deque>
 #include <string>
 
 #include "component/event.h"
@@ -31,6 +32,8 @@ struct InputField {
 
     float scrollX = 0;
     float scrollY = 0;
+
+    double blinkBase = 0;
 
     [[nodiscard]] auto hasSelection() const -> bool {
         return cursor != anchor;
@@ -67,6 +70,13 @@ struct InterfaceState {
 
     TTF_Font* font = nullptr;
 
+    std::deque<std::string> textPool;
+
+    auto intern(std::string s) -> const std::string& {
+        textPool.push_back(std::move(s));
+        return textPool.back();
+    }
+
     FixedBuffer<FieldSlot, 64> fields;
 
     auto acquireField(uint32_t id) -> InputField& {
@@ -92,8 +102,9 @@ struct InterfaceState {
 struct ButtonStyle {
     Clay_Color color = {.r = 50, .g = 50, .b = 55, .a = 255};
     Clay_Color textColor = {.r = 255, .g = 255, .b = 255, .a = 255};
-    uint16_t fontSize = 16;
+    uint16_t fontSize = 32;
     float cornerRadius = 6;
+    float width = 0;
     Clay_Padding padding = {.left = 16, .right = 16, .top = 10, .bottom = 10};
 };
 
@@ -120,7 +131,8 @@ struct InputStyle {
     Clay_Color borderColor = {.r = 80, .g = 80, .b = 85, .a = 255};
     Clay_Color focusBorderColor = {.r = 70, .g = 130, .b = 255, .a = 255};
     uint16_t borderWidth = 1;
-    uint16_t fontSize = 16;
+    uint16_t fontSize = 32;
+    float cornerRadius = 4;
     Clay_Sizing sizing = {};
     Clay_Padding padding = {.left = 8, .right = 8, .top = 6, .bottom = 6};
 };
@@ -144,6 +156,9 @@ struct InputFilter {
     static auto Printable(char c) -> bool {
         return static_cast<unsigned char>(c) >= 0x80 || (c >= 32 && c < 127);
     }
+    static auto Name(char c) -> bool {
+        return static_cast<unsigned char>(c) >= 0x80 || (c > 32 && c < 127);
+    }
     static auto Address(char c) -> bool {
         return Alphanum(c) || c == '.' || c == '-' || c == ':';
     }
@@ -159,6 +174,7 @@ struct InputConfig {
 
     bool multiline = false;
     bool commitOnEnter = true;
+    bool disabled = false;
 
     const char* placeholder = "";
     const char* format = nullptr;
@@ -183,10 +199,14 @@ struct Interface {
     template <typename T = std::string>
     static auto input(InterfaceState& state, const WindowEvents& events, Clay_ElementId id, T& value, InputConfig cfg = {}, InputStyle st = {}) -> bool;
 
+    static auto wrap(InterfaceState& state, const std::string& text, uint16_t fontSize, float maxWidth) -> std::string;
+
     static auto main(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray;
     static auto host(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray;
     static auto pause(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray;
     static auto ingame(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray;
+    static auto server(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray;
     static auto connect(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray;
     static auto settings(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray;
+    static auto chat(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray;
 };

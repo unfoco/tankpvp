@@ -19,14 +19,14 @@ auto Interface::settings(flecs::iter& it, InterfaceState& state, InterfacePage& 
         CLAY({.id = CLAY_ID("SettingsPanel"),
               .layout =
                   {
-                      .sizing = {CLAY_SIZING_FIXED(500), CLAY_SIZING_FIT()},
+                      .sizing = {CLAY_SIZING_FIXED(520), CLAY_SIZING_FIT()},
                       .padding = {30, 30, 30, 30},
                       .childGap = 24,
                       .layoutDirection = CLAY_TOP_TO_BOTTOM,
                   },
               .backgroundColor = {35, 35, 40, 255},
               .cornerRadius = CLAY_CORNER_RADIUS(12)}) {
-            CLAY_TEXT(Str("SETTINGS"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 24}));
+            CLAY_TEXT(Str("SETTINGS"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32}));
 
 #define SETTING_ROW(id_string)                                                          \
     CLAY({.id = CLAY_ID(id_string),                                                     \
@@ -38,17 +38,19 @@ auto Interface::settings(flecs::iter& it, InterfaceState& state, InterfacePage& 
 
             InputStyle inputStyle = {.sizing = {.width = CLAY_SIZING_GROW(), .height = CLAY_SIZING_FIT()}};
 
-            CLAY_TEXT(Str("Player Name"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 14}));
-            Interface::input(state, events, CLAY_ID("NameInput"), settings.username, {.maxLength = 16, .placeholder = "Enter name...", .allow = InputFilter::Printable}, inputStyle);
+            bool inSession = (prev.page == InterfacePage::Pause);
+
+            CLAY_TEXT(Str("Player Name"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
+            Interface::input(state, events, CLAY_ID("NameInput"), settings.username, {.maxLength = 16, .placeholder = "Enter name...", .allow = InputFilter::Name, .disabled = inSession}, inputStyle);
 
             SETTING_ROW("RowVolume") {
-                CLAY_TEXT(Str("Master Volume"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 16}));
+                CLAY_TEXT(Str("Master Volume"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32}));
                 CLAY({.layout = {.sizing = {CLAY_SIZING_GROW()}}}) {}
                 Interface::slider(state, CLAY_ID("VolSlider"), settings.volume, 0.0F, 1.0F, {});
             }
 
             SETTING_ROW("RowTest") {
-                CLAY_TEXT(Str("Test"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 16}));
+                CLAY_TEXT(Str("Test"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32}));
                 CLAY({.layout = {.sizing = {CLAY_SIZING_GROW()}}}) {}
                 if (Interface::toggle(state, CLAY_ID("FsToggle"), settings.test, {})) {
                 }

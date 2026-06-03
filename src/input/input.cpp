@@ -2,6 +2,7 @@
 
 #include <clay.h>
 
+#include "component/interface.h"
 #include "component/object.h"
 
 Input::Input(flecs::world& world) {
@@ -18,11 +19,14 @@ Input::Input(flecs::world& world) {
 
 void Input::tank(flecs::iter& it, size_t i, InputFlags& flags) {
     const auto& page = it.world().get<InterfacePage>();
-    bool ingame = page == InterfacePage::Ingame;
+    const auto* capture = it.world().try_get<InputCapture>();
+    bool typing = (capture != nullptr) && capture->active;
+    bool ingame = page == InterfacePage::Ingame && !typing;
+
+    flags.value = InputFlags::None;
 
     if (ingame) {
         const bool* keys = SDL_GetKeyboardState(nullptr);
-        flags.value = InputFlags::None;
 
         if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]) {
             flags.value |= InputFlags::Forward;
@@ -53,10 +57,12 @@ void Input::tank(flecs::iter& it, size_t i, InputFlags& flags) {
 }
 
 void Input::screen(flecs::iter& it, size_t i, const InterfacePrevious& prev, InterfacePage& page, const WindowEvents& events) {
+    const auto* capture = it.world().try_get<InputCapture>();
+    bool typing = (capture != nullptr) && capture->active;
     for (const auto& event : events) {
         switch (event.type) {
             case SDL_EVENT_KEY_DOWN:
-                if (event.key.key == SDLK_ESCAPE && !event.key.repeat) {
+                if (event.key.key == SDLK_ESCAPE && !event.key.repeat && !typing) {
                     page = prev.page;
                 }
                 break;

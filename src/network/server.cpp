@@ -5,9 +5,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "component/interface.h"
 #include "component/input.h"
 #include "component/network.h"
 #include "component/object.h"
@@ -20,6 +22,20 @@
 
 static auto peer_entity(flecs::world& world, ENetPeer* peer) -> flecs::entity {
     return world.entity(static_cast<flecs::entity_t>(reinterpret_cast<uintptr_t>(peer->data)));
+}
+
+void broadcast_chat(flecs::world& world, const std::string& line) {
+    Writer w = wire::message(Message::Chat);
+    MessageChat out{line};
+    util::encode(w, out);
+    world.query_builder<Peer>().build().each([&](const Peer& p) {
+        if (p.welcomed && (p.peer != nullptr)) {
+            wire::send(p.peer, w, CHANNEL_RELIABLE, true);
+        }
+    });
+    if (ChatLog* log = world.try_get_mut<ChatLog>()) {
+        log->push(line);
+    }
 }
 
 struct ServerQueries {
@@ -70,7 +86,19 @@ static void send_welcome(flecs::world& world, NetworkHost& host, ENetPeer* peer,
     wire::send(peer, w, CHANNEL_RELIABLE, true);
 }
 
-static void on_connect(flecs::world& world, NetworkHost& host, ENetPeer* epeer) {
+static void on_hello(flecs::world& world, NetworkHost& host, ENetPeer* epeer, const std::string& username) {
+    std::string name = username.substr(0, 16);
+    if (name.find(' ') != std::string::npos) {
+        enet_peer_disconnect(epeer, 0);
+        return;
+    }
+
+    flecs::entity existing = peer_entity(world, epeer);
+    if (existing && existing.is_alive() && existing.has<Peer>()) {
+        existing.get_mut<Peer>().username = name;
+        return;
+    }
+
     uint32_t pid = host.next_peer++;
 
     flecs::entity tank = world.entity()
@@ -90,12 +118,12 @@ static void on_connect(flecs::world& world, NetworkHost& host, ENetPeer* epeer) 
     uint64_t nid = host.next_id++;
     tank.set<NetworkId>({nid}).add<Replicated>();
 
-    flecs::entity pe = world.entity().set<Peer>({.peer = epeer, .id = pid}).add<Interest>().add<Replication>();
+    flecs::entity pe = world.entity().set<Peer>({.peer = epeer, .id = pid, .username = name}).add<Interest>().add<Replication>();
     pe.add<Controls>(tank);
 
     epeer->data = reinterpret_cast<void*>(static_cast<uintptr_t>(pe.id()));
     send_welcome(world, host, epeer, pid, nid);
-    SDL_Log("network: peer %u connected (entity %llu)", pid, static_cast<unsigned long long>(nid));
+    SDL_Log("network: peer %u ('%s') connected (entity %llu)", pid, name.c_str(), static_cast<unsigned long long>(nid));
 }
 
 static void on_disconnect(flecs::world& world, ENetPeer* epeer) {
@@ -114,6 +142,10 @@ static void on_disconnect(flecs::world& world, ENetPeer* epeer) {
 static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* packet) {
     Reader r(packet->data, packet->dataLength);
     auto kind = static_cast<Message>(r.get<uint8_t>());
+    if (kind == Message::Hello) {
+        on_hello(world, world.get_mut<NetworkHost>(), epeer, util::decode<MessageHello>(r).username);
+        return;
+    }
     flecs::entity pe = peer_entity(world, epeer);
     if (!pe || !pe.is_alive() || !pe.has<Peer>()) {
         return;
@@ -187,6 +219,18 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
             }
             break;
         }
+        case Message::Chat: {
+            const Peer& p = pe.get<Peer>();
+            std::string raw = util::decode<MessageChat>(r).text.substr(0, 200);
+            size_t start = raw.find_first_not_of(' ');
+            if (start == std::string::npos) {
+                break;
+            }
+            raw = raw.substr(start, raw.find_last_not_of(' ') - start + 1);
+            std::string name = p.username.empty() ? ("player" + std::to_string(p.id)) : p.username;
+            broadcast_chat(world, "<" + name + "> " + raw);
+            break;
+        }
         default:
             break;
     }
@@ -207,7 +251,6 @@ void NetworkServer::pump(flecs::iter& it) {
         while (enet_host_service(host.host, &ev, 0) > 0) {
             switch (ev.type) {
                 case ENET_EVENT_TYPE_CONNECT:
-                    on_connect(world, host, ev.peer);
                     break;
                 case ENET_EVENT_TYPE_RECEIVE:
                     handle_packet(world, ev.peer, ev.packet);

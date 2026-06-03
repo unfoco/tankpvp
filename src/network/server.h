@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <map>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -37,6 +38,7 @@ struct Peer {
     double stamp = 0;
     bool welcomed = false;
     uint64_t last_fire = 0;
+    std::string username;
     std::map<uint64_t, PendingInput> inputs;
 
     std::unordered_map<uint32_t, uint64_t> claims;
@@ -106,3 +108,5 @@ struct NetworkServer {
     static void hits(flecs::iter& it);
     static void replicate(flecs::iter& it);
 };
+
+void broadcast_chat(flecs::world& world, const std::string& line);

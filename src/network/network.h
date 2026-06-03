@@ -12,4 +12,5 @@ struct Network {
     static void host(flecs::entity e, const NetworkRequestHost& req);
     static void join(flecs::entity e, const NetworkRequestJoin& req);
     static void quit(flecs::entity e, const NetworkRequestQuit& req);
+    static void chat(flecs::entity e, const NetworkRequestChat& req);
 };

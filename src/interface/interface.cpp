@@ -5,6 +5,8 @@
 #include <string_view>
 #include <utility>
 
+#include "util/time.h"
+
 static inline auto Utf8CpBytes(unsigned char lead) noexcept -> size_t {
     if (lead < 0x80) {
         return 1;
@@ -16,6 +18,20 @@ static inline auto Utf8CpBytes(unsigned char lead) noexcept -> size_t {
         return 3;
     }
     return 4;
+}
+
+static inline auto Utf8Decode(const char* p, size_t len) noexcept -> uint32_t {
+    auto b = [&](size_t i) -> uint32_t { return static_cast<unsigned char>(p[i]); };
+    if (len == 2) {
+        return ((b(0) & 0x1F) << 6) | (b(1) & 0x3F);
+    }
+    if (len == 3) {
+        return ((b(0) & 0x0F) << 12) | ((b(1) & 0x3F) << 6) | (b(2) & 0x3F);
+    }
+    if (len == 4) {
+        return ((b(0) & 0x07) << 18) | ((b(1) & 0x3F) << 12) | ((b(2) & 0x3F) << 6) | (b(3) & 0x3F);
+    }
+    return b(0);
 }
 
 static inline auto Utf8Len(const char* s, size_t bytes) noexcept -> size_t {
@@ -66,11 +82,16 @@ Interface::Interface(flecs::world& world) {
         SDL_Log("Failed to load font: %s", SDL_GetError());
         exit(EXIT_FAILURE);
     }
+    TTF_SetFontHinting(font, TTF_HINTING_MONO);
 
     world.set<InterfaceState>({.font = font});
     world.set<InterfaceCommands>({});
     world.set(InterfacePage::Main);
     world.set<InterfacePrevious>({.page = InterfacePage::Main});
+    world.set<ChatLog>({});
+    world.set<ChatInput>({});
+    world.set<InputCapture>({});
+    world.set<ServerList>({.entries = {{.name = "Localhost", .address = "127.0.0.1", .port = 5000}}});
 
     world.system<InterfaceState>("interface::frame").kind(flecs::PreFrame).each(Interface::frame);
     world.system<InterfaceState, WindowEvents>("interface::event").kind(flecs::PreUpdate).each(Interface::event);
@@ -81,6 +102,7 @@ void Interface::frame(flecs::iter&, size_t, InterfaceState& state) {
     state.prevFocusedId = state.focusedId;
     state.mousePressed = false;
     state.focusConsumed = false;
+    state.textPool.clear();
 }
 
 void Interface::event(flecs::iter&, size_t, InterfaceState& state, const WindowEvents& events) {
@@ -112,11 +134,17 @@ void Interface::build(flecs::iter& it, size_t i, InterfaceState& state, Interfac
         case InterfacePage::Ingame:
             cmds.list = Interface::ingame(it, state, page, prev, events);
             break;
+        case InterfacePage::Server:
+            cmds.list = Interface::server(it, state, page, prev, events);
+            break;
         case InterfacePage::Connect:
             cmds.list = Interface::connect(it, state, page, prev, events);
             break;
         case InterfacePage::Settings:
             cmds.list = Interface::settings(it, state, page, prev, events);
+            break;
+        case InterfacePage::Chat:
+            cmds.list = Interface::chat(it, state, page, prev, events);
             break;
         case InterfacePage::None:
             cmds.list = {};
@@ -134,13 +162,19 @@ void Interface::build(flecs::iter& it, size_t i, InterfaceState& state, Interfac
         state.focusedId = 0;
         SDL_StopTextInput(events.target);
     }
+
+    it.world().get_mut<InputCapture>().active = (state.focusedId != 0);
 }
 
 auto Interface::button(InterfaceState& state, Clay_ElementId id, const char* label, ButtonStyle st) -> bool {
     bool clicked = false;
+    Clay_Sizing sizing = {};
+    if (st.width > 0) {
+        sizing.width = CLAY_SIZING_FIXED(st.width);
+    }
     CLAY({
         .id = id,
-        .layout = {.padding = st.padding},
+        .layout = {.sizing = sizing, .padding = st.padding, .childAlignment = {.x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER}},
         .backgroundColor = st.color,
         .cornerRadius = CLAY_CORNER_RADIUS(st.cornerRadius),
     }) {
@@ -150,9 +184,91 @@ auto Interface::button(InterfaceState& state, Clay_ElementId id, const char* lab
         CLAY_TEXT(Str(label), CLAY_TEXT_CONFIG({
                                   .textColor = st.textColor,
                                   .fontSize = st.fontSize,
+                                  .wrapMode = CLAY_TEXT_WRAP_NONE,
                               }));
     }
     return clicked;
+}
+
+auto Interface::wrap(InterfaceState& state, const std::string& text, uint16_t fontSize, float maxWidth) -> std::string {
+    if (state.font == nullptr || maxWidth <= 0) {
+        return text;
+    }
+    TTF_SetFontSize(state.font, fontSize);
+
+    auto measure = [&](const std::string& s) -> float {
+        if (s.empty()) {
+            return 0;
+        }
+        int w = 0;
+        int h = 0;
+        TTF_GetStringSize(state.font, s.c_str(), s.size(), &w, &h);
+        return static_cast<float>(w);
+    };
+
+    std::string out;
+    std::string line;
+    size_t i = 0;
+    size_t n = text.size();
+
+    while (i < n) {
+        if (text[i] == '\n') {
+            out += line;
+            out += '\n';
+            line.clear();
+            ++i;
+            continue;
+        }
+
+        if (text[i] == ' ') {
+            if (!line.empty()) {
+                if (measure(line + " ") <= maxWidth) {
+                    line += ' ';
+                } else {
+                    out += line;
+                    out += '\n';
+                    line.clear();
+                }
+            }
+            ++i;
+            continue;
+        }
+
+        size_t j = i;
+        while (j < n && text[j] != ' ' && text[j] != '\n') {
+            j += Utf8CpBytes(static_cast<unsigned char>(text[j]));
+        }
+        std::string word = text.substr(i, j - i);
+
+        if (measure(line + word) <= maxWidth) {
+            line += word;
+            i = j;
+        } else if (measure(word) <= maxWidth && !line.empty() && measure(line) >= maxWidth * 0.5F) {
+            out += line;
+            out += '\n';
+            line.clear();
+            line = word;
+            i = j;
+        } else {
+            size_t k = i;
+            while (k < j) {
+                size_t cb = Utf8CpBytes(static_cast<unsigned char>(text[k]));
+                std::string cp = text.substr(k, cb);
+                if (line.empty() || measure(line + cp) <= maxWidth) {
+                    line += cp;
+                    k += cb;
+                } else {
+                    out += line;
+                    out += '\n';
+                    line.clear();
+                }
+            }
+            i = j;
+        }
+    }
+
+    out += line;
+    return out;
 }
 
 auto Interface::toggle(InterfaceState& state, Clay_ElementId id, bool& value, ToggleStyle st) -> bool {
@@ -326,6 +442,14 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
             }
 
             if (ok) {
+                uint32_t cp = Utf8Decode(p, cpLen);
+                bool regular = cp == ' ' || cp == '\n' || (cp >= 0x21 && cp <= 0x7E) || (cp >= 0xC0 && cp <= 0x24F);
+                if (!regular || (state.font && !TTF_FontHasGlyph(state.font, cp))) {
+                    ok = false;
+                }
+            }
+
+            if (ok) {
                 Utf8Insert(buf, f.cursor, p, cpLen);
                 ++f.cursor;
             }
@@ -389,7 +513,14 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
         }
     };
 
-    bool focused = (state.focusedId == id.id);
+    if (cfg.disabled) {
+        st.textColor.a *= 0.4F;
+        st.bgColor.r *= 0.6F;
+        st.bgColor.g *= 0.6F;
+        st.bgColor.b *= 0.6F;
+    }
+
+    bool focused = (state.focusedId == id.id) && !cfg.disabled;
     bool focusGain = focused && (state.prevFocusedId != id.id);
     bool focusLose = !focused && (state.prevFocusedId == id.id);
 
@@ -399,6 +530,7 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
         }
         f.cursor = Utf8Len(buf);
         f.anchor = f.cursor;
+        f.blinkBase = util::now();
     }
 
     bool enterCommit = false;
@@ -406,12 +538,14 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
     if (focused) {
         for (const auto& e : events) {
             if (e.type == SDL_EVENT_TEXT_INPUT) {
+                f.blinkBase = util::now();
                 insertFiltered(e.text.text);
                 continue;
             }
             if (e.type != SDL_EVENT_KEY_DOWN) {
                 continue;
             }
+            f.blinkBase = util::now();
 
             bool mod = (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0;
             bool shift = (e.key.mod & SDL_KMOD_SHIFT) != 0;
@@ -691,6 +825,7 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
     }
 
     bool clicked = false;
+    bool blinkOn = std::fmod(util::now() - f.blinkBase, 1.6) < 0.8;
 
     CLAY({
         .id = id,
@@ -702,10 +837,12 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
                 .layoutDirection = CLAY_LEFT_TO_RIGHT,
             },
         .backgroundColor = st.bgColor,
+        .cornerRadius = CLAY_CORNER_RADIUS(st.cornerRadius),
         .clip = {.horizontal = true, .vertical = cfg.multiline, .childOffset = {-f.scrollX, -f.scrollY}},
     }) {
         CLAY({
             .layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_GROW()}},
+            .cornerRadius = CLAY_CORNER_RADIUS(st.cornerRadius),
             .floating =
                 {
                     .attachPoints = {.element = CLAY_ATTACH_POINT_LEFT_TOP, .parent = CLAY_ATTACH_POINT_LEFT_TOP},
@@ -715,13 +852,14 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
             .border = {.color = border, .width = {st.borderWidth, st.borderWidth, st.borderWidth, st.borderWidth}},
         }) {}
 
-        if (Clay_Hovered() && state.mousePressed) {
+        if (Clay_Hovered() && state.mousePressed && !cfg.disabled) {
             state.focusedId = id.id;
             state.focusConsumed = true;
             clicked = true;
             SDL_StartTextInput(events.target);
             f.cursor = hitTest(state.mouseX, state.mouseY);
             f.anchor = f.cursor;
+            f.blinkBase = util::now();
         }
 
         if (empty) {
@@ -730,12 +868,41 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
                                                 .fontSize = st.fontSize,
                                                 .wrapMode = CLAY_TEXT_WRAP_NONE,
                                             }));
+
+            if (focused && blinkOn) {
+                float ox = static_cast<float>(st.padding.left);
+                float centerY = cfg.multiline ? 0.F : (static_cast<float>(st.fontSize) - static_cast<float>(lh)) / 2.F;
+                float oy = static_cast<float>(st.padding.top) + centerY;
+
+                CLAY({
+                    .layout = {.sizing = {CLAY_SIZING_FIXED(1), CLAY_SIZING_FIXED((float)lh)}},
+                    .backgroundColor = st.textColor,
+                    .floating =
+                        {
+                            .offset = {ox, oy},
+                            .attachPoints = {.element = CLAY_ATTACH_POINT_LEFT_TOP, .parent = CLAY_ATTACH_POINT_LEFT_TOP},
+                            .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
+                            .attachTo = CLAY_ATTACH_TO_PARENT,
+                            .clipTo = CLAY_CLIP_TO_ATTACHED_PARENT,
+                        },
+                }) {}
+            }
         } else {
-            CLAY_TEXT(Str(buf), CLAY_TEXT_CONFIG({
-                                    .textColor = st.textColor,
-                                    .fontSize = st.fontSize,
-                                    .wrapMode = cfg.multiline ? CLAY_TEXT_WRAP_WORDS : CLAY_TEXT_WRAP_NONE,
-                                }));
+            if (cfg.multiline) {
+                float ww = (f.bounds.width > 0) ? f.bounds.width - static_cast<float>(st.padding.left) - static_cast<float>(st.padding.right) : 0;
+                const std::string& disp = state.intern(Interface::wrap(state, buf, st.fontSize, ww));
+                CLAY_TEXT(Str(disp), CLAY_TEXT_CONFIG({
+                                         .textColor = st.textColor,
+                                         .fontSize = st.fontSize,
+                                         .wrapMode = CLAY_TEXT_WRAP_NEWLINES,
+                                     }));
+            } else {
+                CLAY_TEXT(Str(buf), CLAY_TEXT_CONFIG({
+                                        .textColor = st.textColor,
+                                        .fontSize = st.fontSize,
+                                        .wrapMode = CLAY_TEXT_WRAP_NONE,
+                                    }));
+            }
 
             if (focused) {
                 float ox = static_cast<float>(st.padding.left) - f.scrollX;
@@ -792,7 +959,7 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
                         pos = nl + 1;
                         ++line;
                     }
-                } else {
+                } else if (blinkOn) {
                     CLAY({
                         .layout = {.sizing = {CLAY_SIZING_FIXED(1), CLAY_SIZING_FIXED((float)lh)}},
                         .backgroundColor = st.textColor,

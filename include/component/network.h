@@ -1,7 +1,8 @@
 #pragma once
 
-#include <cstdint>
 #include <glm/glm.hpp>
+
+#include <cstdint>
 #include <string>
 
 enum class NetworkRole : std::uint8_t {
@@ -30,6 +31,9 @@ struct NetworkRequestJoin {
     uint16_t port;
 };
 struct NetworkRequestQuit {};
+struct NetworkRequestChat {
+    std::string text;
+};
 
 struct NetworkTarget {
     std::string address;

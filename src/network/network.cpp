@@ -6,9 +6,12 @@
 #include <utility>
 
 #include "client.h"
+#include "component/interface.h"
 #include "component/input.h"
 #include "component/object.h"
 #include "component/physics.h"
+#include "component/settings.h"
+#include "protocol.h"
 #include "registry.h"
 #include "server.h"
 
@@ -44,6 +47,7 @@ Network::Network(flecs::world& world) {
     world.observer<const NetworkRequestHost>("network::host").event(flecs::OnSet).each(Network::host);
     world.observer<const NetworkRequestJoin>("network::join").event(flecs::OnSet).each(Network::join);
     world.observer().with<NetworkRequestQuit>().event(flecs::OnAdd).each([](flecs::entity e) -> void { Network::quit(e, NetworkRequestQuit{}); });
+    world.observer<const NetworkRequestChat>("network::chat").event(flecs::OnSet).each(Network::chat);
 
     world.import<NetworkServer>();
     world.import<NetworkClient>();
@@ -164,5 +168,27 @@ void Network::quit(flecs::entity e, const NetworkRequestQuit&) {
         SDL_Log("network: disconnected");
     }
 
+    if (auto* log = world.try_get_mut<ChatLog>()) {
+        *log = {};
+    }
+
+    e.destruct();
+}
+
+void Network::chat(flecs::entity e, const NetworkRequestChat& req) {
+    flecs::world world = e.world();
+    std::string text = req.text;
+    if (auto* conn = world.try_get_mut<NetworkConnection>(); (conn != nullptr) && conn->connected && (conn->server != nullptr)) {
+        Writer w = wire::message(Message::Chat);
+        MessageChat msg{text};
+        util::encode(w, msg);
+        wire::send(conn->server, w, CHANNEL_RELIABLE, true);
+    } else if (world.try_get<NetworkHost>() != nullptr) {
+        std::string name;
+        if (const Settings* s = world.try_get<Settings>()) {
+            name = s->username;
+        }
+        broadcast_chat(world, "<" + (name.empty() ? "host" : name) + "> " + text);
+    }
     e.destruct();
 }

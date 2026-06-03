@@ -108,70 +108,76 @@ void render_rounded_rect(const SDL_Clay_RendererData& rd, const SDL_FRect& rect,
     SDL_RenderGeometry(rd.renderer, nullptr, verts, vc, idx, ic);
 }
 
-void render_arc(const SDL_Clay_RendererData& rd, SDL_FPoint center, float radius, float startDeg, float endDeg, float thickness, const Clay_Color& color) {
-    SDL_SetRenderDrawColor(rd.renderer, static_cast<uint8_t>(color.r), static_cast<uint8_t>(color.g), static_cast<uint8_t>(color.b), static_cast<uint8_t>(color.a));
+void render_rounded_border(const SDL_Clay_RendererData& rd, const SDL_FRect& rect, float radius, float width, const Clay_Color& color) {
+    const auto col = to_color(color);
+    const float r = std::min(radius, std::min(rect.w, rect.h) / 2.0F);
+    const float ir = std::max(r - width, 0.0F);
+    const int segs = std::clamp(static_cast<int>(r * 2.0F), 4, 64);
 
-    const float radStart = startDeg * (std::numbers::pi_v<float> / 180.0F);
-    const float radEnd = endDeg * (std::numbers::pi_v<float> / 180.0F);
-    const int segs = std::clamp(static_cast<int>(radius * 1.5F), CIRCLE_SEGMENTS, MAX_SEGMENTS);
-    const float angleStep = (radEnd - radStart) / static_cast<float>(segs);
-    constexpr float STEP = 0.4F;
+    constexpr float HALF_PI = std::numbers::pi_v<float> / 2.0F;
+    const std::array<float, 4> start = {-HALF_PI, 0.0F, HALF_PI, std::numbers::pi_v<float>};
+    const std::array<float, 4> cx = {rect.x + rect.w - r, rect.x + rect.w - r, rect.x + r, rect.x + r};
+    const std::array<float, 4> cy = {rect.y + r, rect.y + rect.h - r, rect.y + rect.h - r, rect.y + r};
 
-    SDL_FPoint points[MAX_SEGMENTS + 1];
+    SDL_Vertex verts[2 * 4 * 65];
+    int idx[6 * 4 * 65];
+    int vc = 0;
+    int ic = 0;
+    int count = 0;
 
-    for (int ring = 1; STEP * static_cast<float>(ring) < thickness - STEP; ++ring) {
-        const float t = STEP * static_cast<float>(ring);
-        const float cr = std::max(radius - t, 1.0F);
+    for (int k = 0; k < 4; ++k) {
         for (int i = 0; i <= segs; ++i) {
-            const float angle = radStart + (static_cast<float>(i) * angleStep);
-            points[i] = {
-                .x = SDL_roundf(center.x + (SDL_cosf(angle) * cr)),
-                .y = SDL_roundf(center.y + (SDL_sinf(angle) * cr)),
-            };
+            const float a = start[k] + (HALF_PI * static_cast<float>(i) / static_cast<float>(segs));
+            const float c = SDL_cosf(a);
+            const float s = SDL_sinf(a);
+            verts[vc++] = {.position = {.x = cx[k] + (c * r), .y = cy[k] + (s * r)}, .color = col, .tex_coord = {0, 0}};
+            verts[vc++] = {.position = {.x = cx[k] + (c * ir), .y = cy[k] + (s * ir)}, .color = col, .tex_coord = {0, 0}};
+            ++count;
         }
-        SDL_RenderLines(rd.renderer, points, segs + 1);
     }
+
+    for (int i = 0; i < count; ++i) {
+        const int o = i * 2;
+        const int o2 = ((i + 1) % count) * 2;
+        idx[ic++] = o;
+        idx[ic++] = o + 1;
+        idx[ic++] = o2;
+        idx[ic++] = o + 1;
+        idx[ic++] = o2 + 1;
+        idx[ic++] = o2;
+    }
+
+    SDL_RenderGeometry(rd.renderer, nullptr, verts, vc, idx, ic);
 }
 
 void render_border(const SDL_Clay_RendererData& rd, const SDL_FRect& rect, Clay_BorderRenderData& cfg) {
     const float minR = std::min(rect.w, rect.h) / 2.0F;
-    const Clay_CornerRadius cr = {
-        .topLeft = std::min(cfg.cornerRadius.topLeft, minR),
-        .topRight = std::min(cfg.cornerRadius.topRight, minR),
-        .bottomLeft = std::min(cfg.cornerRadius.bottomLeft, minR),
-        .bottomRight = std::min(cfg.cornerRadius.bottomRight, minR),
-    };
+    const float r = std::min(cfg.cornerRadius.topLeft, minR);
+
+    if (r > 0 && cfg.width.top > 0) {
+        render_rounded_border(rd, rect, r, static_cast<float>(cfg.width.top), cfg.color);
+        return;
+    }
 
     SDL_SetRenderDrawColor(rd.renderer, static_cast<uint8_t>(cfg.color.r), static_cast<uint8_t>(cfg.color.g), static_cast<uint8_t>(cfg.color.b), static_cast<uint8_t>(cfg.color.a));
 
     auto fill = [&](float x, float y, float w, float h) -> void {
-        SDL_FRect r = {.x = x, .y = y, .w = w, .h = h};
-        SDL_RenderFillRect(rd.renderer, &r);
+        SDL_FRect rr = {.x = x, .y = y, .w = w, .h = h};
+        SDL_RenderFillRect(rd.renderer, &rr);
     };
 
     if (cfg.width.left > 0) {
-        fill(rect.x - 1, rect.y + cr.topLeft, static_cast<float>(cfg.width.left), rect.h - cr.topLeft - cr.bottomLeft);
+        fill(rect.x, rect.y, static_cast<float>(cfg.width.left), rect.h);
     }
     if (cfg.width.right > 0) {
-        fill(rect.x + rect.w - static_cast<float>(cfg.width.right) + 1, rect.y + cr.topRight, static_cast<float>(cfg.width.right), rect.h - cr.topRight - cr.bottomRight);
+        fill(rect.x + rect.w - static_cast<float>(cfg.width.right), rect.y, static_cast<float>(cfg.width.right), rect.h);
     }
     if (cfg.width.top > 0) {
-        fill(rect.x + cr.topLeft, rect.y - 1, rect.w - cr.topLeft - cr.topRight, static_cast<float>(cfg.width.top));
+        fill(rect.x, rect.y, rect.w, static_cast<float>(cfg.width.top));
     }
     if (cfg.width.bottom > 0) {
-        fill(rect.x + cr.bottomLeft, rect.y + rect.h - static_cast<float>(cfg.width.bottom) + 1, rect.w - cr.bottomLeft - cr.bottomRight, static_cast<float>(cfg.width.bottom));
+        fill(rect.x, rect.y + rect.h - static_cast<float>(cfg.width.bottom), rect.w, static_cast<float>(cfg.width.bottom));
     }
-
-    auto arc = [&](float radius, float cx, float cy, float start, float end, float w) -> void {
-        if (radius > 0) {
-            render_arc(rd, {.x = cx, .y = cy}, radius, start, end, w, cfg.color);
-        }
-    };
-
-    arc(cr.topLeft, rect.x + cr.topLeft - 1, rect.y + cr.topLeft - 1, 180, 270, cfg.width.top);
-    arc(cr.topRight, rect.x + rect.w - cr.topRight, rect.y + cr.topRight - 1, 270, 360, cfg.width.top);
-    arc(cr.bottomLeft, rect.x + cr.bottomLeft - 1, rect.y + rect.h - cr.bottomLeft, 90, 180, cfg.width.bottom);
-    arc(cr.bottomRight, rect.x + rect.w - cr.bottomRight, rect.y + rect.h - cr.bottomRight, 0, 90, cfg.width.bottom);
 }
 
 }
@@ -199,7 +205,7 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
                 TTF_SetFontSize(rd.fonts[d.fontId], d.fontSize);
                 auto* text = TTF_CreateText(rd.textEngine, rd.fonts[d.fontId], d.stringContents.chars, d.stringContents.length);
                 TTF_SetTextColor(text, static_cast<Uint8>(d.textColor.r), static_cast<Uint8>(d.textColor.g), static_cast<Uint8>(d.textColor.b), static_cast<Uint8>(d.textColor.a));
-                TTF_DrawRendererText(text, rect.x, rect.y);
+                TTF_DrawRendererText(text, SDL_roundf(rect.x), SDL_roundf(rect.y));
                 TTF_DestroyText(text);
             } break;
 
@@ -208,12 +214,11 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
                 break;
 
             case CLAY_RENDER_COMMAND_TYPE_SCISSOR_START: {
-                SDL_Rect clip = {
-                    .x = static_cast<int>(cmd->boundingBox.x),
-                    .y = static_cast<int>(cmd->boundingBox.y),
-                    .w = static_cast<int>(cmd->boundingBox.width),
-                    .h = static_cast<int>(cmd->boundingBox.height),
-                };
+                const int x0 = static_cast<int>(SDL_ceilf(cmd->boundingBox.x));
+                const int y0 = static_cast<int>(SDL_ceilf(cmd->boundingBox.y));
+                const int x1 = static_cast<int>(SDL_floorf(cmd->boundingBox.x + cmd->boundingBox.width));
+                const int y1 = static_cast<int>(SDL_floorf(cmd->boundingBox.y + cmd->boundingBox.height));
+                SDL_Rect clip = {.x = x0, .y = y0, .w = std::max(0, x1 - x0), .h = std::max(0, y1 - y0)};
                 SDL_SetRenderClipRect(rd.renderer, &clip);
             } break;
 

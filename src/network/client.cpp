@@ -13,6 +13,7 @@
 #include "component/network.h"
 #include "component/object.h"
 #include "component/physics.h"
+#include "component/settings.h"
 #include "decode.h"
 #include "logic/movement.h"
 #include "network.h"
@@ -241,10 +242,18 @@ void NetworkClient::pump(flecs::iter& it) {
         ENetEvent ev;
         while (enet_host_service(conn.host, &ev, 0) > 0) {
             switch (ev.type) {
-                case ENET_EVENT_TYPE_CONNECT:
+                case ENET_EVENT_TYPE_CONNECT: {
                     conn.connected = true;
                     SDL_Log("network: connection established");
+                    MessageHello hello;
+                    if (const Settings* s = world.try_get<Settings>()) {
+                        hello.username = s->username;
+                    }
+                    Writer w = wire::message(Message::Hello);
+                    util::encode(w, hello);
+                    wire::send(conn.server, w, CHANNEL_RELIABLE, true);
                     break;
+                }
                 case ENET_EVENT_TYPE_RECEIVE:
                     apply_packet(world, conn, ev.packet);
                     enet_packet_destroy(ev.packet);

@@ -60,6 +60,7 @@ void Render::init(flecs::iter& it, size_t) {
         SDL_Log("Failed to load font: %s", SDL_GetError());
         exit(EXIT_FAILURE);
     }
+    TTF_SetFontHinting(font, TTF_HINTING_MONO);
 
     auto* textEngine = TTF_CreateRendererTextEngine(renderer);
 
@@ -68,12 +69,22 @@ void Render::init(flecs::iter& it, size_t) {
             auto** f = static_cast<TTF_Font**>(userData);
             TTF_SetFontSize(f[config->fontId], config->fontSize);
 
-            int w;
-            int h;
-            TTF_GetStringSize(f[config->fontId], text.chars, text.length, &w, &h);
+            int maxW = 0;
+            int totalH = 0;
+            size_t start = 0;
+            for (size_t i = 0; i <= static_cast<size_t>(text.length); ++i) {
+                if (i == static_cast<size_t>(text.length) || text.chars[i] == '\n') {
+                    int w = 0;
+                    int h = 0;
+                    TTF_GetStringSize(f[config->fontId], text.chars + start, i - start, &w, &h);
+                    maxW = std::max(maxW, w);
+                    totalH += h;
+                    start = i + 1;
+                }
+            }
             return {
-                .width = static_cast<float>(w),
-                .height = static_cast<float>(h),
+                .width = static_cast<float>(maxW),
+                .height = static_cast<float>(totalH),
             };
         },
         static_cast<void*>(&font));
