@@ -1,13 +1,13 @@
 # tankpvp
 
 todo:
-  - strip system definitions from module headers to prevent internal dependencies to leak
-  - move over and cleanup network stuff from the old project
-  - connect & host interface functionality
+  - strip system definitions from module headers to prevent internal dependencies to leak (?)
+  - connecting/disconnected interface
+  - settings + servers load/save
+  - server list interface
+  - proper settings
   - walls
   - sounds
-  - more multithreading?
   - ai players? (bt? ml?)
   - labyrinth generator
-  - settings load/save
   - move interface helpers into a seperate library?

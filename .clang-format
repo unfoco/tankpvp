@@ -1,0 +1,12 @@
+---
+Language: Cpp
+BasedOnStyle: Google
+ColumnLimit: 160
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+PointerAlignment: Left
+BreakBeforeBraces: Attach
+AlwaysBreakTemplateDeclarations: Yes
+AllowShortFunctionsOnASingleLine: Empty
+---
