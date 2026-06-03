@@ -120,8 +120,8 @@ struct ToggleStyle {
 struct SliderStyle {
     Clay_Color trackColor = {.r = 50, .g = 50, .b = 55, .a = 255};
     Clay_Color fillColor = {.r = 70, .g = 130, .b = 255, .a = 255};
-    float trackWidth = 200;
-    float trackHeight = 6;
+    Clay_SizingAxis width = CLAY_SIZING_GROW();
+    float trackHeight = 12;
 };
 
 struct InputStyle {

@@ -370,18 +370,20 @@ auto Interface::slider(InterfaceState& state, Clay_ElementId id, float& value, f
     }
 
     if (state.activeId == id.id && state.mouseDown) {
-        float delta = (state.mouseX - state.dragOriginX) / st.trackWidth * range;
-        value = std::clamp(state.dragOriginValue + delta, lo, hi);
+        float width = Clay_GetElementData(id).boundingBox.width;
+        if (width > 0) {
+            float delta = (state.mouseX - state.dragOriginX) / width * range;
+            value = std::clamp(state.dragOriginValue + delta, lo, hi);
+        }
     }
 
     float norm = std::clamp((value - lo) / range, 0.F, 1.F);
-    float fill = norm * st.trackWidth;
 
     CLAY({
         .id = id,
         .layout =
             {
-                .sizing = {CLAY_SIZING_FIXED(st.trackWidth), CLAY_SIZING_FIXED(st.trackHeight + 14)},
+                .sizing = {st.width, CLAY_SIZING_FIXED(st.trackHeight + 14)},
                 .childAlignment = {.y = CLAY_ALIGN_Y_CENTER},
             },
     }) {
@@ -399,9 +401,9 @@ auto Interface::slider(InterfaceState& state, Clay_ElementId id, float& value, f
             .backgroundColor = st.trackColor,
             .cornerRadius = CLAY_CORNER_RADIUS(st.trackHeight / 2),
         }) {
-            if (fill > 0.5F) {
+            if (norm > 0) {
                 CLAY({
-                    .layout = {.sizing = {CLAY_SIZING_FIXED(fill), CLAY_SIZING_GROW()}},
+                    .layout = {.sizing = {CLAY_SIZING_PERCENT(norm), CLAY_SIZING_GROW()}},
                     .backgroundColor = st.fillColor,
                     .cornerRadius = CLAY_CORNER_RADIUS(st.trackHeight / 2),
                 }) {}

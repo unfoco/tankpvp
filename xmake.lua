@@ -1,7 +1,8 @@
 add_rules("mode.debug", "mode.release")
 
 add_requires("flecs", {configs = {debug = is_mode("debug")}})
-add_requires("box2d", "clay", "enet", "flatbuffers", "glm", "libsdl3", "libsdl3_image", "libsdl3_ttf")
+add_requires("box2d", "clay", "enet", "glm", "libsdl3", "libsdl3_image", "libsdl3_ttf")
+add_requires("miniaudio", "stb")
 
 target("tankpvp")
     set_kind("binary")
@@ -10,8 +11,9 @@ target("tankpvp")
     add_includedirs("include", "src")
     add_files("src/**.cpp")
 
-    add_packages("box2d", "clay", "enet", "flatbuffers", "flecs", "glm", "libsdl3", "libsdl3_image", "libsdl3_ttf")
+    add_packages("box2d", "clay", "enet", "flecs", "glm", "libsdl3", "libsdl3_image", "libsdl3_ttf")
+    add_packages("miniaudio", "stb")
 
     if is_plat("macosx") then
-        add_frameworks("Metal", "QuartzCore", "Cocoa")
+        add_frameworks("Metal", "QuartzCore", "Cocoa", "AudioToolbox", "CoreAudio", "AudioUnit")
     end

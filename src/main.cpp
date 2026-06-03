@@ -13,6 +13,7 @@
 #include "component/object.h"
 #include "component/physics.h"
 #include "component/settings.h"
+#include "audio/audio.h"
 #include "input/input.h"
 #include "interface/interface.h"
 #include "logic/logic.h"
@@ -74,8 +75,8 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
     state->world.set_threads(4);
 
     state->world.set<Settings>({
-        .volume = 1.0,
-        .test = true,
+        .volume = 1.0F,
+        .music = 1.0F,
     });
 
     state->world.set<PhysicsConfig>({.gravity = {0.0F, 0.0F}});
@@ -88,6 +89,7 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
         state->world.import<Interface>();
         state->world.import<Render>();
         state->world.import<Input>();
+        state->world.import<Audio>();
     }
 
     state->world.component<Decay>().member<float>("seconds");

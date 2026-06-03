@@ -28,32 +28,30 @@ auto Interface::settings(flecs::iter& it, InterfaceState& state, InterfacePage& 
               .cornerRadius = CLAY_CORNER_RADIUS(12)}) {
             CLAY_TEXT(Str("SETTINGS"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32}));
 
-#define SETTING_ROW(id_string)                                                          \
-    CLAY({.id = CLAY_ID(id_string),                                                     \
-          .layout = {                                                                   \
-              .sizing = {.width = CLAY_SIZING_GROW(), .height = CLAY_SIZING_FIXED(30)}, \
-              .childAlignment = {.y = CLAY_ALIGN_Y_CENTER},                             \
-              .layoutDirection = CLAY_LEFT_TO_RIGHT,                                    \
+#define SETTING_FIELD()                                                              \
+    CLAY({.layout = {                                                                \
+              .sizing = {.width = CLAY_SIZING_GROW(), .height = CLAY_SIZING_FIT()},  \
+              .childGap = 8,                                                         \
+              .layoutDirection = CLAY_TOP_TO_BOTTOM,                                 \
           }})
 
             InputStyle inputStyle = {.sizing = {.width = CLAY_SIZING_GROW(), .height = CLAY_SIZING_FIT()}};
 
             bool inSession = (prev.page == InterfacePage::Pause);
 
-            CLAY_TEXT(Str("Player Name"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
-            Interface::input(state, events, CLAY_ID("NameInput"), settings.username, {.maxLength = 16, .disabled = inSession, .placeholder = "Enter name...", .allow = InputFilter::Name}, inputStyle);
+            SETTING_FIELD() {
+                CLAY_TEXT(Str("Player Name"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
+                Interface::input(state, events, CLAY_ID("NameInput"), settings.username, {.maxLength = 16, .disabled = inSession, .placeholder = "Enter name...", .allow = InputFilter::Name}, inputStyle);
+            }
 
-            SETTING_ROW("RowVolume") {
-                CLAY_TEXT(Str("Master Volume"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32}));
-                CLAY({.layout = {.sizing = {CLAY_SIZING_GROW()}}}) {}
+            SETTING_FIELD() {
+                CLAY_TEXT(Str("Master Volume"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
                 Interface::slider(state, CLAY_ID("VolSlider"), settings.volume, 0.0F, 1.0F, {});
             }
 
-            SETTING_ROW("RowTest") {
-                CLAY_TEXT(Str("Test"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32}));
-                CLAY({.layout = {.sizing = {CLAY_SIZING_GROW()}}}) {}
-                if (Interface::toggle(state, CLAY_ID("FsToggle"), settings.test, {})) {
-                }
+            SETTING_FIELD() {
+                CLAY_TEXT(Str("Music Volume"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
+                Interface::slider(state, CLAY_ID("MusicSlider"), settings.music, 0.0F, 1.0F, {});
             }
 
             CLAY({.layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_FIXED(20)}}}) {}

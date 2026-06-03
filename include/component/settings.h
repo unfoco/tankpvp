@@ -4,6 +4,6 @@
 
 struct Settings {
     std::string username;
-    float volume;
-    bool test;
+    float volume = 1.0F;
+    float music = 1.0F;
 };
