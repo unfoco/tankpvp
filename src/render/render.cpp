@@ -4,6 +4,7 @@
 
 #include "component/event.h"
 #include "component/network.h"
+#include "util/time.h"
 
 namespace {
 struct Rendering {};
@@ -111,11 +112,106 @@ void Render::init(flecs::iter& it, size_t) {
     });
 }
 
-void Render::start(flecs::iter& it, size_t i, const RenderState& render) {
+static constexpr double TRANSITION_DURATION = 0.1;
+
+static void ensure_targets(RenderState& r) {
+    int ow = 0;
+    int oh = 0;
+    SDL_GetCurrentRenderOutputSize(r.target, &ow, &oh);
+    if (r.frameA != nullptr && ow == r.frameW && oh == r.frameH) {
+        return;
+    }
+    SDL_DestroyTexture(r.frameA);
+    SDL_DestroyTexture(r.frameB);
+    SDL_DestroyTexture(r.snapshot);
+
+    auto make = [&]() -> SDL_Texture* {
+        SDL_Texture* t = SDL_CreateTexture(r.target, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, ow, oh);
+        SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderTarget(r.target, t);
+        SDL_SetRenderDrawColor(r.target, 0, 0, 0, 255);
+        SDL_RenderClear(r.target);
+        return t;
+    };
+    r.frameA = make();
+    r.frameB = make();
+    r.snapshot = make();
+    SDL_SetRenderTarget(r.target, nullptr);
+    r.frameW = ow;
+    r.frameH = oh;
+}
+
+void Render::start(flecs::iter&, size_t, RenderState& render) {
+    ensure_targets(render);
+    SDL_SetRenderTarget(render.target, render.curIsA ? render.frameA : render.frameB);
+    float scale = SDL_GetWindowDisplayScale(render.window);
+    SDL_SetRenderScale(render.target, scale, scale);
     SDL_SetRenderDrawColor(render.target, 0xE6, 0xE6, 0xE6, 0xFF);
     SDL_RenderClear(render.target);
 }
 
-void Render::finish(flecs::iter& it, size_t i, const RenderState& render) {
+void Render::finish(flecs::iter& it, size_t, RenderState& render) {
+    SDL_Texture* cur = render.curIsA ? render.frameA : render.frameB;
+    SDL_Texture* prev = render.curIsA ? render.frameB : render.frameA;
+
+    float scale = SDL_GetWindowDisplayScale(render.window);
+
+    int winW = 0;
+    int winH = 0;
+    SDL_GetWindowSize(render.window, &winW, &winH);
+    float fw = static_cast<float>(winW);
+    float fh = static_cast<float>(winH);
+    SDL_FRect full = {.x = 0, .y = 0, .w = fw, .h = fh};
+
+    double t = 2.0;
+    const auto* tr = it.world().try_get<InterfaceTransition>();
+    if (tr != nullptr) {
+        if (tr->start != render.lastStart) {
+            render.lastStart = tr->start;
+            SDL_SetRenderTarget(render.target, render.snapshot);
+            SDL_SetRenderScale(render.target, scale, scale);
+            SDL_RenderTexture(render.target, prev, nullptr, &full);
+        }
+        t = (util::now() - tr->start) / TRANSITION_DURATION;
+    }
+
+    SDL_SetRenderTarget(render.target, nullptr);
+    SDL_SetRenderScale(render.target, scale, scale);
+
+    if (t < 0.0 || t >= 1.0 || tr == nullptr) {
+        SDL_RenderTexture(render.target, cur, nullptr, &full);
+    } else {
+        float e = static_cast<float>(t);
+        e = e * e * (3.0F - (2.0F * e));
+        if (tr->kind == TransitionKind::Slide) {
+            float dx = 0.0F;
+            float dy = 0.0F;
+            switch (tr->dir) {
+                case TransitionDir::Left:
+                    dx = -1.0F;
+                    break;
+                case TransitionDir::Right:
+                    dx = 1.0F;
+                    break;
+                case TransitionDir::Up:
+                    dy = -1.0F;
+                    break;
+                case TransitionDir::Down:
+                    dy = 1.0F;
+                    break;
+            }
+            SDL_FRect in = {.x = -dx * fw * (1.0F - e), .y = -dy * fh * (1.0F - e), .w = fw, .h = fh};
+            SDL_FRect out = {.x = dx * fw * e, .y = dy * fh * e, .w = fw, .h = fh};
+            SDL_RenderTexture(render.target, cur, nullptr, &in);
+            SDL_RenderTexture(render.target, render.snapshot, nullptr, &out);
+        } else {
+            SDL_RenderTexture(render.target, cur, nullptr, &full);
+            SDL_SetTextureAlphaMod(render.snapshot, static_cast<uint8_t>((1.0F - e) * 255.0F));
+            SDL_RenderTexture(render.target, render.snapshot, nullptr, &full);
+            SDL_SetTextureAlphaMod(render.snapshot, 255);
+        }
+    }
+
+    render.curIsA = !render.curIsA;
     SDL_RenderPresent(render.target);
 }

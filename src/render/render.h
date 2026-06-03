@@ -37,6 +37,14 @@ struct RenderState {
     SDL_Texture* tankBaseTexture;
     SDL_Texture* tankTurretTexture;
     SDL_Texture* weaponBulletTexture;
+
+    SDL_Texture* frameA = nullptr;
+    SDL_Texture* frameB = nullptr;
+    SDL_Texture* snapshot = nullptr;
+    int frameW = 0;
+    int frameH = 0;
+    bool curIsA = true;
+    double lastStart = -1;
 };
 
 struct RenderPipeline {
@@ -49,8 +57,8 @@ struct Render {
    private:
     static void init(flecs::iter& it, size_t i);
 
-    static void start(flecs::iter& it, size_t i, const RenderState& render);
-    static void finish(flecs::iter& it, size_t i, const RenderState& render);
+    static void start(flecs::iter& it, size_t i, RenderState& render);
+    static void finish(flecs::iter& it, size_t i, RenderState& render);
 
     static void interface(flecs::iter& it, size_t i, const RenderState& render, InterfaceCommands& commands);
     static void camera(flecs::iter& it, size_t i, RenderState& render, const Position& pos);

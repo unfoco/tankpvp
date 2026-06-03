@@ -25,6 +25,18 @@ struct InterfacePrevious {
     InterfacePage page;
 };
 
+enum class TransitionKind : std::uint8_t { Crossfade, Slide };
+enum class TransitionDir : std::uint8_t { Left, Right, Up, Down };
+
+struct InterfaceTransition {
+    InterfacePage shown = InterfacePage::None;
+    double start = 0;
+    TransitionKind kind = TransitionKind::Crossfade;
+    TransitionDir dir = TransitionDir::Left;
+    InterfacePage lastFrom = InterfacePage::None;
+    InterfacePage lastTo = InterfacePage::None;
+};
+
 struct InterfaceCommands {
     Clay_RenderCommandArray list;
 };

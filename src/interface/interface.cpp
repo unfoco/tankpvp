@@ -75,6 +75,7 @@ Interface::Interface(flecs::world& world) {
     world.component<InterfacePage>().add(flecs::Singleton);
     world.component<InterfacePrevious>().add(flecs::Singleton);
     world.component<InterfaceCommands>().add(flecs::Singleton);
+    world.component<InterfaceTransition>().add(flecs::Singleton);
 
     TTF_Init();
     auto* font = TTF_OpenFont("asset/font.ttf", 16);
@@ -91,6 +92,7 @@ Interface::Interface(flecs::world& world) {
     world.set<ChatLog>({});
     world.set<ChatInput>({});
     world.set<InputCapture>({});
+    world.set<InterfaceTransition>({});
     world.set<ServerList>({.entries = {{.name = "Localhost", .address = "127.0.0.1", .port = 5000}}});
 
     world.system<InterfaceState>("interface::frame").kind(flecs::PreFrame).each(Interface::frame);
@@ -120,7 +122,56 @@ void Interface::event(flecs::iter&, size_t, InterfaceState& state, const WindowE
     }
 }
 
+static auto opposite_dir(TransitionDir d) -> TransitionDir {
+    switch (d) {
+        case TransitionDir::Left:
+            return TransitionDir::Right;
+        case TransitionDir::Right:
+            return TransitionDir::Left;
+        case TransitionDir::Up:
+            return TransitionDir::Down;
+        case TransitionDir::Down:
+            return TransitionDir::Up;
+    }
+    return d;
+}
+
+static void pick_transition(InterfacePage from, InterfacePage to, TransitionKind& kind, TransitionDir& dir) {
+    (void)from;
+    switch (to) {
+        case InterfacePage::Host:
+        case InterfacePage::Connect:
+        case InterfacePage::Server:
+        case InterfacePage::Settings:
+            kind = TransitionKind::Slide;
+            dir = TransitionDir::Left;
+            break;
+        case InterfacePage::Main:
+            kind = TransitionKind::Slide;
+            dir = TransitionDir::Right;
+             break;
+        default:
+            kind = TransitionKind::Crossfade;
+            dir = TransitionDir::Left;
+            break;
+    }
+}
+
 void Interface::build(flecs::iter& it, size_t i, InterfaceState& state, InterfaceCommands& cmds, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
+    InterfacePage shown = page;
+    if (auto& tr = it.world().get_mut<InterfaceTransition>(); shown != tr.shown) {
+        InterfacePage from = tr.shown;
+        if (from == tr.lastTo && shown == tr.lastFrom) {
+            tr.dir = opposite_dir(tr.dir);
+        } else {
+            pick_transition(from, shown, tr.kind, tr.dir);
+        }
+        tr.lastFrom = from;
+        tr.lastTo = shown;
+        tr.shown = shown;
+        tr.start = util::now();
+    }
+
     switch (page) {
         case InterfacePage::Main:
             cmds.list = Interface::main(it, state, page, prev, events);
