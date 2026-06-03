@@ -1,27 +1,15 @@
 #include "interface.h"
 
-Clay_RenderCommandArray Interface::ingame(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
+auto Interface::ingame(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
     prev.page = InterfacePage::Pause;
 
     Clay_BeginLayout();
 
-    CLAY({
-        .id = CLAY_ID("HudContainer"),
-        .layout = {
-            .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_GROW() },
-            .padding = { 20, 20, 20, 20 },
-            .layoutDirection = CLAY_TOP_TO_BOTTOM
-        }
-    }) {
-        CLAY({
-            .layout = { .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_FIT() }, .layoutDirection = CLAY_LEFT_TO_RIGHT }
-        }) {
-            CLAY_TEXT(Str("SCORE: 1040"), CLAY_TEXT_CONFIG({
-                .textColor = { 255, 120, 100, 255 },
-                .fontSize = 24
-            }));
+    CLAY({.id = CLAY_ID("HudContainer"), .layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_GROW()}, .padding = {20, 20, 20, 20}, .layoutDirection = CLAY_TOP_TO_BOTTOM}}) {
+        CLAY({.layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_FIT()}, .layoutDirection = CLAY_LEFT_TO_RIGHT}}) {
+            CLAY_TEXT(Str("SCORE: 1040"), CLAY_TEXT_CONFIG({.textColor = {255, 120, 100, 255}, .fontSize = 24}));
 
-            CLAY({ .layout = { .sizing = { CLAY_SIZING_GROW() } } }) {}
+            CLAY({.layout = {.sizing = {CLAY_SIZING_GROW()}}}) {}
 
             if (Interface::button(state, CLAY_ID("BtnHudMenu"), "Menu")) {
                 prev.page = page;
@@ -29,35 +17,24 @@ Clay_RenderCommandArray Interface::ingame(flecs::iter& it, InterfaceState& state
             }
         }
 
-        CLAY({ .layout = { .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_GROW() } } }) {}
+        CLAY({.layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_GROW()}}}) {}
 
-        CLAY({
-            .layout = {
-                .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_FIT() },
-                .childAlignment = {.y = CLAY_ALIGN_Y_BOTTOM},
-                .layoutDirection = CLAY_LEFT_TO_RIGHT,
-            }
-        }) {
-            CLAY({
-                .id = CLAY_ID("HealthBarContainer"),
-                .layout = { .sizing = { CLAY_SIZING_FIXED(200), CLAY_SIZING_FIXED(20) }, .padding = { 2, 2, 2, 2 } },
-                .backgroundColor = { 30, 30, 30, 200 },
-                .cornerRadius = CLAY_CORNER_RADIUS(4)
-            }) {
-                float hpPercent = 0.75f;
-                CLAY({
-                    .layout = { .sizing = { CLAY_SIZING_PERCENT(hpPercent), CLAY_SIZING_GROW() } },
-                    .backgroundColor = { 50, 200, 50, 255 },
-                    .cornerRadius = CLAY_CORNER_RADIUS(2)
-                }) {}
+        CLAY({.layout = {
+                  .sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_FIT()},
+                  .childAlignment = {.y = CLAY_ALIGN_Y_BOTTOM},
+                  .layoutDirection = CLAY_LEFT_TO_RIGHT,
+              }}) {
+            CLAY({.id = CLAY_ID("HealthBarContainer"),
+                  .layout = {.sizing = {CLAY_SIZING_FIXED(200), CLAY_SIZING_FIXED(20)}, .padding = {2, 2, 2, 2}},
+                  .backgroundColor = {30, 30, 30, 200},
+                  .cornerRadius = CLAY_CORNER_RADIUS(4)}) {
+                float hpPercent = 0.75F;
+                CLAY({.layout = {.sizing = {CLAY_SIZING_PERCENT(hpPercent), CLAY_SIZING_GROW()}}, .backgroundColor = {50, 200, 50, 255}, .cornerRadius = CLAY_CORNER_RADIUS(2)}) {}
             }
 
-            CLAY({ .layout = { .sizing = { CLAY_SIZING_GROW() } } }) {}
+            CLAY({.layout = {.sizing = {CLAY_SIZING_GROW()}}}) {}
 
-            CLAY_TEXT(Str("AMMO: 12/60"), CLAY_TEXT_CONFIG({
-                .textColor = { 0, 0, 0, 255 },
-                .fontSize = 24
-            }));
+            CLAY_TEXT(Str("AMMO: 12/60"), CLAY_TEXT_CONFIG({.textColor = {0, 0, 0, 255}, .fontSize = 24}));
         }
     }
 

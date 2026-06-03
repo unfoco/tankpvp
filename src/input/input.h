@@ -8,9 +8,9 @@
 #include "component/interface.h"
 
 struct Input {
-    Input(flecs::world&);
+    Input(flecs::world& world);
 
-private:
-    static void tank(flecs::iter&, size_t, InputFlags&);
-    static void screen(flecs::iter&, size_t, const InterfacePrevious&, InterfacePage&, const WindowEvents&);
+   private:
+    static void tank(flecs::iter& it, size_t i, InputFlags& flags);
+    static void screen(flecs::iter& it, size_t i, const InterfacePrevious& prev, InterfacePage& page, const WindowEvents& events);
 };

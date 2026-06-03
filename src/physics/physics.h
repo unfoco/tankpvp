@@ -2,28 +2,28 @@
 
 #include <flecs.h>
 
-#include "component/physics.h"
 #include "component/object.h"
+#include "component/physics.h"
 
 struct B2Body;
 
 struct Physics {
-    Physics(flecs::world&);
+    Physics(flecs::world& world);
 
-private:
-    static void init(flecs::iter&, size_t, const Position&, const Rotation&);
-    static void teleport(flecs::entity, const B2Body&, const Position&, const Rotation&);
-    static void sync(const B2Body&, const VelocityLinear&, const VelocityAngular&);
-    static void force(const B2Body&, const ExternalForce&);
-    static void impulse(const B2Body&, ExternalImpulse&);
-    static void step(flecs::iter&);
-    static void transform(const B2Body&, Position&, Rotation&);
-    static void velocity(const B2Body&, VelocityLinear&, VelocityAngular&);
-    static void event(flecs::iter&);
-    static void raycast(flecs::entity, const RaycastRequest&);
-    static void area(flecs::entity, const AreaQueryRequest&);
-    static void explosion(flecs::entity, const ExplosionRequest&);
-    static void cleanup(B2Body&);
-    static void ldamp(const B2Body&, const DampingLinear&);
-    static void adamp(const B2Body&, const DampingAngular&);
+   private:
+    static void init(flecs::iter& it, size_t i, const Position& pos, const Rotation& rot);
+    static void teleport(flecs::entity e, const B2Body& body, const Position& pos, const Rotation& rot);
+    static void sync(const B2Body& b, const VelocityLinear& lv, const VelocityAngular& av);
+    static void force(const B2Body& body, const ExternalForce& f);
+    static void impulse(const B2Body& body, ExternalImpulse& imp);
+    static void step(flecs::iter& it);
+    static void transform(const B2Body& body, Position& pos, Rotation& rot);
+    static void velocity(const B2Body& b, VelocityLinear& lv, VelocityAngular& av);
+    static void event(flecs::iter& it);
+    static void raycast(flecs::entity e, const RaycastRequest& req);
+    static void area(flecs::entity e, const AreaQueryRequest& req);
+    static void explosion(flecs::entity e, const ExplosionRequest& req);
+    static void cleanup(B2Body& body);
+    static void ldamp(const B2Body& body, const DampingLinear& d);
+    static void adamp(const B2Body& body, const DampingAngular& d);
 };

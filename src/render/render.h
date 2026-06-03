@@ -1,12 +1,11 @@
 #pragma once
 
-#include <SDL3/SDL_clay.h>
 #include <SDL3/SDL.h>
-
-#include <glm/glm.hpp>
-
+#include <SDL3/SDL_clay.h>
 #include <clay.h>
 #include <flecs.h>
+
+#include <glm/glm.hpp>
 
 #include "component/interface.h"
 #include "component/object.h"
@@ -18,18 +17,12 @@ struct Camera {
     glm::vec2 position;
     float zoom;
 
-    glm::vec2 worldToScreen(const glm::vec2& worldPos, int windowW, int windowH) const {
-        return glm::vec2(
-            (worldPos.x - position.x) * zoom + (windowW / 2.0f),
-            (worldPos.y - position.y) * zoom + (windowH / 2.0f)
-        );
+    [[nodiscard]] auto worldToScreen(const glm::vec2& worldPos, int windowW, int windowH) const -> glm::vec2 {
+        return {((worldPos.x - position.x) * zoom) + (static_cast<float>(windowW) / 2.0F), ((worldPos.y - position.y) * zoom) + (static_cast<float>(windowH) / 2.0F)};
     }
 
-    glm::vec2 screenToWorld(const glm::vec2& screenPos, int windowW, int windowH) const {
-        return glm::vec2(
-            (screenPos.x - (windowW / 2.0f)) / zoom + position.x,
-            (screenPos.y - (windowH / 2.0f)) / zoom + position.y
-        );
+    [[nodiscard]] auto screenToWorld(const glm::vec2& screenPos, int windowW, int windowH) const -> glm::vec2 {
+        return {((screenPos.x - (static_cast<float>(windowW) / 2.0F)) / zoom) + position.x, ((screenPos.y - (static_cast<float>(windowH) / 2.0F)) / zoom) + position.y};
     }
 };
 
@@ -46,20 +39,22 @@ struct RenderState {
     SDL_Texture* weaponBulletTexture;
 };
 
-struct RenderPipeline { flecs::entity_t value = 0; };
+struct RenderPipeline {
+    flecs::entity_t value = 0;
+};
 
 struct Render {
-    Render(flecs::world&);
+    Render(flecs::world& world);
 
-private:
-    static void init(flecs::iter&, size_t);
+   private:
+    static void init(flecs::iter& it, size_t i);
 
-    static void start(flecs::iter&, size_t, const RenderState&);
-    static void finish(flecs::iter&, size_t, const RenderState&);
+    static void start(flecs::iter& it, size_t i, const RenderState& render);
+    static void finish(flecs::iter& it, size_t i, const RenderState& render);
 
-    static void interface(flecs::iter&, size_t, const RenderState&, InterfaceCommands&);
-    static void camera(flecs::iter&, size_t, RenderState&, const Position&);
+    static void interface(flecs::iter& it, size_t i, const RenderState& render, InterfaceCommands& commands);
+    static void camera(flecs::iter& it, size_t i, RenderState& render, const Position& pos);
 
-    static void bullet(flecs::iter&, size_t, RenderState&, const Position&);
-    static void tank(flecs::iter&, size_t, const RenderState&, const Color&, const Position&, const Rotation&);
+    static void bullet(flecs::iter& it, size_t i, RenderState& render, const Position& pos);
+    static void tank(flecs::iter& it, size_t i, const RenderState& render, const Color& col, const Position& pos, const Rotation& rot);
 };

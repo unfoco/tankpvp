@@ -3,8 +3,9 @@
 
 #include "render.h"
 
-void Render::interface(flecs::iter& it, size_t, const RenderState& render, InterfaceCommands& commands) {
-    int width, height;
+void Render::interface(flecs::iter& it, size_t i, const RenderState& render, InterfaceCommands& commands) {
+    int width;
+    int height;
     SDL_GetWindowSize(render.window, &width, &height);
 
     Clay_SetLayoutDimensions({
@@ -12,6 +13,8 @@ void Render::interface(flecs::iter& it, size_t, const RenderState& render, Inter
         .height = static_cast<float>(height),
     });
 
-    if (commands.list.length == 0) return;
+    if (commands.list.length == 0) {
+        return;
+    }
     SDL_Clay_Render(render.clay, commands.list);
 }

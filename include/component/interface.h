@@ -2,7 +2,9 @@
 
 #include <clay.h>
 
-enum class InterfacePage {
+#include <cstdint>
+
+enum class InterfacePage : std::uint8_t {
     None,
     Main,
     Host,

@@ -1,7 +1,8 @@
 #pragma once
 
-#include <glm/glm.hpp>
 #include <flecs.h>
+
+#include <glm/glm.hpp>
 
 #include "util/fixed_buffer.h"
 
@@ -9,19 +10,42 @@ struct Static {};
 struct Dynamic {};
 struct Kinematic {};
 
-struct CollisionBox { float height = 1.0f; float width = 1.0f; };
-struct CollisionRing { float radius = 0.5f; };
+struct CollisionBox {
+    float height = 1.0F;
+    float width = 1.0F;
+};
+struct CollisionRing {
+    float radius = 0.5F;
+};
 
-struct VelocityLinear { glm::vec2 value{0}; };
-struct VelocityAngular { float value = 0; };
-struct ExternalForce { glm::vec2 value{0}; };
-struct ExternalImpulse { glm::vec2 value{0}; };
+struct VelocityLinear {
+    glm::vec2 value{0};
+};
+struct VelocityAngular {
+    float value = 0;
+};
+struct ExternalForce {
+    glm::vec2 value{0};
+};
+struct ExternalImpulse {
+    glm::vec2 value{0};
+};
 
-struct Density { float value = 1.0f; };
-struct Friction { float value = 0.3f; };
-struct Restitution { float value = 0.0f; };
-struct DampingLinear { float value = 0.0f; };
-struct DampingAngular { float value = 0.0f; };
+struct Density {
+    float value = 1.0F;
+};
+struct Friction {
+    float value = 0.3F;
+};
+struct Restitution {
+    float value = 0.0F;
+};
+struct DampingLinear {
+    float value = 0.0F;
+};
+struct DampingAngular {
+    float value = 0.0F;
+};
 
 struct CollisionLayers {
     uint64_t memberships = 0x0001;
@@ -48,47 +72,68 @@ struct PhysicsEvents {
     FixedBuffer<ContactEvent, 64> contactEnd, sensorEnd;
 
     void clear() {
-        contactBegin.clear(); sensorBegin.clear();
-        contactEnd.clear(); sensorEnd.clear();
+        contactBegin.clear();
+        sensorBegin.clear();
+        contactEnd.clear();
+        sensorEnd.clear();
     }
 
-    template<typename A, typename B>
+    template <typename A, typename B>
     struct View {
         const ContactEvent* ptr;
         const ContactEvent* last;
 
         void skip() {
             while (ptr != last) {
-                if (
-                    ptr->entityA.is_alive() && ptr->entityB.is_alive() &&
-                    (
-                        (ptr->entityA.template has<A>() && ptr->entityB.template has<B>()) ||
-                        (ptr->entityB.template has<A>() && ptr->entityA.template has<B>())
-                    )
-                ) return;
+                if (ptr->entityA.is_alive() && ptr->entityB.is_alive() &&
+                    ((ptr->entityA.template has<A>() && ptr->entityB.template has<B>()) || (ptr->entityB.template has<A>() && ptr->entityA.template has<B>()))) {
+                    return;
+                }
                 ++ptr;
             }
         }
 
-        std::pair<flecs::entity, flecs::entity> operator*() const {
-            if (ptr->entityA.template has<A>()) return {ptr->entityA, ptr->entityB};
+        auto operator*() const -> std::pair<flecs::entity, flecs::entity> {
+            if (ptr->entityA.template has<A>()) {
+                return {ptr->entityA, ptr->entityB};
+            }
             return {ptr->entityB, ptr->entityA};
         }
-        View& operator++() { ++ptr; skip(); return *this; }
-        bool operator!=(const View& o) const { return ptr != o.ptr; }
+        auto operator++() -> View& {
+            ++ptr;
+            skip();
+            return *this;
+        }
+        auto operator!=(const View& o) const -> bool {
+            return ptr != o.ptr;
+        }
 
-        View begin() const { View v{ptr, last}; v.skip(); return v; }
-        View end() const { return {last, last}; }
+        auto begin() const -> View {
+            View v{ptr, last};
+            v.skip();
+            return v;
+        }
+        auto end() const -> View {
+            return {last, last};
+        }
     };
 
-    template<typename A, typename B>
-    auto sensor() const { return View<A, B>{sensorBegin.begin(), sensorBegin.end()}; }
-    template<typename A, typename B>
-    auto contact() const { return View<A, B>{contactBegin.begin(), contactBegin.end()}; }
-    template<typename A, typename B>
-    auto sensor_end() const { return View<A, B>{sensorEnd.begin(), sensorEnd.end()}; }
-    template<typename A, typename B>
-    auto contact_end() const { return View<A, B>{contactEnd.begin(), contactEnd.end()}; }
+    template <typename A, typename B>
+    auto sensor() const {
+        return View<A, B>{sensorBegin.begin(), sensorBegin.end()};
+    }
+    template <typename A, typename B>
+    auto contact() const {
+        return View<A, B>{contactBegin.begin(), contactBegin.end()};
+    }
+    template <typename A, typename B>
+    auto sensor_end() const {
+        return View<A, B>{sensorEnd.begin(), sensorEnd.end()};
+    }
+    template <typename A, typename B>
+    auto contact_end() const {
+        return View<A, B>{contactEnd.begin(), contactEnd.end()};
+    }
 };
 
 struct RaycastRequest {

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <flecs.h>
 #include <enet/enet.h>
+#include <flecs.h>
 
 #include "client.h"
 
-void apply_packet(flecs::world&, NetworkConnection&, ENetPacket*);
+void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* packet);

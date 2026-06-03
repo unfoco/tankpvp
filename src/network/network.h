@@ -4,12 +4,12 @@
 
 #include "component/network.h"
 
-constexpr float TICK_DT = 1.0f / 60.0f;
+constexpr float TICK_DT = 1.0F / 60.0F;
 
 struct Network {
-    Network(flecs::world&);
+    Network(flecs::world& world);
 
-    static void host(flecs::entity, const NetworkRequestHost&);
-    static void join(flecs::entity, const NetworkRequestJoin&);
-    static void quit(flecs::entity, const NetworkRequestQuit&);
+    static void host(flecs::entity e, const NetworkRequestHost& req);
+    static void join(flecs::entity e, const NetworkRequestJoin& req);
+    static void quit(flecs::entity e, const NetworkRequestQuit& req);
 };

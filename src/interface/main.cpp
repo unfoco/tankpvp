@@ -1,30 +1,26 @@
-#include "interface.h"
-
 #include <cstdlib>
 
-Clay_RenderCommandArray Interface::main(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
+#include "interface.h"
+
+auto Interface::main(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
     Clay_BeginLayout();
 
-    CLAY({
-        .id = CLAY_ID("MainMenuContainer"),
-        .layout = {
-            .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_GROW() },
-            .padding = { 0, 0, 100, 0 },
-            .childGap = 16,
-            .childAlignment = { .x = CLAY_ALIGN_X_CENTER },
-            .layoutDirection = CLAY_TOP_TO_BOTTOM,
-        },
-        .backgroundColor = { 20, 20, 25, 255 }
-    }) {
-        CLAY_TEXT(Str("TANK GAME"), CLAY_TEXT_CONFIG({
-            .textColor = { 255, 255, 255, 255 },
-            .fontSize = 48
-        }));
+    CLAY({.id = CLAY_ID("MainMenuContainer"),
+          .layout =
+              {
+                  .sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_GROW()},
+                  .padding = {0, 0, 100, 0},
+                  .childGap = 16,
+                  .childAlignment = {.x = CLAY_ALIGN_X_CENTER},
+                  .layoutDirection = CLAY_TOP_TO_BOTTOM,
+              },
+          .backgroundColor = {20, 20, 25, 255}}) {
+        CLAY_TEXT(Str("TANK GAME"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 48}));
 
-        CLAY({ .layout = { .sizing = { CLAY_SIZING_FIXED(0), CLAY_SIZING_FIXED(40) } } }) {}
+        CLAY({.layout = {.sizing = {CLAY_SIZING_FIXED(0), CLAY_SIZING_FIXED(40)}}}) {}
 
         ButtonStyle menuBtn = {};
-        menuBtn.padding = { 40, 40, 12, 12 };
+        menuBtn.padding = {.left = 40, .right = 40, .top = 12, .bottom = 12};
         menuBtn.fontSize = 20;
 
         if (Interface::button(state, CLAY_ID("BtnPlay"), "Host / Singleplayer", menuBtn)) {
