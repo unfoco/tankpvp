@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include <flecs.h>
 
-#include <type/fixed_buffer.h>
+#include "util/fixed_buffer.h"
 
 struct Static {};
 struct Dynamic {};

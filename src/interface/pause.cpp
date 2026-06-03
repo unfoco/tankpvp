@@ -2,7 +2,9 @@
 
 #include "component/network.h"
 
-Clay_RenderCommandArray Interface::main(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
+Clay_RenderCommandArray Interface::pause(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
+    prev.page = InterfacePage::Ingame;
+
     Clay_BeginLayout();
 
     CLAY({
@@ -14,7 +16,7 @@ Clay_RenderCommandArray Interface::main(flecs::iter& it, InterfaceState& state, 
             .childAlignment = { .x = CLAY_ALIGN_X_CENTER },
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
-        .backgroundColor = { 20, 20, 25, 255 }
+        .backgroundColor = { 20, 20, 25, 128 }
     }) {
         CLAY_TEXT(Str("TANK GAME"), CLAY_TEXT_CONFIG({
             .textColor = { 255, 255, 255, 255 },
@@ -27,14 +29,9 @@ Clay_RenderCommandArray Interface::main(flecs::iter& it, InterfaceState& state, 
         menuBtn.padding = { 40, 40, 12, 12 };
         menuBtn.fontSize = 20;
 
-        if (Interface::button(state, CLAY_ID("BtnPlay"), "Host / Singleplayer", menuBtn)) {
-            it.world().entity().set(NetworkRequestHost{.address = "0.0.0.0", .port = 5000});
-            page = InterfacePage::Ingame;
-        }
-
-        if (Interface::button(state, CLAY_ID("BtnConnect"), "Join Multiplayer", menuBtn)) {
+        if (Interface::button(state, CLAY_ID("BtnPlay"), "Return Game", menuBtn)) {
             prev.page = page;
-            page = InterfacePage::Connect;
+            page = InterfacePage::Ingame;
         }
 
         if (Interface::button(state, CLAY_ID("BtnSettings"), "Settings", menuBtn)) {
@@ -42,8 +39,9 @@ Clay_RenderCommandArray Interface::main(flecs::iter& it, InterfaceState& state, 
             page = InterfacePage::Settings;
         }
 
-        if (Interface::button(state, CLAY_ID("BtnQuit"), "Quit Game", menuBtn)) {
-            // todo
+        if (Interface::button(state, CLAY_ID("BtnQuit"), "Leave Game", menuBtn)) {
+            it.world().entity().add<NetworkRequestQuit>();
+            page = InterfacePage::Main;
         }
     }
 

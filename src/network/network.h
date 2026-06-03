@@ -1,18 +1,13 @@
 #pragma once
 
 #include <flecs.h>
-#include <enet/enet.h>
 
 #include "component/network.h"
 
-// server mode: Logic module + NetworkHost
-// client mode: NetworkClient (just replication)
-// (server authoritative)
+constexpr float TICK_DT = 1.0f / 60.0f;
 
 struct Network {
     Network(flecs::world&);
-
-private:
 
     static void host(flecs::entity, const NetworkRequestHost&);
     static void join(flecs::entity, const NetworkRequestJoin&);

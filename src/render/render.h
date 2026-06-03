@@ -46,6 +46,8 @@ struct RenderState {
     SDL_Texture* weaponBulletTexture;
 };
 
+struct RenderPipeline { flecs::entity_t value = 0; };
+
 struct Render {
     Render(flecs::world&);
 

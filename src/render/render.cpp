@@ -1,8 +1,13 @@
 #include "render.h"
 
-#include "component/event.h"
-
 #include <SDL3_image/SDL_image.h>
+
+#include "component/event.h"
+#include "component/network.h"
+
+namespace {
+struct Rendering {};
+}
 
 Render::Render(flecs::world& world) {
     world.component<RenderState>()
@@ -12,28 +17,31 @@ Render::Render(flecs::world& world) {
         .kind(flecs::OnStart)
         .each(Render::init);
 
+    auto begin   = world.entity("render::begin").add<Rendering>();
+    auto camera  = world.entity("render::camera_phase").add<Rendering>().depends_on(begin);
+    auto tanks   = world.entity("render::tanks").add<Rendering>().depends_on(camera);
+    auto bullets = world.entity("render::bullets").add<Rendering>().depends_on(tanks);
+    auto ui      = world.entity("render::ui").add<Rendering>().depends_on(bullets);
+    auto present = world.entity("render::present").add<Rendering>().depends_on(ui);
+
     world.system<RenderState>("render::start")
-        .kind(flecs::PreFrame)
-        .each(Render::start);
-    world.system<RenderState>("render::finish")
-        .kind(flecs::PostFrame)
-        .each(Render::finish);
-
-    world.system<RenderState, InterfaceCommands>("render::interface")
-        .kind(flecs::OnStore)
-        .each(Render::interface);
+        .kind(begin).each(Render::start);
     world.system<RenderState, Position>("render::camera")
-        .kind(flecs::PostUpdate)
-        .with<Local>()
-        .each(Render::camera);
-
-    world.system<RenderState, Position>("render::bullet")
-        .kind(flecs::PostUpdate)
-        .each(Render::bullet);
+        .kind(camera).with<Local>().each(Render::camera);
     world.system<RenderState, Color, Position, Rotation>("render::tank")
-        .kind(flecs::PostUpdate)
-        .with<Tank>()
-        .each(Render::tank);
+        .kind(tanks).with<Tank>().without<Dying>().each(Render::tank);
+    world.system<RenderState, Position>("render::bullet")
+        .kind(bullets).with<Bullet>().without<Latent>().each(Render::bullet);
+    world.system<RenderState, InterfaceCommands>("render::interface")
+        .kind(ui).each(Render::interface);
+    world.system<RenderState>("render::finish")
+        .kind(present).each(Render::finish);
+
+    flecs::entity pipeline = world.pipeline()
+        .with(flecs::System)
+        .with<Rendering>().cascade(flecs::DependsOn)
+        .build();
+    world.set<RenderPipeline>({pipeline.id()});
 }
 
 void Render::init(flecs::iter& it, size_t) {

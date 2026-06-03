@@ -2,7 +2,7 @@
 
 #include <SDL3/SDL.h>
 
-#include <type/fixed_buffer.h>
+#include "util/fixed_buffer.h"
 
 struct WindowEvents : FixedBuffer<SDL_Event, 256> {
     SDL_Window* target;

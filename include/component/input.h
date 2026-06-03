@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cstdint>
-
 #include <flecs.h>
+
+#include <cstdint>
 
 struct InputFlags : flecs::bitmask {
     static constexpr uint32_t None     = 0;

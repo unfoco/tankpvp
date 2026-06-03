@@ -1,8 +1,8 @@
+#include "interface.h"
+
 #include <string_view>
 #include <algorithm>
 #include <string>
-
-#include "interface.h"
 
 static inline size_t Utf8CpBytes(unsigned char lead) noexcept {
     if (lead < 0x80) return 1;
@@ -93,11 +93,12 @@ void Interface::event(flecs::iter&, size_t, InterfaceState& state, const WindowE
 void Interface::build(flecs::iter& it, size_t, InterfaceState& state, InterfaceCommands& cmds, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
     switch (page) {
     case InterfacePage::Main:     cmds.list = Interface::main(it, state, page, prev, events);     break;
+    case InterfacePage::Host:     cmds.list = Interface::host(it, state, page, prev, events);     break;
     case InterfacePage::Pause:    cmds.list = Interface::pause(it, state, page, prev, events);    break;
     case InterfacePage::Ingame:   cmds.list = Interface::ingame(it, state, page, prev, events);   break;
     case InterfacePage::Connect:  cmds.list = Interface::connect(it, state, page, prev, events);  break;
     case InterfacePage::Settings: cmds.list = Interface::settings(it, state, page, prev, events); break;
-    case InterfacePage::None:     cmds.list = {};                                             break;
+    case InterfacePage::None:     cmds.list = {};                                                 break;
     }
 
     for (int32_t i = 0; i < cmds.list.length; ++i) {
@@ -550,12 +551,12 @@ bool Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
     }) {
         CLAY({
             .layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_GROW()}},
-            .border = {.color = border, .width = {st.borderWidth, st.borderWidth, st.borderWidth, st.borderWidth}},
             .floating = {
                 .attachPoints = {.element = CLAY_ATTACH_POINT_LEFT_TOP, .parent = CLAY_ATTACH_POINT_LEFT_TOP},
                 .pointerCaptureMode = CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
                 .attachTo = CLAY_ATTACH_TO_PARENT,
             },
+            .border = {.color = border, .width = {st.borderWidth, st.borderWidth, st.borderWidth, st.borderWidth}},
         }) {}
 
         if (Clay_Hovered() && state.mousePressed) {

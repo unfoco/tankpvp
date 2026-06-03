@@ -60,7 +60,6 @@ Clay_RenderCommandArray Interface::settings(flecs::iter& it, InterfaceState& sta
                 CLAY_TEXT(Str("Test"), CLAY_TEXT_CONFIG({ .textColor = { 255, 255, 255, 255 }, .fontSize = 16 }));
                 CLAY({ .layout = { .sizing = { CLAY_SIZING_GROW() } } }) {}
                 if (Interface::toggle(state, CLAY_ID("FsToggle"), settings.test, {})) {
-                    // test?
                 }
             }
 

@@ -1,17 +1,16 @@
 #pragma once
 
-#include <cfloat>
-#include <string>
-
 #include <SDL3_ttf/SDL_ttf.h>
 #include <SDL3/SDL.h>
 #include <flecs.h>
 #include <clay.h>
 
-#include "type/fixed_buffer.h"
+#include <cfloat>
+#include <string>
 
 #include "component/event.h"
 #include "component/interface.h"
+#include "util/fixed_buffer.h"
 
 inline Clay_String Str(const char* s)        { return {.length = (int32_t)strlen(s), .chars = s}; }
 inline Clay_String Str(const char* s, int n) { return {.length = n, .chars = s}; }
@@ -146,6 +145,7 @@ public:
     static bool input(InterfaceState&, const WindowEvents&, Clay_ElementId, T&, InputConfig = {}, InputStyle = {});
 
     static Clay_RenderCommandArray main(flecs::iter&, InterfaceState&, InterfacePage&, InterfacePrevious&, const WindowEvents&);
+    static Clay_RenderCommandArray host(flecs::iter&, InterfaceState&, InterfacePage&, InterfacePrevious&, const WindowEvents&);
     static Clay_RenderCommandArray pause(flecs::iter&, InterfaceState&, InterfacePage&, InterfacePrevious&, const WindowEvents&);
     static Clay_RenderCommandArray ingame(flecs::iter&, InterfaceState&, InterfacePage&, InterfacePrevious&, const WindowEvents&);
     static Clay_RenderCommandArray connect(flecs::iter&, InterfaceState&, InterfacePage&, InterfacePrevious&, const WindowEvents&);

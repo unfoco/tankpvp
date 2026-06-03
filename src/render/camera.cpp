@@ -11,5 +11,7 @@ void Render::camera(flecs::iter& it, size_t, RenderState& render, const Position
         static_cast<float>(height) / HEIGHT
     );
 
-    render.camera.position = pos.value;
+    glm::vec2 delta = pos.value - render.camera.position;
+    if (glm::dot(delta, delta) > 300.0f * 300.0f) render.camera.position = pos.value;
+    else                                          render.camera.position += delta * 0.25f;
 }

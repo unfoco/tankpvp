@@ -1,8 +1,8 @@
 #include "interface.h"
 
-Clay_RenderCommandArray Interface::pause(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
-    prev.page = InterfacePage::Ingame;
+#include <cstdlib>
 
+Clay_RenderCommandArray Interface::main(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
     Clay_BeginLayout();
 
     CLAY({
@@ -14,9 +14,8 @@ Clay_RenderCommandArray Interface::pause(flecs::iter& it, InterfaceState& state,
             .childAlignment = { .x = CLAY_ALIGN_X_CENTER },
             .layoutDirection = CLAY_TOP_TO_BOTTOM,
         },
-        .backgroundColor = { 20, 20, 25, 128 }
+        .backgroundColor = { 20, 20, 25, 255 }
     }) {
-        // Title
         CLAY_TEXT(Str("TANK GAME"), CLAY_TEXT_CONFIG({
             .textColor = { 255, 255, 255, 255 },
             .fontSize = 48
@@ -28,9 +27,14 @@ Clay_RenderCommandArray Interface::pause(flecs::iter& it, InterfaceState& state,
         menuBtn.padding = { 40, 40, 12, 12 };
         menuBtn.fontSize = 20;
 
-        if (Interface::button(state, CLAY_ID("BtnPlay"), "Return Game", menuBtn)) {
+        if (Interface::button(state, CLAY_ID("BtnPlay"), "Host / Singleplayer", menuBtn)) {
             prev.page = page;
-            page = InterfacePage::Ingame;
+            page = InterfacePage::Host;
+        }
+
+        if (Interface::button(state, CLAY_ID("BtnConnect"), "Join Multiplayer", menuBtn)) {
+            prev.page = page;
+            page = InterfacePage::Connect;
         }
 
         if (Interface::button(state, CLAY_ID("BtnSettings"), "Settings", menuBtn)) {
@@ -38,8 +42,8 @@ Clay_RenderCommandArray Interface::pause(flecs::iter& it, InterfaceState& state,
             page = InterfacePage::Settings;
         }
 
-        if (Interface::button(state, CLAY_ID("BtnQuit"), "Leave Game", menuBtn)) {
-            // todo
+        if (Interface::button(state, CLAY_ID("BtnQuit"), "Quit Game", menuBtn)) {
+            exit(0);
         }
     }
 

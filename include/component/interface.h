@@ -5,6 +5,7 @@
 enum class InterfacePage {
     None,
     Main,
+    Host,
     Pause,
     Ingame,
     Connect,

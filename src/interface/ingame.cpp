@@ -9,7 +9,7 @@ Clay_RenderCommandArray Interface::ingame(flecs::iter& it, InterfaceState& state
         .id = CLAY_ID("HudContainer"),
         .layout = {
             .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_GROW() },
-            .padding = { 20, 20, 20, 20 },      // Inner padding from screen edges
+            .padding = { 20, 20, 20, 20 },
             .layoutDirection = CLAY_TOP_TO_BOTTOM
         }
     }) {
@@ -17,7 +17,7 @@ Clay_RenderCommandArray Interface::ingame(flecs::iter& it, InterfaceState& state
             .layout = { .sizing = { CLAY_SIZING_GROW(), CLAY_SIZING_FIT() }, .layoutDirection = CLAY_LEFT_TO_RIGHT }
         }) {
             CLAY_TEXT(Str("SCORE: 1040"), CLAY_TEXT_CONFIG({
-                .textColor = { 255, 120, 100, 255 }, // Gold
+                .textColor = { 255, 120, 100, 255 },
                 .fontSize = 24
             }));
 
