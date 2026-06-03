@@ -5,6 +5,7 @@
 #include "interface.h"
 
 auto Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
+    prev.page = InterfacePage::Main;
     auto& list = it.world().get_mut<ServerList>();
 
     constexpr float kRowHeight = 64;

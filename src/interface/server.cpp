@@ -1,6 +1,7 @@
 #include "interface.h"
 
 auto Interface::server(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
+    prev.page = InterfacePage::Connect;
     auto& list = it.world().get_mut<ServerList>();
     bool editing = list.editing >= 0;
     bool valid = !list.draft.address.empty();

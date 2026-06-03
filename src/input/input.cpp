@@ -75,4 +75,5 @@ void Input::screen(flecs::iter& it, size_t i, const InterfacePrevious& prev, Int
     float mouseY;
     bool mouseDown = (SDL_GetMouseState(&mouseX, &mouseY) & SDL_BUTTON_LMASK) != 0U;
     Clay_SetPointerState({.x = mouseX, .y = mouseY}, mouseDown);
+    Clay_UpdateScrollContainers(false, {.x = 0, .y = 0}, it.delta_time());
 }

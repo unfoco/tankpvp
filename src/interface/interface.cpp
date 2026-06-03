@@ -136,7 +136,7 @@ static auto opposite_dir(TransitionDir d) -> TransitionDir {
     return d;
 }
 
-static void pick_transition(InterfacePage from, InterfacePage to, TransitionKind& kind, TransitionDir& dir) {
+static void pick_transition(InterfacePage from, InterfacePage to, TransitionKind& kind, TransitionDir& dir, double& duration) {
     (void)from;
     switch (to) {
         case InterfacePage::Host:
@@ -145,14 +145,17 @@ static void pick_transition(InterfacePage from, InterfacePage to, TransitionKind
         case InterfacePage::Settings:
             kind = TransitionKind::Slide;
             dir = TransitionDir::Left;
+            duration = 0.3;
             break;
         case InterfacePage::Main:
             kind = TransitionKind::Slide;
             dir = TransitionDir::Right;
-             break;
+            duration = 0.3;
+            break;
         default:
             kind = TransitionKind::Crossfade;
             dir = TransitionDir::Left;
+            duration = 0.1;
             break;
     }
 }
@@ -164,7 +167,7 @@ void Interface::build(flecs::iter& it, size_t i, InterfaceState& state, Interfac
         if (from == tr.lastTo && shown == tr.lastFrom) {
             tr.dir = opposite_dir(tr.dir);
         } else {
-            pick_transition(from, shown, tr.kind, tr.dir);
+            pick_transition(from, shown, tr.kind, tr.dir, tr.duration);
         }
         tr.lastFrom = from;
         tr.lastTo = shown;

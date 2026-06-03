@@ -46,6 +46,8 @@ void Render::init(flecs::iter& it, size_t) {
     float scale = SDL_GetWindowDisplayScale(window);
     SDL_SetRenderScale(renderer, scale, scale);
 
+    Clay_SetMaxElementCount(16384);
+    Clay_SetMaxMeasureTextCacheWordCount(32768);
     uint32_t minMem = Clay_MinMemorySize();
     Clay_Arena arena = Clay_CreateArenaWithCapacityAndMemory(minMem, malloc(minMem));
 
@@ -71,7 +73,7 @@ void Render::init(flecs::iter& it, size_t) {
             TTF_SetFontSize(f[config->fontId], config->fontSize);
 
             int maxW = 0;
-            int totalH = 0;
+            int lineH = 0;
             size_t start = 0;
             for (size_t i = 0; i <= static_cast<size_t>(text.length); ++i) {
                 if (i == static_cast<size_t>(text.length) || text.chars[i] == '\n') {
@@ -79,13 +81,13 @@ void Render::init(flecs::iter& it, size_t) {
                     int h = 0;
                     TTF_GetStringSize(f[config->fontId], text.chars + start, i - start, &w, &h);
                     maxW = std::max(maxW, w);
-                    totalH += h;
+                    lineH = std::max(lineH, h);
                     start = i + 1;
                 }
             }
             return {
                 .width = static_cast<float>(maxW),
-                .height = static_cast<float>(totalH),
+                .height = static_cast<float>(lineH),
             };
         },
         static_cast<void*>(&font));
@@ -111,8 +113,6 @@ void Render::init(flecs::iter& it, size_t) {
         .weaponBulletTexture = weaponBulletTexture,
     });
 }
-
-static constexpr double TRANSITION_DURATION = 0.1;
 
 static void ensure_targets(RenderState& r) {
     int ow = 0;
@@ -172,7 +172,7 @@ void Render::finish(flecs::iter& it, size_t, RenderState& render) {
             SDL_SetRenderScale(render.target, scale, scale);
             SDL_RenderTexture(render.target, prev, nullptr, &full);
         }
-        t = (util::now() - tr->start) / TRANSITION_DURATION;
+        t = (tr->duration > 0.0) ? (util::now() - tr->start) / tr->duration : 2.0;
     }
 
     SDL_SetRenderTarget(render.target, nullptr);

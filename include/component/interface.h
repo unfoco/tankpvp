@@ -31,6 +31,7 @@ enum class TransitionDir : std::uint8_t { Left, Right, Up, Down };
 struct InterfaceTransition {
     InterfacePage shown = InterfacePage::None;
     double start = 0;
+    double duration = 0.18;
     TransitionKind kind = TransitionKind::Crossfade;
     TransitionDir dir = TransitionDir::Left;
     InterfacePage lastFrom = InterfacePage::None;

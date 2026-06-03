@@ -3,6 +3,7 @@
 #include "interface.h"
 
 auto Interface::main(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
+    prev.page = InterfacePage::Main;
     Clay_BeginLayout();
 
     CLAY({.id = CLAY_ID("MainMenuContainer"),
