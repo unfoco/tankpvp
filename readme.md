@@ -2,9 +2,7 @@
 
 todo:
   - strip system definitions from module headers to prevent internal dependencies to leak (?)
-  - connecting/disconnected interface
   - settings + servers load/save
-  - server list interface
   - proper settings
   - walls
   - sounds

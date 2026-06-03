@@ -18,6 +18,7 @@ enum class InterfacePage : std::uint8_t {
     Connect,
     Settings,
     Chat,
+    Status,
 };
 
 struct InterfacePrevious {

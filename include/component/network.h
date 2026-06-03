@@ -22,6 +22,18 @@ struct SimulationClock {
     double scale = 1.0;
 };
 
+enum class ConnectionState : std::uint8_t {
+    Idle,
+    Connecting,
+    Connected,
+    Disconnected,
+};
+
+struct ConnectionStatus {
+    ConnectionState state = ConnectionState::Idle;
+    std::string reason;
+};
+
 struct NetworkRequestHost {
     std::string address;
     uint16_t port;

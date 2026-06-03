@@ -9,7 +9,7 @@
 #include "component/input.h"
 #include "util/serialize.h"
 
-constexpr uint32_t NETWORK_PROTOCOL = 12;
+constexpr uint32_t NETWORK_PROTOCOL = 1;
 
 constexpr uint8_t CHANNEL_RELIABLE = 0;
 constexpr uint8_t CHANNEL_UNRELIABLE = 1;
@@ -32,6 +32,7 @@ enum class Message : uint8_t {
     Hit,
     Hello,
     Chat,
+    Kick,
 };
 
 namespace wire {
@@ -216,5 +217,13 @@ struct MessageChat {
     template <class Archive>
     void serialize(Archive& a) {
         a.text(text);
+    }
+};
+
+struct MessageKick {
+    std::string reason;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.text(reason);
     }
 };

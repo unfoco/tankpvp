@@ -43,6 +43,7 @@ Network::Network(flecs::world& world) {
     world.set<NetworkRegistry>(std::move(registry));
 
     world.set<NetworkTarget>({});
+    world.set<ConnectionStatus>({});
 
     world.observer<const NetworkRequestHost>("network::host").event(flecs::OnSet).each(Network::host);
     world.observer<const NetworkRequestJoin>("network::join").event(flecs::OnSet).each(Network::join);

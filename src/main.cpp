@@ -95,9 +95,10 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
     if (cfg.role == NetworkRole::Server) {
         state->world.entity().set(NetworkRequestHost{.address = cfg.address, .port = cfg.port});
     } else if (cfg.role == NetworkRole::Client) {
+        state->world.set<ConnectionStatus>({.state = ConnectionState::Connecting, .reason = ""});
         state->world.entity().set(NetworkRequestJoin{.address = cfg.address, .port = cfg.port});
         if (!state->headless) {
-            state->world.set(InterfacePage::Ingame);
+            state->world.set(InterfacePage::Status);
         }
     }
 

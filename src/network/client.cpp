@@ -239,6 +239,7 @@ void NetworkClient::pump(flecs::iter& it) {
         auto& conn = *probe;
 
         bool lost = false;
+        bool was_connected = false;
         ENetEvent ev;
         while (enet_host_service(conn.host, &ev, 0) > 0) {
             switch (ev.type) {
@@ -259,6 +260,7 @@ void NetworkClient::pump(flecs::iter& it) {
                     enet_packet_destroy(ev.packet);
                     break;
                 case ENET_EVENT_TYPE_DISCONNECT:
+                    was_connected = conn.connected;
                     conn.connected = false;
                     lost = true;
                     SDL_Log("network: disconnected from server");
@@ -269,8 +271,13 @@ void NetworkClient::pump(flecs::iter& it) {
         }
 
         if (lost) {
-            if (world.has<InterfacePage>()) {
-                world.set(InterfacePage::Main);
+            const auto* cs = world.try_get<ConnectionStatus>();
+            bool kicked = (cs != nullptr) && cs->state == ConnectionState::Disconnected;
+            if (!kicked) {
+                world.set<ConnectionStatus>({.state = ConnectionState::Disconnected, .reason = was_connected ? "Connection lost" : "Could not reach server"});
+                if (world.has<InterfacePage>()) {
+                    world.set(InterfacePage::Status);
+                }
             }
             world.entity().add<NetworkRequestQuit>();
             return;

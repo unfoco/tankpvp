@@ -135,8 +135,9 @@ auto Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& p
     } else if (connectIdx >= 0) {
         const ServerEntry& entry = list.entries[connectIdx];
         it.world().get_mut<NetworkTarget>() = {.address = entry.address, .port = entry.port};
+        it.world().set<ConnectionStatus>({.state = ConnectionState::Connecting, .reason = ""});
         it.world().entity().set(NetworkRequestJoin{.address = entry.address, .port = entry.port});
-        page = InterfacePage::Ingame;
+        page = InterfacePage::Status;
     }
 
     return cmds;

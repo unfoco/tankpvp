@@ -24,6 +24,14 @@ static auto peer_entity(flecs::world& world, ENetPeer* peer) -> flecs::entity {
     return world.entity(static_cast<flecs::entity_t>(reinterpret_cast<uintptr_t>(peer->data)));
 }
 
+static void kick(ENetPeer* peer, const std::string& reason) {
+    Writer w = wire::message(Message::Kick);
+    MessageKick msg{reason};
+    util::encode(w, msg);
+    wire::send(peer, w, CHANNEL_RELIABLE, true);
+    enet_peer_disconnect_later(peer, 0);
+}
+
 void broadcast_chat(flecs::world& world, const std::string& line) {
     Writer w = wire::message(Message::Chat);
     MessageChat out{line};
@@ -89,7 +97,7 @@ static void send_welcome(flecs::world& world, NetworkHost& host, ENetPeer* peer,
 static void on_hello(flecs::world& world, NetworkHost& host, ENetPeer* epeer, const std::string& username) {
     std::string name = username.substr(0, 16);
     if (name.find(' ') != std::string::npos) {
-        enet_peer_disconnect(epeer, 0);
+        kick(epeer, "Username cannot contain spaces");
         return;
     }
 

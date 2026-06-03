@@ -146,6 +146,9 @@ void Interface::build(flecs::iter& it, size_t i, InterfaceState& state, Interfac
         case InterfacePage::Chat:
             cmds.list = Interface::chat(it, state, page, prev, events);
             break;
+        case InterfacePage::Status:
+            cmds.list = Interface::status(it, state, page, prev, events);
+            break;
         case InterfacePage::None:
             cmds.list = {};
             break;

@@ -97,6 +97,11 @@ static void apply_welcome(flecs::world& world, NetworkConnection& conn, Reader& 
     auto msg = util::decode<MessageWelcome>(r);
     if (msg.protocol != NETWORK_PROTOCOL) {
         SDL_Log("network: protocol mismatch (server %u, client %u)", msg.protocol, NETWORK_PROTOCOL);
+        world.set<ConnectionStatus>({.state = ConnectionState::Disconnected, .reason = "Incompatible server version"});
+        if (world.has<InterfacePage>()) {
+            world.set(InterfacePage::Status);
+        }
+        world.entity().add<NetworkRequestQuit>();
         return;
     }
     conn.peer_id = msg.peer_id;
@@ -111,6 +116,11 @@ static void apply_welcome(flecs::world& world, NetworkConnection& conn, Reader& 
     conn.playback = static_cast<double>(tick);
     conn.simulated = tick;
     conn.client_tick = tick + static_cast<uint64_t>(BUFFER_TARGET);
+
+    world.set<ConnectionStatus>({.state = ConnectionState::Connected, .reason = ""});
+    if (world.has<InterfacePage>()) {
+        world.set(InterfacePage::Ingame);
+    }
 
     Writer w = wire::message(Message::Ack);
     MessageAcknowledge ack{tick};
@@ -227,6 +237,12 @@ void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* pack
         case Message::Chat:
             if (ChatLog* log = world.try_get_mut<ChatLog>()) {
                 log->push(util::decode<MessageChat>(r).text);
+            }
+            break;
+        case Message::Kick:
+            world.set<ConnectionStatus>({.state = ConnectionState::Disconnected, .reason = util::decode<MessageKick>(r).reason});
+            if (world.has<InterfacePage>()) {
+                world.set(InterfacePage::Status);
             }
             break;
         default:
