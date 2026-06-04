@@ -222,8 +222,22 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
                     }
                 }
 
+                TTF_SetFontSize(rd.fonts[0], d.fontSize);
+                const int fontAscent = TTF_GetFontAscent(rd.fonts[0]);
+                int capTop = fontAscent;
+                int gminx = 0;
+                int gmaxx = 0;
+                int gminy = 0;
+                int gmaxy = 0;
+                int gadvance = 0;
+                if (TTF_GetGlyphMetrics(rd.fonts[0], 'H', &gminx, &gmaxx, &gminy, &gmaxy, &gadvance)) {
+                    capTop = gmaxy;
+                }
+                const float centerOffset = (rect.h * 0.5F) - static_cast<float>(fontAscent) + (static_cast<float>(capTop) * 0.5F);
+
                 const bool layered = alpha < 255;
                 const Uint8 drawAlpha = layered ? 255 : alpha;
+                const float layerPad = static_cast<float>(d.fontSize);
 
                 float scaleX = 1.0F;
                 float scaleY = 1.0F;
@@ -239,7 +253,7 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
                 if (layered) {
                     SDL_GetRenderScale(rd.renderer, &scaleX, &scaleY);
                     layerW = static_cast<int>(SDL_ceilf((rect.w + static_cast<float>(d.fontSize)) * scaleX));
-                    layerH = static_cast<int>(SDL_ceilf((rect.h + static_cast<float>(d.fontSize)) * scaleY));
+                    layerH = static_cast<int>(SDL_ceilf((rect.h + (2.0F * layerPad)) * scaleY));
                     layer = SDL_CreateTexture(rd.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, std::max(1, layerW), std::max(1, layerH));
                     SDL_SetTextureBlendMode(layer, SDL_BLENDMODE_BLEND);
                     savedTarget = SDL_GetRenderTarget(rd.renderer);
@@ -253,7 +267,7 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
                     SDL_SetRenderDrawColor(rd.renderer, 0, 0, 0, 0);
                     SDL_RenderClear(rd.renderer);
                     penX = 0.0F;
-                    penY = 0.0F;
+                    penY = layerPad;
                 }
 
                 auto draw_run = [&](size_t from, size_t to, const TextFormat& format) -> void {
@@ -270,7 +284,8 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
                     auto* text = TTF_CreateText(rd.textEngine, fontToUse, chars + from, to - from);
                     TTF_SetTextColor(text, color.r, color.g, color.b, color.a);
                     const float x0 = SDL_roundf(penX);
-                    TTF_DrawRendererText(text, x0, penY);
+                    const float y0 = SDL_roundf(penY + centerOffset);
+                    TTF_DrawRendererText(text, x0, y0);
                     int textW = 0;
                     int textH = 0;
                     TTF_GetTextSize(text, &textW, &textH);
@@ -287,11 +302,11 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
                             SDL_SetRenderDrawBlendMode(rd.renderer, SDL_BLENDMODE_BLEND);
                             SDL_SetRenderDrawColor(rd.renderer, color.r, color.g, color.b, color.a);
                             if (format.underline) {
-                                SDL_FRect line = {.x = x0, .y = penY + (static_cast<float>(textH) * 0.88f), .w = lineW, .h = thickness};
+                                SDL_FRect line = {.x = x0, .y = y0 + (static_cast<float>(textH) * 0.88f), .w = lineW, .h = thickness};
                                 SDL_RenderFillRect(rd.renderer, &line);
                             }
                             if (format.strike) {
-                                SDL_FRect line = {.x = x0, .y = penY + (static_cast<float>(textH) * 0.55f), .w = lineW, .h = thickness};
+                                SDL_FRect line = {.x = x0, .y = y0 + (static_cast<float>(textH) * 0.55f), .w = lineW, .h = thickness};
                                 SDL_RenderFillRect(rd.renderer, &line);
                             }
                         }
@@ -337,7 +352,7 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
                         SDL_SetRenderClipRect(rd.renderer, &savedClip);
                     }
                     SDL_SetTextureAlphaMod(layer, alpha);
-                    SDL_FRect dst = {.x = SDL_roundf(rect.x), .y = SDL_roundf(rect.y), .w = static_cast<float>(layerW) / scaleX, .h = static_cast<float>(layerH) / scaleY};
+                    SDL_FRect dst = {.x = SDL_roundf(rect.x), .y = SDL_roundf(rect.y) - layerPad, .w = static_cast<float>(layerW) / scaleX, .h = static_cast<float>(layerH) / scaleY};
                     SDL_RenderTexture(rd.renderer, layer, nullptr, &dst);
                     SDL_DestroyTexture(layer);
                 }
