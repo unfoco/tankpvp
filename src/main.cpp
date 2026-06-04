@@ -18,6 +18,7 @@
 #include "interface/interface.h"
 #include "logic/logic.h"
 #include "network/network.h"
+#include "persist/persist.h"
 #include "physics/physics.h"
 #include "render/render.h"
 
@@ -90,6 +91,7 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
         state->world.import<Render>();
         state->world.import<Input>();
         state->world.import<Audio>();
+        state->world.import<Persist>();
     }
 
     state->world.component<Decay>().member<float>("seconds");

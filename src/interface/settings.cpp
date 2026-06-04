@@ -55,7 +55,7 @@ auto Interface::settings(flecs::iter& it, InterfaceState& state, InterfacePage& 
             }
 
             CLAY({.layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_FIXED(20)}}}) {}
-            if (Interface::button(state, CLAY_ID("BtnBackSettings"), "Save & Back", {.color = {.r = 70, .g = 130, .b = 255, .a = 255}})) {
+            if (Interface::button(state, CLAY_ID("BtnBackSettings"), "Back")) {
                 page = prev.page;
                 prev.page = InterfacePage::Settings;
             }

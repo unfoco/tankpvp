@@ -73,3 +73,6 @@ build/
 ### clangd ###
 .cache/
 compile_commands.json
+
+### app ###
+settings.json

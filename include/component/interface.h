@@ -81,6 +81,8 @@ struct ServerEntry {
     std::string name;
     std::string address = "127.0.0.1";
     uint16_t port = 5000;
+
+    auto operator==(const ServerEntry&) const -> bool = default;
 };
 
 struct ServerList {
