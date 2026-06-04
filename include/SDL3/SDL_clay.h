@@ -6,6 +6,8 @@
 
 #include <numbers>
 
+#include "util/format.h"
+
 struct SDL_Clay_RendererData {
     SDL_Renderer* renderer;
     TTF_TextEngine* textEngine;
@@ -202,11 +204,143 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
 
             case CLAY_RENDER_COMMAND_TYPE_TEXT: {
                 auto& d = cmd->renderData.text;
-                TTF_SetFontSize(rd.fonts[d.fontId], d.fontSize);
-                auto* text = TTF_CreateText(rd.textEngine, rd.fonts[d.fontId], d.stringContents.chars, d.stringContents.length);
-                TTF_SetTextColor(text, static_cast<Uint8>(d.textColor.r), static_cast<Uint8>(d.textColor.g), static_cast<Uint8>(d.textColor.b), static_cast<Uint8>(d.textColor.a));
-                TTF_DrawRendererText(text, SDL_roundf(rect.x), SDL_roundf(rect.y));
-                TTF_DestroyText(text);
+                const char* chars = d.stringContents.chars;
+                const auto length = static_cast<size_t>(d.stringContents.length);
+                const auto alpha = static_cast<Uint8>(d.textColor.a);
+                const bool editMode = d.fontId == FONT_EDIT;
+
+                TextFormat fmt;
+                const char* base = d.stringContents.baseChars;
+                for (const char* p = base; p != nullptr && p < chars;) {
+                    if (format_is_escape(p, static_cast<size_t>(chars - p))) {
+                        p += 4;
+                    } else if (format_is_code(p, static_cast<size_t>(chars - p))) {
+                        format_apply(p[2], fmt);
+                        p += 3;
+                    } else {
+                        ++p;
+                    }
+                }
+
+                const bool layered = alpha < 255;
+                const Uint8 drawAlpha = layered ? 255 : alpha;
+
+                float scaleX = 1.0F;
+                float scaleY = 1.0F;
+                int layerW = 0;
+                int layerH = 0;
+                SDL_Texture* layer = nullptr;
+                SDL_Texture* savedTarget = nullptr;
+                SDL_Rect savedClip = {};
+                bool savedClipEnabled = false;
+                float penX = SDL_roundf(rect.x);
+                float penY = SDL_roundf(rect.y);
+
+                if (layered) {
+                    SDL_GetRenderScale(rd.renderer, &scaleX, &scaleY);
+                    layerW = static_cast<int>(SDL_ceilf((rect.w + static_cast<float>(d.fontSize)) * scaleX));
+                    layerH = static_cast<int>(SDL_ceilf((rect.h + static_cast<float>(d.fontSize)) * scaleY));
+                    layer = SDL_CreateTexture(rd.renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, std::max(1, layerW), std::max(1, layerH));
+                    SDL_SetTextureBlendMode(layer, SDL_BLENDMODE_BLEND);
+                    savedTarget = SDL_GetRenderTarget(rd.renderer);
+                    savedClipEnabled = SDL_RenderClipEnabled(rd.renderer);
+                    if (savedClipEnabled) {
+                        SDL_GetRenderClipRect(rd.renderer, &savedClip);
+                    }
+                    SDL_SetRenderTarget(rd.renderer, layer);
+                    SDL_SetRenderScale(rd.renderer, scaleX, scaleY);
+                    SDL_SetRenderClipRect(rd.renderer, nullptr);
+                    SDL_SetRenderDrawColor(rd.renderer, 0, 0, 0, 0);
+                    SDL_RenderClear(rd.renderer);
+                    penX = 0.0F;
+                    penY = 0.0F;
+                }
+
+                auto draw_run = [&](size_t from, size_t to, const TextFormat& format) -> void {
+                    if (to <= from) {
+                        return;
+                    }
+                    TTF_Font* fontToUse = (format.italic && rd.fonts[1] != nullptr) ? rd.fonts[1] : rd.fonts[0];
+                    TTF_SetFontSize(fontToUse, d.fontSize);
+                    TTF_SetFontStyle(fontToUse, format.bold ? TTF_STYLE_BOLD : TTF_STYLE_NORMAL);
+
+                    SDL_Color color = format.hasColor ? SDL_Color{format.color.r, format.color.g, format.color.b, drawAlpha}
+                                                      : SDL_Color{static_cast<Uint8>(d.textColor.r), static_cast<Uint8>(d.textColor.g), static_cast<Uint8>(d.textColor.b), drawAlpha};
+
+                    auto* text = TTF_CreateText(rd.textEngine, fontToUse, chars + from, to - from);
+                    TTF_SetTextColor(text, color.r, color.g, color.b, color.a);
+                    const float x0 = SDL_roundf(penX);
+                    TTF_DrawRendererText(text, x0, penY);
+                    int textW = 0;
+                    int textH = 0;
+                    TTF_GetTextSize(text, &textW, &textH);
+                    penX += static_cast<float>(textW);
+                    TTF_DestroyText(text);
+
+                    if (format.underline || format.strike) {
+                        int tw = 0;
+                        int th = 0;
+                        TTF_GetStringSize(fontToUse, chars + from, to - from, &tw, &th);
+                        float lineW = static_cast<float>(tw - format_trailing_bearing(fontToUse, chars + from, to - from));
+                        if (lineW > 0.0f) {
+                            const float thickness = std::max(1.0f, static_cast<float>(d.fontSize) / 14.0f);
+                            SDL_SetRenderDrawBlendMode(rd.renderer, SDL_BLENDMODE_BLEND);
+                            SDL_SetRenderDrawColor(rd.renderer, color.r, color.g, color.b, color.a);
+                            if (format.underline) {
+                                SDL_FRect line = {.x = x0, .y = penY + (static_cast<float>(textH) * 0.88f), .w = lineW, .h = thickness};
+                                SDL_RenderFillRect(rd.renderer, &line);
+                            }
+                            if (format.strike) {
+                                SDL_FRect line = {.x = x0, .y = penY + (static_cast<float>(textH) * 0.55f), .w = lineW, .h = thickness};
+                                SDL_RenderFillRect(rd.renderer, &line);
+                            }
+                        }
+                    }
+
+                    TTF_SetFontStyle(fontToUse, TTF_STYLE_NORMAL);
+                };
+
+                TextFormat marker;
+                marker.hasColor = true;
+                marker.color = {130, 130, 130, 255};
+
+                size_t runStart = 0;
+                for (size_t i = 0; i < length;) {
+                    if (format_is_escape(chars + i, length - i)) {
+                        draw_run(runStart, i, fmt);
+                        draw_run(i, editMode ? i + 4 : i + 2, fmt);
+                        i += 4;
+                        runStart = i;
+                    } else if (format_is_code(chars + i, length - i)) {
+                        draw_run(runStart, i, fmt);
+                        if (editMode) {
+                            draw_run(i, i + 3, marker);
+                        }
+                        format_apply(chars[i + 2], fmt);
+                        i += 3;
+                        runStart = i;
+                    } else if (editMode && length - i >= 2 && static_cast<unsigned char>(chars[i]) == 0xC2 && static_cast<unsigned char>(chars[i + 1]) == 0xA7) {
+                        draw_run(runStart, i, fmt);
+                        draw_run(i, i + 2, marker);
+                        i += 2;
+                        runStart = i;
+                    } else {
+                        ++i;
+                    }
+                }
+                draw_run(runStart, length, fmt);
+
+                if (layered) {
+                    SDL_SetRenderTarget(rd.renderer, savedTarget);
+                    SDL_SetRenderScale(rd.renderer, scaleX, scaleY);
+                    if (savedClipEnabled) {
+                        SDL_SetRenderClipRect(rd.renderer, &savedClip);
+                    }
+                    SDL_SetTextureAlphaMod(layer, alpha);
+                    SDL_FRect dst = {.x = SDL_roundf(rect.x), .y = SDL_roundf(rect.y), .w = static_cast<float>(layerW) / scaleX, .h = static_cast<float>(layerH) / scaleY};
+                    SDL_RenderTexture(rd.renderer, layer, nullptr, &dst);
+                    SDL_DestroyTexture(layer);
+                }
             } break;
 
             case CLAY_RENDER_COMMAND_TYPE_BORDER:

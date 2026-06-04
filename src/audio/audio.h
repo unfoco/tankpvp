@@ -1,14 +1,13 @@
 #pragma once
 
 #include <flecs.h>
+#include <glm/glm.hpp>
 #include <miniaudio.h>
 
-#include <glm/glm.hpp>
 #include <list>
 #include <memory>
 
 #include "component/object.h"
-#include "component/settings.h"
 
 struct Sounded {};
 

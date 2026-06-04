@@ -2,8 +2,12 @@
 
 #include <SDL3_image/SDL_image.h>
 
+#include <algorithm>
+#include <string>
+
 #include "component/event.h"
 #include "component/network.h"
+#include "util/format.h"
 #include "util/time.h"
 
 namespace {
@@ -57,29 +61,45 @@ void Render::init(flecs::iter& it, size_t) {
                     }});
 
     TTF_Init();
-    static TTF_Font* font;
-    font = TTF_OpenFont("asset/font.ttf", 16);
-    if (font == nullptr) {
+    static TTF_Font* fonts[2];
+    fonts[0] = TTF_OpenFont("asset/font/normal.ttf", 16);
+    fonts[1] = TTF_OpenFont("asset/font/italic.ttf", 16);
+    if (fonts[0] == nullptr) {
         SDL_Log("Failed to load font: %s", SDL_GetError());
         exit(EXIT_FAILURE);
     }
-    TTF_SetFontHinting(font, TTF_HINTING_MONO);
+    TTF_SetFontHinting(fonts[0], TTF_HINTING_MONO);
+    if (fonts[1] != nullptr) {
+        TTF_SetFontHinting(fonts[1], TTF_HINTING_MONO);
+    }
 
     auto* textEngine = TTF_CreateRendererTextEngine(renderer);
 
     Clay_SetMeasureTextFunction(
         [](Clay_StringSlice text, Clay_TextElementConfig* config, void* userData) -> Clay_Dimensions {
             auto** f = static_cast<TTF_Font**>(userData);
-            TTF_SetFontSize(f[config->fontId], config->fontSize);
+            bool editMode = config->fontId == FONT_EDIT;
+            auto length = static_cast<size_t>(text.length);
+
+            TextFormat state;
+            for (const char* p = text.baseChars; p != nullptr && p < text.chars;) {
+                if (format_is_escape(p, static_cast<size_t>(text.chars - p))) {
+                    p += 4;
+                } else if (format_is_code(p, static_cast<size_t>(text.chars - p))) {
+                    format_apply(p[2], state);
+                    p += 3;
+                } else {
+                    ++p;
+                }
+            }
 
             int maxW = 0;
             int lineH = 0;
             size_t start = 0;
-            for (size_t i = 0; i <= static_cast<size_t>(text.length); ++i) {
-                if (i == static_cast<size_t>(text.length) || text.chars[i] == '\n') {
-                    int w = 0;
+            for (size_t i = 0; i <= length; ++i) {
+                if (i == length || text.chars[i] == '\n') {
                     int h = 0;
-                    TTF_GetStringSize(f[config->fontId], text.chars + start, i - start, &w, &h);
+                    int w = format_width(f[0], f[1], text.chars + start, i - start, config->fontSize, state, editMode, &h);
                     maxW = std::max(maxW, w);
                     lineH = std::max(lineH, h);
                     start = i + 1;
@@ -90,7 +110,7 @@ void Render::init(flecs::iter& it, size_t) {
                 .height = static_cast<float>(lineH),
             };
         },
-        static_cast<void*>(&font));
+        static_cast<void*>(fonts));
 
     SDL_Texture* tankBaseTexture = IMG_LoadTexture(renderer, "asset/texture/tank/base.png");
     SDL_Texture* tankTurretTexture = IMG_LoadTexture(renderer, "asset/texture/tank/turret0.png");
@@ -106,7 +126,7 @@ void Render::init(flecs::iter& it, size_t) {
             {
                 .renderer = renderer,
                 .textEngine = textEngine,
-                .fonts = &font,
+                .fonts = fonts,
             },
         .tankBaseTexture = tankBaseTexture,
         .tankTurretTexture = tankTurretTexture,

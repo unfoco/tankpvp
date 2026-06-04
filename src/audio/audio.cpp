@@ -14,6 +14,7 @@
 
 #include "component/interface.h"
 #include "component/network.h"
+#include "component/settings.h"
 
 static constexpr float AUDIO_MAX_DIST = 900.0F;
 static constexpr float AUDIO_PAN_DIST = 640.0F;

@@ -175,6 +175,7 @@ struct InputConfig {
     bool multiline = false;
     bool commitOnEnter = true;
     bool disabled = false;
+    bool allowFormatting = false;
 
     const char* placeholder = "";
     const char* format = nullptr;

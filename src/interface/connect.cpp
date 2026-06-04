@@ -88,14 +88,12 @@ auto Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& p
                             CLAY_TEXT(Str(sub), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 130}, .fontSize = 16, .wrapMode = CLAY_TEXT_WRAP_NONE}));
                         }
 
-                        ButtonStyle rowBtn = {.fontSize = 32, .padding = {.left = 14, .right = 14, .top = 8, .bottom = 8}};
-                        ButtonStyle connectBtn = rowBtn;
-                        connectBtn.color = {.r = 70, .g = 130, .b = 255, .a = 255};
+                        ButtonStyle iconBtn = {.color = {.r = 66, .g = 66, .b = 74, .a = 255}, .fontSize = 32, .width = 48, .padding = {.left = 8, .right = 8, .top = 8, .bottom = 8}};
 
-                        if (Interface::button(state, CLAY_IDI("SrvConnect", i), "Connect", connectBtn)) {
+                        if (Interface::button(state, CLAY_IDI("SrvConnect", i), "\xE2\x96\xB6", iconBtn)) {
                             connectIdx = i;
                         }
-                        if (Interface::button(state, CLAY_IDI("SrvEdit", i), "Edit", rowBtn)) {
+                        if (Interface::button(state, CLAY_IDI("SrvEdit", i), "\xE2\x89\xA1", iconBtn)) {
                             editIdx = i;
                         }
                     }

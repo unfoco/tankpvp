@@ -6,6 +6,7 @@
 #include <string_view>
 #include <utility>
 
+#include "util/format.h"
 #include "util/time.h"
 
 static inline auto Utf8CpBytes(unsigned char lead) noexcept -> size_t {
@@ -79,7 +80,7 @@ Interface::Interface(flecs::world& world) {
     world.component<InterfaceTransition>().add(flecs::Singleton);
 
     TTF_Init();
-    auto* font = TTF_OpenFont("asset/font.ttf", 16);
+    auto* font = TTF_OpenFont("asset/font/normal.ttf", 16);
     if (font == nullptr) {
         SDL_Log("Failed to load font: %s", SDL_GetError());
         exit(EXIT_FAILURE);
@@ -252,40 +253,40 @@ auto Interface::wrap(InterfaceState& state, const std::string& text, uint16_t fo
     if (state.font == nullptr || maxWidth <= 0) {
         return text;
     }
-    TTF_SetFontSize(state.font, fontSize);
-
-    auto measure = [&](const std::string& s) -> float {
-        if (s.empty()) {
-            return 0;
-        }
-        int w = 0;
+    auto measure = [&](const std::string& s, TextFormat start) -> float {
         int h = 0;
-        TTF_GetStringSize(state.font, s.c_str(), s.size(), &w, &h);
-        return static_cast<float>(w);
+        return static_cast<float>(format_width(state.font, nullptr, s.data(), s.size(), fontSize, start, false, &h));
+    };
+    auto advance = [&](const std::string& s, TextFormat& fmt) -> void {
+        format_width(state.font, nullptr, s.data(), s.size(), fontSize, fmt, false, nullptr);
     };
 
     std::string out;
     std::string line;
+    TextFormat lineStart;
+    auto commit = [&]() -> void {
+        advance(line, lineStart);
+        out += line;
+        out += '\n';
+        line.clear();
+    };
+
     size_t i = 0;
     size_t n = text.size();
 
     while (i < n) {
         if (text[i] == '\n') {
-            out += line;
-            out += '\n';
-            line.clear();
+            commit();
             ++i;
             continue;
         }
 
         if (text[i] == ' ') {
             if (!line.empty()) {
-                if (measure(line + " ") <= maxWidth) {
+                if (measure(line + " ", lineStart) <= maxWidth) {
                     line += ' ';
                 } else {
-                    out += line;
-                    out += '\n';
-                    line.clear();
+                    commit();
                 }
             }
             ++i;
@@ -298,13 +299,16 @@ auto Interface::wrap(InterfaceState& state, const std::string& text, uint16_t fo
         }
         std::string word = text.substr(i, j - i);
 
-        if (measure(line + word) <= maxWidth) {
+        if (measure(line + word, lineStart) <= maxWidth) {
             line += word;
             i = j;
-        } else if (measure(word) <= maxWidth && !line.empty() && measure(line) >= maxWidth * 0.5F) {
-            out += line;
-            out += '\n';
-            line.clear();
+            continue;
+        }
+
+        TextFormat afterLine = lineStart;
+        advance(line, afterLine);
+        if (measure(word, afterLine) <= maxWidth && !line.empty() && measure(line, lineStart) >= maxWidth * 0.5F) {
+            commit();
             line = word;
             i = j;
         } else {
@@ -312,13 +316,11 @@ auto Interface::wrap(InterfaceState& state, const std::string& text, uint16_t fo
             while (k < j) {
                 size_t cb = Utf8CpBytes(static_cast<unsigned char>(text[k]));
                 std::string cp = text.substr(k, cb);
-                if (line.empty() || measure(line + cp) <= maxWidth) {
+                if (line.empty() || measure(line + cp, lineStart) <= maxWidth) {
                     line += cp;
                     k += cb;
                 } else {
-                    out += line;
-                    out += '\n';
-                    line.clear();
+                    commit();
                 }
             }
             i = j;
@@ -504,6 +506,9 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
             if (ok) {
                 uint32_t cp = Utf8Decode(p, cpLen);
                 bool regular = cp == ' ' || cp == '\n' || (cp >= 0x21 && cp <= 0x7E) || (cp >= 0xC0 && cp <= 0x24F);
+                if (cfg.allowFormatting && cp == 0xA7) {
+                    regular = true;
+                }
                 if (!regular || (state.font && !TTF_FontHasGlyph(state.font, cp))) {
                     ok = false;
                 }
@@ -527,6 +532,22 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
         int h = 0;
         TTF_GetStringSize(state.font, "A", 1, &w, &h);
         return h > 0 ? h : static_cast<int>(st.fontSize);
+    };
+
+    auto lineWidth = [&](const char* lineData, size_t byteEnd) -> float {
+        TextFormat fmt;
+        for (const char* p = buf.data(); p < lineData;) {
+            if (format_is_escape(p, static_cast<size_t>(lineData - p))) {
+                p += 4;
+            } else if (format_is_code(p, static_cast<size_t>(lineData - p))) {
+                format_apply(p[2], fmt);
+                p += 3;
+            } else {
+                ++p;
+            }
+        }
+        int h = 0;
+        return static_cast<float>(format_width(state.font, nullptr, lineData, byteEnd, st.fontSize, fmt, cfg.allowFormatting, &h));
     };
 
     auto hitTest = [&](float mx, float my) -> size_t {
@@ -555,13 +576,10 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
                     return cpOff;
                 }
                 for (size_t i = 1; i <= lineCP; ++i) {
-                    int w = 0;
-                    int h = 0;
-                    TTF_GetStringSize(state.font, lineData, Utf8ToBytes(lineData, lineBytes, i), &w, &h);
-                    if (static_cast<float>(w) >= relX) {
-                        int pw = 0;
-                        TTF_GetStringSize(state.font, lineData, Utf8ToBytes(lineData, lineBytes, i - 1), &pw, &h);
-                        return cpOff + ((static_cast<float>(w) - relX < relX - static_cast<float>(pw)) ? i : i - 1);
+                    float w = lineWidth(lineData, Utf8ToBytes(lineData, lineBytes, i));
+                    if (w >= relX) {
+                        float pw = lineWidth(lineData, Utf8ToBytes(lineData, lineBytes, i - 1));
+                        return cpOff + ((w - relX < relX - pw) ? i : i - 1);
                     }
                 }
                 return cpOff + lineCP;
@@ -816,10 +834,7 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
         const char* lineStart = (lastNl == std::string_view::npos) ? textToCursor.data() : textToCursor.data() + lastNl + 1;
         size_t lineBytes = (lastNl == std::string_view::npos) ? textToCursor.size() : textToCursor.size() - lastNl - 1;
 
-        int w = 0;
-        int h = 0;
-        TTF_GetStringSize(state.font, lineStart, lineBytes, &w, &h);
-        cursorPx = static_cast<float>(w);
+        cursorPx = lineWidth(lineStart, lineBytes);
 
         int lineNum = 0;
         for (char c : textToCursor) {
@@ -948,17 +963,20 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
                 }) {}
             }
         } else {
+            uint16_t textFontId = (cfg.allowFormatting && focused) ? FONT_EDIT : 0;
             if (cfg.multiline) {
                 float ww = (f.bounds.width > 0) ? f.bounds.width - static_cast<float>(st.padding.left) - static_cast<float>(st.padding.right) : 0;
                 const std::string& disp = state.intern(Interface::wrap(state, buf, st.fontSize, ww));
                 CLAY_TEXT(Str(disp), CLAY_TEXT_CONFIG({
                                          .textColor = st.textColor,
+                                         .fontId = textFontId,
                                          .fontSize = st.fontSize,
                                          .wrapMode = CLAY_TEXT_WRAP_NEWLINES,
                                      }));
             } else {
                 CLAY_TEXT(Str(buf), CLAY_TEXT_CONFIG({
                                         .textColor = st.textColor,
+                                        .fontId = textFontId,
                                         .fontSize = st.fontSize,
                                         .wrapMode = CLAY_TEXT_WRAP_NONE,
                                     }));
@@ -988,15 +1006,15 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
                             size_t selE = std::min(hi, cpLineEnd);
                             float xStart = 0;
                             if (selS > cpOff) {
-                                int w = 0;
-                                int h = 0;
-                                TTF_GetStringSize(state.font, lineData, Utf8ToBytes(lineData, lineBytes, selS - cpOff), &w, &h);
-                                xStart = static_cast<float>(w);
+                                xStart = lineWidth(lineData, Utf8ToBytes(lineData, lineBytes, selS - cpOff));
                             }
-                            int w = 0;
-                            int h = 0;
-                            TTF_GetStringSize(state.font, lineData, Utf8ToBytes(lineData, lineBytes, selE - cpOff), &w, &h);
-                            float selW = std::max(static_cast<float>(w) - xStart, static_cast<float>(st.fontSize) / 2);
+                            size_t selEbytes = Utf8ToBytes(lineData, lineBytes, selE - cpOff);
+                            TTF_SetFontSize(state.font, st.fontSize);
+                            float wsel = lineWidth(lineData, selEbytes) - static_cast<float>(format_trailing_bearing(state.font, lineData, selEbytes));
+                            float selW = wsel - xStart;
+                            if (selW < 1.0F) {
+                                selW = static_cast<float>(st.fontSize) / 3.0F;
+                            }
 
                             CLAY({
                                 .layout = {.sizing = {CLAY_SIZING_FIXED(selW), CLAY_SIZING_FIXED((float)lh)}},

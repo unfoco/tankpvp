@@ -131,6 +131,7 @@ auto Interface::chat(flecs::iter& it, InterfaceState& state, InterfacePage& page
                          {
                              .maxLength = 200,
                              .commitOnEnter = false,
+                             .allowFormatting = true,
                              .allow = InputFilter::Printable,
                          },
                          style);
