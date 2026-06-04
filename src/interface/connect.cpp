@@ -7,6 +7,7 @@
 auto Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
     prev.page = InterfacePage::Main;
     auto& list = it.world().get_mut<ServerList>();
+    const auto* board = it.world().try_get<ServerStatusBoard>();
 
     constexpr float kRowHeight = 64;
     constexpr uint16_t kRowGap = 8;
@@ -86,6 +87,46 @@ auto Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& p
                               }}) {
                             CLAY_TEXT(Str(name), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
                             CLAY_TEXT(Str(sub), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 130}, .fontSize = 16, .wrapMode = CLAY_TEXT_WRAP_NONE}));
+                        }
+
+                        ServerStatus status;
+                        if (board != nullptr) {
+                            auto found = board->byAddress.find(entry.address + ":" + std::to_string(entry.port));
+                            if (found != board->byAddress.end()) {
+                                status = found->second;
+                            }
+                        }
+                        std::string countStr;
+                        std::string pingStr;
+                        Clay_Color countColor = {255, 255, 255, 160};
+                        switch (status.state) {
+                            case ServerStatus::State::Online:
+                                countStr = std::to_string(status.players) + "/" + std::to_string(status.max);
+                                pingStr = std::to_string(status.ping) + " ms";
+                                countColor = {90, 220, 120, 255};
+                                break;
+                            case ServerStatus::State::Querying:
+                                countStr = "\xE2\x80\xA6";
+                                countColor = {255, 255, 255, 110};
+                                break;
+                            case ServerStatus::State::Offline:
+                                countStr = "offline";
+                                countColor = {220, 90, 90, 230};
+                                break;
+                            case ServerStatus::State::Incompatible:
+                                countStr = "old";
+                                countColor = {230, 160, 60, 230};
+                                break;
+                            case ServerStatus::State::Unknown:
+                                break;
+                        }
+                        if (!countStr.empty()) {
+                            CLAY({.layout = {.sizing = {CLAY_SIZING_FIT(), CLAY_SIZING_FIT()}, .childGap = 2, .childAlignment = {.x = CLAY_ALIGN_X_RIGHT}, .layoutDirection = CLAY_TOP_TO_BOTTOM}}) {
+                                CLAY_TEXT(Str(state.intern(countStr)), CLAY_TEXT_CONFIG({.textColor = countColor, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
+                                if (!pingStr.empty()) {
+                                    CLAY_TEXT(Str(state.intern(pingStr)), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 110}, .fontSize = 16, .wrapMode = CLAY_TEXT_WRAP_NONE}));
+                                }
+                            }
                         }
 
                         ButtonStyle iconBtn = {.color = {.r = 66, .g = 66, .b = 74, .a = 255}, .fontSize = 32, .width = 48, .padding = {.left = 8, .right = 8, .top = 8, .bottom = 8}};

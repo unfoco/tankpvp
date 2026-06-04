@@ -3,7 +3,6 @@
 #include <SDL3_image/SDL_image.h>
 
 #include <algorithm>
-#include <string>
 
 #include "component/event.h"
 #include "component/network.h"

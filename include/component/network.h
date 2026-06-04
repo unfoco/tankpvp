@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 
 enum class NetworkRole : std::uint8_t {
     Shared,
@@ -45,6 +46,18 @@ struct NetworkRequestJoin {
 struct NetworkRequestQuit {};
 struct NetworkRequestChat {
     std::string text;
+};
+
+struct ServerStatus {
+    enum class State : std::uint8_t { Unknown, Querying, Online, Offline, Incompatible };
+    State state = State::Unknown;
+    uint16_t players = 0;
+    uint16_t max = 0;
+    uint16_t ping = 0;
+};
+
+struct ServerStatusBoard {
+    std::unordered_map<std::string, ServerStatus> byAddress;
 };
 
 struct NetworkTarget {

@@ -154,6 +154,21 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
         on_hello(world, world.get_mut<NetworkHost>(), epeer, util::decode<MessageHello>(r).username);
         return;
     }
+    if (kind == Message::Ping) {
+        auto ping = util::decode<MessagePing>(r);
+        Writer w = wire::message(Message::Pong);
+        MessagePong pong{
+            .protocol = NETWORK_PROTOCOL,
+            .token = ping.token,
+            .players = static_cast<uint16_t>(world.count<Peer>()),
+            .max_players = MAX_PLAYERS,
+            .tickrate = world.get<NetworkHost>().tickrate,
+        };
+        util::encode(w, pong);
+        wire::send(epeer, w, CHANNEL_RELIABLE, true);
+        enet_peer_disconnect_later(epeer, 0);
+        return;
+    }
     flecs::entity pe = peer_entity(world, epeer);
     if (!pe || !pe.is_alive() || !pe.has<Peer>()) {
         return;

@@ -11,6 +11,8 @@
 
 constexpr uint32_t NETWORK_PROTOCOL = 1;
 
+constexpr uint16_t MAX_PLAYERS = 32;
+
 constexpr uint8_t CHANNEL_RELIABLE = 0;
 constexpr uint8_t CHANNEL_UNRELIABLE = 1;
 constexpr uint8_t CHANNEL_COUNT = 2;
@@ -33,6 +35,8 @@ enum class Message : uint8_t {
     Hello,
     Chat,
     Kick,
+    Ping,
+    Pong,
 };
 
 namespace wire {
@@ -225,5 +229,29 @@ struct MessageKick {
     template <class Archive>
     void serialize(Archive& a) {
         a.text(reason);
+    }
+};
+
+struct MessagePing {
+    uint64_t token = 0;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & token;
+    }
+};
+
+struct MessagePong {
+    uint32_t protocol = 0;
+    uint64_t token = 0;
+    uint16_t players = 0;
+    uint16_t max_players = 0;
+    uint16_t tickrate = 0;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & protocol;
+        a & token;
+        a & players;
+        a & max_players;
+        a & tickrate;
     }
 };

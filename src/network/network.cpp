@@ -64,7 +64,7 @@ void Network::host(flecs::entity e, const NetworkRequestHost& req) {
     ENetAddress address{};
     address.host = ENET_HOST_ANY;
     address.port = req.port;
-    ENetHost* host = enet_host_create(&address, 32, CHANNEL_COUNT, 0, 0);
+    ENetHost* host = enet_host_create(&address, MAX_PLAYERS, CHANNEL_COUNT, 0, 0);
     if (host == nullptr) {
         SDL_Log("network: failed to create server host on port %u", req.port);
         e.destruct();
