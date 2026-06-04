@@ -1,10 +1,10 @@
 # tankpvp
 
 todo:
-  - strip system definitions from module headers to prevent internal dependencies to leak (?)
-  - reproduce network player freezes
-  - fix chat encoding bug
   - walls
-  - ai players? (bt? ml?)
+  - ai players
   - labyrinth generator
-  - move interface helpers into a seperate library?
+  - prevent internal dependency leak for modules
+  - a clean way to extract components to a 3rd party library
+  - reproduce network player freezes
+  - input encoding bug
