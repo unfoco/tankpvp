@@ -106,6 +106,7 @@ void Interface::frame(flecs::iter&, size_t, InterfaceState& state) {
     state.prevFocusedId = state.focusedId;
     state.mousePressed = false;
     state.focusConsumed = false;
+    state.cursor = InterfaceCursor::Default;
     state.textPool.clear();
 }
 
@@ -163,6 +164,12 @@ static void pick_transition(InterfacePage from, InterfacePage to, TransitionKind
 }
 
 void Interface::build(flecs::iter& it, size_t i, InterfaceState& state, InterfaceCommands& cmds, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
+    if (state.cursors[0] == nullptr) {
+        state.cursors[static_cast<int>(InterfaceCursor::Default)] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
+        state.cursors[static_cast<int>(InterfaceCursor::Pointer)] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_POINTER);
+        state.cursors[static_cast<int>(InterfaceCursor::Text)] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_TEXT);
+    }
+
     InterfacePage shown = page;
     if (auto& tr = it.world().get_mut<InterfaceTransition>(); shown != tr.shown) {
         InterfacePage from = tr.shown;
@@ -222,6 +229,11 @@ void Interface::build(flecs::iter& it, size_t i, InterfaceState& state, Interfac
         SDL_StopTextInput(events.target);
     }
 
+    if (state.cursor != state.cursorApplied && state.cursors[static_cast<int>(state.cursor)] != nullptr) {
+        SDL_SetCursor(state.cursors[static_cast<int>(state.cursor)]);
+        state.cursorApplied = state.cursor;
+    }
+
     it.world().get_mut<InputCapture>().active = (state.focusedId != 0);
 }
 
@@ -237,8 +249,11 @@ auto Interface::button(InterfaceState& state, Clay_ElementId id, const char* lab
         .backgroundColor = st.color,
         .cornerRadius = CLAY_CORNER_RADIUS(st.cornerRadius),
     }) {
-        if (Clay_Hovered() && state.mousePressed) {
-            clicked = true;
+        if (Clay_Hovered()) {
+            state.cursor = InterfaceCursor::Pointer;
+            if (state.mousePressed) {
+                clicked = true;
+            }
         }
         CLAY_TEXT(Str(label), CLAY_TEXT_CONFIG({
                                   .textColor = st.textColor,
@@ -348,9 +363,12 @@ auto Interface::toggle(InterfaceState& state, Clay_ElementId id, bool& value, To
         .backgroundColor = value ? st.onColor : st.offColor,
         .cornerRadius = CLAY_CORNER_RADIUS(st.height / 2),
     }) {
-        if (Clay_Hovered() && state.mousePressed) {
-            value = !value;
-            toggled = true;
+        if (Clay_Hovered()) {
+            state.cursor = InterfaceCursor::Pointer;
+            if (state.mousePressed) {
+                value = !value;
+                toggled = true;
+            }
         }
         if (value) {
             CLAY({.layout = {.sizing = {CLAY_SIZING_GROW()}}}) {}
@@ -372,14 +390,15 @@ auto Interface::slider(InterfaceState& state, Clay_ElementId id, float& value, f
     }
 
     if (state.activeId == id.id && state.mouseDown) {
-        float width = Clay_GetElementData(id).boundingBox.width;
-        if (width > 0) {
-            float delta = (state.mouseX - state.dragOriginX) / width * range;
-            value = std::clamp(state.dragOriginValue + delta, lo, hi);
+        Clay_BoundingBox box = Clay_GetElementData(id).boundingBox;
+        if (box.width > 0) {
+            float fraction = (state.mouseX - box.x) / box.width;
+            value = std::clamp(lo + (fraction * range), lo, hi);
         }
     }
 
     float norm = std::clamp((value - lo) / range, 0.F, 1.F);
+    float trackWidth = Clay_GetElementData(id).boundingBox.width;
 
     CLAY({
         .id = id,
@@ -389,10 +408,11 @@ auto Interface::slider(InterfaceState& state, Clay_ElementId id, float& value, f
                 .childAlignment = {.y = CLAY_ALIGN_Y_CENTER},
             },
     }) {
-        if (Clay_Hovered() && state.mousePressed) {
-            state.activeId = id.id;
-            state.dragOriginX = state.mouseX;
-            state.dragOriginValue = value;
+        if (Clay_Hovered()) {
+            state.cursor = InterfaceCursor::Pointer;
+            if (state.mousePressed) {
+                state.activeId = id.id;
+            }
         }
         CLAY({
             .layout =
@@ -403,12 +423,17 @@ auto Interface::slider(InterfaceState& state, Clay_ElementId id, float& value, f
             .backgroundColor = st.trackColor,
             .cornerRadius = CLAY_CORNER_RADIUS(st.trackHeight / 2),
         }) {
-            if (norm > 0) {
+            if (norm > 0 && trackWidth > 0) {
                 CLAY({
-                    .layout = {.sizing = {CLAY_SIZING_PERCENT(norm), CLAY_SIZING_GROW()}},
-                    .backgroundColor = st.fillColor,
-                    .cornerRadius = CLAY_CORNER_RADIUS(st.trackHeight / 2),
-                }) {}
+                    .layout = {.sizing = {CLAY_SIZING_PERCENT(norm), CLAY_SIZING_FIXED(st.trackHeight)}},
+                    .clip = {.horizontal = true},
+                }) {
+                    CLAY({
+                        .layout = {.sizing = {CLAY_SIZING_FIXED(trackWidth), CLAY_SIZING_FIXED(st.trackHeight)}},
+                        .backgroundColor = st.fillColor,
+                        .cornerRadius = CLAY_CORNER_RADIUS(st.trackHeight / 2),
+                    }) {}
+                }
             }
         }
     }
@@ -927,14 +952,17 @@ auto Interface::input(InterfaceState& state, const WindowEvents& events, Clay_El
             .border = {.color = border, .width = {st.borderWidth, st.borderWidth, st.borderWidth, st.borderWidth}},
         }) {}
 
-        if (Clay_Hovered() && state.mousePressed && !cfg.disabled) {
-            state.focusedId = id.id;
-            state.focusConsumed = true;
-            clicked = true;
-            SDL_StartTextInput(events.target);
-            f.cursor = hitTest(state.mouseX, state.mouseY);
-            f.anchor = f.cursor;
-            f.blinkBase = util::now();
+        if (Clay_Hovered() && !cfg.disabled) {
+            state.cursor = InterfaceCursor::Text;
+            if (state.mousePressed) {
+                state.focusedId = id.id;
+                state.focusConsumed = true;
+                clicked = true;
+                SDL_StartTextInput(events.target);
+                f.cursor = hitTest(state.mouseX, state.mouseY);
+                f.anchor = f.cursor;
+                f.blinkBase = util::now();
+            }
         }
 
         if (empty) {

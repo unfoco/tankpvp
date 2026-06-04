@@ -49,11 +49,17 @@ struct InputField {
     }
 };
 
+enum class InterfaceCursor : uint8_t { Default, Pointer, Text };
+
 struct InterfaceState {
     struct FieldSlot {
         uint32_t id = 0;
         InputField field;
     };
+
+    InterfaceCursor cursor = InterfaceCursor::Default;
+    InterfaceCursor cursorApplied = InterfaceCursor::Default;
+    SDL_Cursor* cursors[3] = {};
 
     bool mousePressed = false;
     bool mouseDown = false;
@@ -64,9 +70,6 @@ struct InterfaceState {
     uint32_t focusedId = 0;
     uint32_t prevFocusedId = 0;
     bool focusConsumed = false;
-
-    float dragOriginX = 0;
-    float dragOriginValue = 0;
 
     TTF_Font* font = nullptr;
 
