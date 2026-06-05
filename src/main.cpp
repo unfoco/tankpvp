@@ -120,7 +120,7 @@ auto SDL_AppEvent(void* appstate, SDL_Event* event) -> SDL_AppResult {
     }
 
     if (state->world.try_get<WindowEvents>() != nullptr) {
-        state->world.get_mut<WindowEvents>().push(*event);
+        state->world.get_mut<WindowEvents>().pushEvent(*event);
     }
 
     return SDL_APP_CONTINUE;
@@ -132,7 +132,7 @@ auto SDL_AppIterate(void* appstate) -> SDL_AppResult {
     auto tick_once = [&] -> void {
         state->world.progress(TICK_DT);
         if (state->world.try_get<WindowEvents>()) {
-            state->world.get_mut<WindowEvents>().clear();
+            state->world.get_mut<WindowEvents>().clearAll();
         }
     };
 
