@@ -19,8 +19,6 @@ struct NetworkHost {
     uint16_t tickrate = 60;
 };
 
-struct Controls {};
-
 struct PendingInput {
     uint64_t tick = 0;
     uint32_t flags = 0;
@@ -109,4 +107,3 @@ struct NetworkServer {
     static void replicate(flecs::iter& it);
 };
 
-void broadcast_chat(flecs::world& world, const std::string& line);

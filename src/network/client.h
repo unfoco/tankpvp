@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include "component/network.h"
+
 constexpr double BUFFER_TARGET = 3.0;
 
 struct Sample {
@@ -105,4 +107,5 @@ struct NetworkClient {
     static void predict(flecs::iter& it);
     static void interpolate(flecs::iter& it);
     static void upload(flecs::iter& it);
+    static void chat(flecs::entity e, const RequestChat& req);
 };

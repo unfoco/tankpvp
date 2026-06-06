@@ -10,7 +10,7 @@
 #include "component/input.h"
 #include "component/object.h"
 #include "component/physics.h"
-#include "component/settings.h"
+#include "component/script.h"
 #include "protocol.h"
 #include "registry.h"
 #include "server.h"
@@ -26,6 +26,9 @@ Network::Network(flecs::world& world) {
     world.component<Rotation>().member<float>("angle");
     world.component<Color>().member<float>("r").member<float>("g").member<float>("b");
     world.component<Owner>().member<uint32_t>("peer").member<uint32_t>("prediction");
+    world.component<MovementStats>().member<float>("speed").member<float>("turn");
+    world.component<WeaponStats>().member<uint32_t>("cooldown").member<float>("speed").member<float>("muzzle").member<float>("life");
+    world.component<Bullet>().member<float>("speed");
 
     world.component<Position>().add<Networked>().set<Quantize>({.precision = 1.0F / 8192.0F, .bytes = 4});
     world.component<Rotation>().add<Networked>().set<Quantize>({.precision = 0.0001F, .bytes = 2});
@@ -33,6 +36,8 @@ Network::Network(flecs::world& world) {
     world.component<Owner>().add<Networked>();
     world.component<Tank>().add<Networked>();
     world.component<Bullet>().add<Networked>();
+    world.component<MovementStats>().add<Networked>();
+    world.component<WeaponStats>().add<Networked>();
     world.component<CollisionBox>().add<Networked>();
     world.component<DampingLinear>().add<Networked>();
     world.component<DampingAngular>().add<Networked>();
@@ -45,21 +50,30 @@ Network::Network(flecs::world& world) {
     world.set<NetworkTarget>({});
     world.set<ConnectionStatus>({});
 
-    world.observer<const NetworkRequestHost>("network::host").event(flecs::OnSet).each(Network::host);
-    world.observer<const NetworkRequestJoin>("network::join").event(flecs::OnSet).each(Network::join);
-    world.observer().with<NetworkRequestQuit>().event(flecs::OnAdd).each([](flecs::entity e) -> void { Network::quit(e, NetworkRequestQuit{}); });
-    world.observer<const NetworkRequestChat>("network::chat").event(flecs::OnSet).each(Network::chat);
+    world.observer<const RequestHost>("network::host").event(flecs::OnSet).each(Network::host);
+    world.observer<const RequestJoin>("network::join").event(flecs::OnSet).each(Network::join);
+    world.observer().with<RequestQuit>().event(flecs::OnAdd).each([](flecs::entity e) -> void { Network::quit(e, RequestQuit{}); });
 
     world.import<NetworkServer>();
     world.import<NetworkClient>();
 }
 
-void Network::host(flecs::entity e, const NetworkRequestHost& req) {
+static void rebuild_registry(flecs::world world) {
+    NetworkRegistry rebuilt;
+    rebuilt.build(world);
+    if (rebuilt.components.size() != world.get<NetworkRegistry>().components.size()) {
+        SDL_Log("network: registry rebuilt with %zu replicated components", rebuilt.components.size());
+    }
+    world.set<NetworkRegistry>(std::move(rebuilt));
+}
+
+void Network::host(flecs::entity e, const RequestHost& req) {
     flecs::world world = e.world();
     if ((world.try_get<NetworkHost>() != nullptr) || (world.try_get<NetworkConnection>() != nullptr)) {
         e.destruct();
         return;
     }
+    rebuild_registry(world);
 
     ENetAddress address{};
     address.host = ENET_HOST_ANY;
@@ -115,12 +129,13 @@ void Network::host(flecs::entity e, const NetworkRequestHost& req) {
     e.destruct();
 }
 
-void Network::join(flecs::entity e, const NetworkRequestJoin& req) {
+void Network::join(flecs::entity e, const RequestJoin& req) {
     flecs::world world = e.world();
     if ((world.try_get<NetworkConnection>() != nullptr) || (world.try_get<NetworkHost>() != nullptr)) {
         e.destruct();
         return;
     }
+    rebuild_registry(world);
 
     ENetHost* client = enet_host_create(nullptr, 1, CHANNEL_COUNT, 0, 0);
     if (client == nullptr) {
@@ -146,7 +161,7 @@ void Network::join(flecs::entity e, const NetworkRequestJoin& req) {
     e.destruct();
 }
 
-void Network::quit(flecs::entity e, const NetworkRequestQuit&) {
+void Network::quit(flecs::entity e, const RequestQuit&) {
     flecs::world world = e.world();
 
     if (const auto* h = world.try_get<NetworkHost>(); (h != nullptr) && (h->host != nullptr)) {
@@ -154,6 +169,7 @@ void Network::quit(flecs::entity e, const NetworkRequestQuit&) {
         NetworkServer::teardown(world);
         enet_host_destroy(host);
         world.remove<NetworkHost>();
+        world.get_mut<ServerClock>().running = false;
         SDL_Log("network: stopped hosting");
     }
 
@@ -172,24 +188,12 @@ void Network::quit(flecs::entity e, const NetworkRequestQuit&) {
     if (auto* log = world.try_get_mut<ChatLog>()) {
         *log = {};
     }
-
-    e.destruct();
-}
-
-void Network::chat(flecs::entity e, const NetworkRequestChat& req) {
-    flecs::world world = e.world();
-    std::string text = req.text;
-    if (auto* conn = world.try_get_mut<NetworkConnection>(); (conn != nullptr) && conn->connected && (conn->server != nullptr)) {
-        Writer w = wire::message(Message::Chat);
-        MessageChat msg{text};
-        util::encode(w, msg);
-        wire::send(conn->server, w, CHANNEL_RELIABLE, true);
-    } else if (world.try_get<NetworkHost>() != nullptr) {
-        std::string name;
-        if (const Settings* s = world.try_get<Settings>()) {
-            name = s->username;
-        }
-        broadcast_chat(world, "<" + (name.empty() ? "host" : name) + "> " + text);
+    if (world.has<CommandBook>()) {
+        world.remove<CommandBook>();
     }
+    if (auto* view = world.try_get_mut<ViewState>()) {
+        view->views.clear();
+    }
+
     e.destruct();
 }

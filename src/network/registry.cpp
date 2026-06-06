@@ -213,7 +213,7 @@ void NetworkRegistry::build(flecs::world& world) {
     }
 }
 
-void NetworkRegistry::write(flecs::world& world, flecs::entity e, const Component& c, Writer& out) {
+void NetworkRegistry::write(flecs::world& world, flecs::entity e, const Component& c, serialize::Writer& out) {
     if (c.tag) {
         return;
     }
@@ -243,7 +243,7 @@ void NetworkRegistry::write(flecs::world& world, flecs::entity e, const Componen
     }
 }
 
-void NetworkRegistry::decode(const Component& c, void* dst, Reader& in) {
+void NetworkRegistry::decode(const Component& c, void* dst, serialize::Reader& in) {
     auto* p = static_cast<uint8_t*>(dst);
     for (const auto& f : c.fields) {
         for (uint32_t k = 0; k < f.count; ++k) {
@@ -259,7 +259,7 @@ void NetworkRegistry::decode(const Component& c, void* dst, Reader& in) {
     }
 }
 
-void NetworkRegistry::read(flecs::world& world, flecs::entity e, const Component& c, Reader& in) {
+void NetworkRegistry::read(flecs::world& world, flecs::entity e, const Component& c, serialize::Reader& in) {
     if (c.tag) {
         ecs_add_id(world.c_ptr(), e.id(), c.entity);
         return;

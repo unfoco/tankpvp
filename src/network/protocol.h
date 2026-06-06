@@ -37,17 +37,21 @@ enum class Message : uint8_t {
     Kick,
     Ping,
     Pong,
+    CommandList,
+    ViewOpen,
+    ViewClose,
+    ViewEvent,
 };
 
 namespace wire {
 
-inline auto message(Message kind) -> Writer {
-    Writer w;
+inline auto message(Message kind) -> serialize::Writer {
+    serialize::Writer w;
     w.put(static_cast<uint8_t>(kind));
     return w;
 }
 
-inline void send(ENetPeer* peer, const Writer& w, uint8_t channel, bool reliable) {
+inline void send(ENetPeer* peer, const serialize::Writer& w, uint8_t channel, bool reliable) {
     ENetPacket* packet = enet_packet_create(w.data.data(), w.data.size(), reliable ? ENET_PACKET_FLAG_RELIABLE : 0);
     enet_peer_send(peer, channel, packet);
 }
@@ -237,6 +241,122 @@ struct MessagePing {
     template <class Archive>
     void serialize(Archive& a) {
         a & token;
+    }
+};
+
+struct MessageCommandArg {
+    std::string name;
+    std::string type;
+    uint8_t optional = 0;
+    std::vector<std::string> values;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.text(name);
+        a.text(type);
+        a & optional;
+        a.template strings<uint8_t>(values);
+    }
+};
+
+struct MessageCommandInfo {
+    std::string name;
+    std::string description;
+    std::vector<MessageCommandArg> arguments;
+    std::vector<MessageCommandInfo> subcommands;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.text(name);
+        a.text(description);
+        a.template vector<uint8_t>(arguments);
+        a.template vector<uint8_t>(subcommands);
+    }
+};
+
+struct MessageCommandList {
+    std::vector<MessageCommandInfo> commands;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.template vector<uint16_t>(commands);
+    }
+};
+
+struct MessageViewWidget {
+    uint8_t kind = 0;
+    uint8_t layout = 0;
+    std::string text;
+    uint32_t handler = 0;
+    std::string bind;
+    float number = 0;
+    std::string bind_max;
+    float number_max = 1;
+    uint8_t color_r = 80;
+    uint8_t color_g = 200;
+    uint8_t color_b = 120;
+    uint8_t bg_r = 24;
+    uint8_t bg_g = 24;
+    uint8_t bg_b = 32;
+    uint8_t bg_a = 240;
+    std::string field;
+    std::vector<MessageViewWidget> children;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & kind;
+        a & layout;
+        a.text(text);
+        a & handler;
+        a.text(bind);
+        a & number;
+        a.text(bind_max);
+        a & number_max;
+        a & color_r;
+        a & color_g;
+        a & color_b;
+        a & bg_r;
+        a & bg_g;
+        a & bg_b;
+        a & bg_a;
+        a.text(field);
+        a.template vector<uint8_t>(children);
+    }
+};
+
+struct MessageViewOpen {
+    std::string id;
+    uint8_t placement = 0;
+    MessageViewWidget root;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.text(id);
+        a & placement;
+        a & root;
+    }
+};
+
+struct MessageViewClose {
+    std::string id;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.text(id);
+    }
+};
+
+struct MessageViewValue {
+    std::string key;
+    std::string value;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.text(key);
+        a.text(value);
+    }
+};
+
+struct MessageViewEvent {
+    uint32_t handler = 0;
+    std::vector<MessageViewValue> values;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & handler;
+        a.template vector<uint8_t>(values);
     }
 };
 

@@ -15,7 +15,7 @@ static auto collect(flecs::world& world, const NetworkRegistry& reg, NetworkHost
         if (!ecs_has_id(world.c_ptr(), e.id(), c.entity)) {
             continue;
         }
-        Writer tmp;
+        serialize::Writer tmp;
         NetworkRegistry::write(world, e, c, tmp);
         auto& b = comps[c.id];
         if (!full && b.acked == tmp.data) {
@@ -134,13 +134,13 @@ void send_snapshot(flecs::world& world, const NetworkRegistry& reg, NetworkHost&
         structural.despawns.push_back(nid);
     }
 
-    Writer w = wire::message(Message::Snapshot);
-    util::encode(w, snap);
+    serialize::Writer w = wire::message(Message::Snapshot);
+    serialize::encode(w, snap);
     wire::send(peer.peer, w, CHANNEL_UNRELIABLE, false);
 
     if (!structural.spawns.empty() || !structural.despawns.empty()) {
-        Writer s = wire::message(Message::Structural);
-        util::encode(s, structural);
+        serialize::Writer s = wire::message(Message::Structural);
+        serialize::encode(s, structural);
         wire::send(peer.peer, s, CHANNEL_RELIABLE, true);
 
         for (uint64_t nid : structural.despawns) {

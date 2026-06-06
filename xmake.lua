@@ -8,7 +8,7 @@ target("tankpvp")
     set_kind("binary")
     set_languages("c23", "c++23")
     set_rundir("$(projectdir)")
-    add_includedirs("include", "src")
+    add_includedirs("include")
     add_files("src/**.cpp")
 
     add_packages("box2d", "clay", "enet", "flecs", "glm", "libsdl3", "libsdl3_image", "libsdl3_ttf")

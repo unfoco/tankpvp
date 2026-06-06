@@ -13,13 +13,16 @@
 #include "component/network.h"
 #include "component/object.h"
 #include "component/physics.h"
+#include "component/script.h"
 #include "component/settings.h"
-#include "decode.h"
-#include "logic/movement.h"
-#include "network.h"
-#include "physics/prediction.h"
-#include "protocol.h"
+#include "util/math.h"
+#include "util/movement.h"
+#include "util/prediction.h"
 #include "util/time.h"
+#include "decode.h"
+#include "network.h"
+#include "protocol.h"
+#include "server.h"
 
 struct ClientQueries {
     flecs::query<const NetworkId, const Interpolation, const CollisionBox> pred_tanks;
@@ -115,6 +118,7 @@ void prediction_smooth(const flecs::query<const NetworkId, Position, Rotation>& 
 struct Shot {
     glm::vec2 muzzle;
     float angle;
+    float speed;
     uint32_t prediction;
     float life;
 };
@@ -125,9 +129,9 @@ void ghosts_advance(flecs::world& world, const ClientQueries& q, const std::vect
         world.entity()
             .set(Position{.value = s.muzzle})
             .set(Rotation{.angle = s.angle})
-            .set(VelocityLinear{.value = fwd * BULLET_SPEED})
+            .set(VelocityLinear{.value = fwd * s.speed})
             .set(Predicted{.life = s.life, .id = s.prediction})
-            .add<Bullet>();
+            .set(Bullet{.speed = s.speed});
     }
     std::vector<flecs::entity> expired;
     q.ghosts.each([&](flecs::entity e, Position& pos, const VelocityLinear& vel, Predicted& pred) -> void {
@@ -168,10 +172,10 @@ void prediction_hit(const ClientQueries& q, NetworkConnection& conn, glm::vec2 s
         const Enemy* best = nullptr;
         float bestd2 = 1e30F;
         for (const auto& e : enemies) {
-            bool hit = point_in_obb(p.value, e.pos, e.angle, e.hw, e.hh);
+            bool hit = math::point_in_box(p.value, e.pos, e.angle, e.hw, e.hh);
             if (!hit && pointblank) {
                 for (int k = 0; k <= 4 && !hit; ++k) {
-                    hit = point_in_obb(glm::mix(self_pos, p.value, static_cast<float>(k) / 4.0F), e.pos, e.angle, e.hw, e.hh);
+                    hit = math::point_in_box(glm::mix(self_pos, p.value, static_cast<float>(k) / 4.0F), e.pos, e.angle, e.hw, e.hh);
                 }
             }
             if (hit) {
@@ -212,6 +216,27 @@ NetworkClient::NetworkClient(flecs::world& world) {
     world.system("network::client::predict").kind(flecs::OnUpdate).immediate().run(NetworkClient::predict);
     world.system("network::client::upload").kind(flecs::OnStore).immediate().run(NetworkClient::upload);
 
+    world.observer<const RequestChat>("network::client::chat").event(flecs::OnSet).each(NetworkClient::chat);
+
+    world.observer<const RequestViewClick>("network::client::view_event").event(flecs::OnSet).each([](flecs::entity e, const RequestViewClick& click) -> void {
+        flecs::world world = e.world();
+        if (auto* conn = world.try_get_mut<NetworkConnection>(); conn != nullptr && conn->connected && conn->server != nullptr) {
+            MessageViewEvent ev;
+            ev.handler = click.handler;
+            for (const auto& [key, value] : click.values) {
+                ev.values.push_back({.key = key, .value = value});
+            }
+            serialize::Writer w = wire::message(Message::ViewEvent);
+            serialize::encode(w, ev);
+            wire::send(conn->server, w, CHANNEL_RELIABLE, true);
+        } else if (world.try_get<NetworkHost>() != nullptr) {
+            flecs::entity tank;
+            world.query_builder().with<Local>().with<Tank>().build().each([&](flecs::entity t) -> void { tank = t; });
+            world.entity().set(RequestViewInteraction{.sender = {.peer = {}, .tank = tank, .name = "host", .admin = true}, .handler = click.handler, .values = click.values});
+        }
+        e.destruct();
+    });
+
     world.set<ClientQueries>({
         .pred_tanks = world.query_builder<const NetworkId, const Interpolation, const CollisionBox>().with<Tank>().without<Dying>().build(),
         .interp = world.query_builder<Interpolation, Position, Rotation>().with<Remote>().build(),
@@ -222,6 +247,30 @@ NetworkClient::NetworkClient(flecs::world& world) {
         .pred_bullets = world.query_builder<const Position, const Predicted>().with<Bullet>().build(),
         .smooth = world.query_builder<const NetworkId, Position, Rotation>().with<Tank>().with<Remote>().build(),
     });
+}
+
+void NetworkClient::chat(flecs::entity e, const RequestChat& req) {
+    flecs::world world = e.world();
+    std::string text = req.text;
+    if (auto* conn = world.try_get_mut<NetworkConnection>(); (conn != nullptr) && conn->connected && (conn->server != nullptr)) {
+        serialize::Writer w = wire::message(Message::Chat);
+        MessageChat msg{text};
+        serialize::encode(w, msg);
+        wire::send(conn->server, w, CHANNEL_RELIABLE, true);
+    } else if (world.try_get<NetworkHost>() != nullptr) {
+        std::string name;
+        if (const Settings* s = world.try_get<Settings>()) {
+            name = s->username;
+        }
+        if (!text.empty() && text[0] == '/') {
+            flecs::entity tank;
+            world.query_builder().with<Local>().with<Tank>().build().each([&](flecs::entity found) -> void { tank = found; });
+            world.entity().set(RequestCommand{.sender = {.peer = {}, .tank = tank, .name = name.empty() ? "host" : name, .admin = true}, .text = text});
+        } else {
+            world.entity().set(RequestBroadcast{.line = "<" + (name.empty() ? "host" : name) + "> " + text});
+        }
+    }
+    e.destruct();
 }
 
 void NetworkClient::teardown(flecs::world& world) {
@@ -250,8 +299,8 @@ void NetworkClient::pump(flecs::iter& it) {
                     if (const Settings* s = world.try_get<Settings>()) {
                         hello.username = s->username;
                     }
-                    Writer w = wire::message(Message::Hello);
-                    util::encode(w, hello);
+                    serialize::Writer w = wire::message(Message::Hello);
+                    serialize::encode(w, hello);
                     wire::send(conn.server, w, CHANNEL_RELIABLE, true);
                     break;
                 }
@@ -279,7 +328,7 @@ void NetworkClient::pump(flecs::iter& it) {
                     world.set(InterfacePage::Status);
                 }
             }
-            world.entity().add<NetworkRequestQuit>();
+            world.entity().add<RequestQuit>();
             return;
         }
     }
@@ -399,7 +448,7 @@ void NetworkClient::predict(flecs::iter& it) {
         {
             std::vector<flecs::entity> revive;
             q.dying.each([&](flecs::entity e, const Dying& d) -> void {
-                if (conn.newest >= d.revive_tick) {
+                if (conn.newest >= d.revive) {
                     revive.push_back(e);
                 }
             });
@@ -421,15 +470,19 @@ void NetworkClient::predict(flecs::iter& it) {
         glm::vec2 self_pos{};
         bool have_self = false;
 
-        q.local_tank.each([&](InputFlags& flags, Position& pos, Rotation& rot, Interpolation& interp) -> void {
+        q.local_tank.each([&](flecs::entity self, InputFlags& flags, Position& pos, Rotation& rot, Interpolation& interp) -> void {
             uint32_t f = flags.value;
+            const auto* ms = self.try_get<MovementStats>();
+            MovementStats stats = ms ? *ms : MovementStats{};
+            WeaponStats weapon = self.try_get<WeaponStats>() ? *self.try_get<WeaponStats>() : WeaponStats{};
+            uint64_t cooldown = weapon.cooldown;
 
             bool wants_fire = (f & InputFlags::Shoot) != 0 || conn.fire_pending;
             bool advance = !conn.newest || conn.client_tick < ctarget;
             if (wants_fire && !advance) {
                 conn.fire_pending = true;
             }
-            bool cooled = !conn.newest || conn.client_tick >= conn.last_fire + FIRE_COOLDOWN;
+            bool cooled = !conn.newest || conn.client_tick >= conn.last_fire + cooldown;
             bool fire = advance && wants_fire && cooled;
             if (advance && wants_fire) {
                 conn.fire_pending = false;
@@ -457,7 +510,7 @@ void NetworkClient::predict(flecs::iter& it) {
                 const auto& cmds = conn.commands;
                 auto velocity = [&](int s, float heading) -> Prediction::Velocity {
                     Prediction::Velocity v;
-                    tank_velocity(cmds[s].flags, heading, v.linear, v.angular);
+                    movement::velocity(cmds[s].flags, heading, stats, v.linear, v.angular);
                     return v;
                 };
                 Prediction::Pose now = pred.run(interp.position, interp.angle, static_cast<int>(cmds.size()), TICK_DT, velocity, true);
@@ -469,7 +522,7 @@ void NetworkClient::predict(flecs::iter& it) {
                         interp.predicted_prev, interp.predicted_prev_angle, 1, TICK_DT,
                         [&](int, float heading) -> Prediction::Velocity {
                             Prediction::Velocity v;
-                            tank_velocity(f, heading, v.linear, v.angular);
+                            movement::velocity(f, heading, stats, v.linear, v.angular);
                             return v;
                         },
                         false);
@@ -490,15 +543,15 @@ void NetworkClient::predict(flecs::iter& it) {
                 pos.value = p + interp.vis_error;
                 rot.angle = a + interp.vis_error_angle;
             } else {
-                tank_step(f, pos.value, rot.angle, dt);
+                movement::step(f, stats, pos.value, rot.angle, dt);
             }
             self_pos = pos.value;
             have_self = true;
 
             if (fire) {
                 glm::vec2 fwd(std::cos(rot.angle), std::sin(rot.angle));
-                glm::vec2 muzzle = pos.value + MUZZLE_OFFSET * fwd;
-                shots.push_back({.muzzle = muzzle, .angle = rot.angle, .prediction = prediction, .life = BULLET_LIFE});
+                glm::vec2 muzzle = pos.value + weapon.muzzle * fwd;
+                shots.push_back({.muzzle = muzzle, .angle = rot.angle, .speed = weapon.speed, .prediction = prediction, .life = weapon.life});
                 if (!conn.commands.empty()) {
                     conn.commands.back().muzzle = muzzle;
                     conn.commands.back().aim = rot.angle;
@@ -550,8 +603,8 @@ void NetworkClient::upload(flecs::iter& it) {
                 in.commands.push_back(cm);
             }
 
-            Writer w = wire::message(Message::Input);
-            util::encode(w, in);
+            serialize::Writer w = wire::message(Message::Input);
+            serialize::encode(w, in);
             wire::send(conn.server, w, CHANNEL_UNRELIABLE, false);
             if (has_fire) {
                 wire::send(conn.server, w, CHANNEL_RELIABLE, true);
@@ -563,8 +616,8 @@ void NetworkClient::upload(flecs::iter& it) {
             for (auto& c : conn.hits) {
                 hit.claims.push_back({.prediction = c.prediction, .target = c.target});
             }
-            Writer hw = wire::message(Message::Hit);
-            util::encode(hw, hit);
+            serialize::Writer hw = wire::message(Message::Hit);
+            serialize::encode(hw, hit);
             wire::send(conn.server, hw, CHANNEL_UNRELIABLE, false);
             for (auto& c : conn.hits) {
                 c.sends--;

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "component/interface.h"
@@ -14,28 +15,30 @@
 #include "component/network.h"
 #include "component/object.h"
 #include "component/physics.h"
-#include "logic/movement.h"
+#include "component/script.h"
+#include "util/math.h"
 #include "network.h"
 #include "protocol.h"
 #include "registry.h"
 #include "snapshot.h"
+
 
 static auto peer_entity(flecs::world& world, ENetPeer* peer) -> flecs::entity {
     return world.entity(static_cast<flecs::entity_t>(reinterpret_cast<uintptr_t>(peer->data)));
 }
 
 static void kick(ENetPeer* peer, const std::string& reason) {
-    Writer w = wire::message(Message::Kick);
+    serialize::Writer w = wire::message(Message::Kick);
     MessageKick msg{reason};
-    util::encode(w, msg);
+    serialize::encode(w, msg);
     wire::send(peer, w, CHANNEL_RELIABLE, true);
     enet_peer_disconnect_later(peer, 0);
 }
 
-void broadcast_chat(flecs::world& world, const std::string& line) {
-    Writer w = wire::message(Message::Chat);
+static void broadcast_chat(flecs::world& world, const std::string& line) {
+    serialize::Writer w = wire::message(Message::Chat);
     MessageChat out{line};
-    util::encode(w, out);
+    serialize::encode(w, out);
     world.query_builder<Peer>().build().each([&](const Peer& p) {
         if (p.welcomed && (p.peer != nullptr)) {
             wire::send(p.peer, w, CHANNEL_RELIABLE, true);
@@ -43,6 +46,83 @@ void broadcast_chat(flecs::world& world, const std::string& line) {
     });
     if (ChatLog* log = world.try_get_mut<ChatLog>()) {
         log->push(line);
+    }
+}
+
+static void send_chat(flecs::world& world, flecs::entity peer_entity, const std::string& line) {
+    if (peer_entity && peer_entity.is_alive() && peer_entity.has<Peer>()) {
+        const Peer& p = peer_entity.get<Peer>();
+        if (p.peer != nullptr) {
+            serialize::Writer w = wire::message(Message::Chat);
+            MessageChat out{line};
+            serialize::encode(w, out);
+            wire::send(p.peer, w, CHANNEL_RELIABLE, true);
+            return;
+        }
+    }
+    if (ChatLog* log = world.try_get_mut<ChatLog>()) {
+        log->push(line);
+    }
+}
+
+static auto peer_socket(flecs::entity peer_entity) -> ENetPeer* {
+    if (peer_entity && peer_entity.is_alive() && peer_entity.has<Peer>()) {
+        return peer_entity.get<Peer>().peer;
+    }
+    return nullptr;
+}
+
+static auto to_message_widget(const ViewWidget& w) -> MessageViewWidget {
+    MessageViewWidget out;
+    out.kind = static_cast<uint8_t>(w.kind);
+    out.layout = static_cast<uint8_t>(w.layout);
+    out.text = w.text;
+    out.handler = w.handler;
+    out.bind = w.bind;
+    out.number = w.number;
+    out.bind_max = w.bind_max;
+    out.number_max = w.number_max;
+    out.color_r = w.color_r;
+    out.color_g = w.color_g;
+    out.color_b = w.color_b;
+    out.bg_r = w.bg_r;
+    out.bg_g = w.bg_g;
+    out.bg_b = w.bg_b;
+    out.bg_a = w.bg_a;
+    out.field = w.field;
+    for (const auto& c : w.children) {
+        out.children.push_back(to_message_widget(c));
+    }
+    return out;
+}
+
+static void deliver_ui(flecs::world& world, const RequestView& req) {
+    if (ENetPeer* socket = peer_socket(req.peer); socket != nullptr) {
+        if (req.close) {
+            serialize::Writer w = wire::message(Message::ViewClose);
+            MessageViewClose msg{.id = req.id};
+            serialize::encode(w, msg);
+            wire::send(socket, w, CHANNEL_RELIABLE, true);
+        } else {
+            serialize::Writer w = wire::message(Message::ViewOpen);
+            MessageViewOpen msg{.id = req.id, .placement = static_cast<uint8_t>(req.placement), .root = to_message_widget(req.root)};
+            serialize::encode(w, msg);
+            wire::send(socket, w, CHANNEL_RELIABLE, true);
+        }
+        return;
+    }
+    auto* view = world.try_get_mut<ViewState>();
+    if (view == nullptr) {
+        return;
+    }
+    std::erase_if(view->views, [&](const ViewActive& s) -> bool { return s.id == req.id; });
+    if (!req.close) {
+        view->views.push_back({.id = req.id, .placement = req.placement, .root = req.root});
+        if (req.placement == ViewPlacement::Center) {
+            if (auto* page = world.try_get<InterfacePage>(); page != nullptr && *page == InterfacePage::Chat) {
+                world.set(InterfacePage::Ingame);
+            }
+        }
     }
 }
 
@@ -64,6 +144,24 @@ NetworkServer::NetworkServer(flecs::world& world) {
     world.system("network::server::hits").kind(hits_phase).immediate().run(NetworkServer::hits);
     world.system("network::server::replicate").kind(flecs::OnStore).immediate().run(NetworkServer::replicate);
 
+    world.set<ServerClock>({});
+
+    world.observer<const RequestBroadcast>("network::server::chat_broadcast").event(flecs::OnSet).each([](flecs::entity e, const RequestBroadcast& c) -> void {
+        flecs::world world = e.world();
+        broadcast_chat(world, c.line);
+        e.destruct();
+    });
+    world.observer<const RequestReply>("network::server::chat_reply").event(flecs::OnSet).each([](flecs::entity e, const RequestReply& c) -> void {
+        flecs::world world = e.world();
+        send_chat(world, c.peer, c.line);
+        e.destruct();
+    });
+    world.observer<const RequestView>("network::server::view").event(flecs::OnSet).each([](flecs::entity e, const RequestView& req) -> void {
+        flecs::world world = e.world();
+        deliver_ui(world, req);
+        e.destruct();
+    });
+
     world.set<ServerQueries>({
         .inputs = world.query_builder<Peer>().build(),
         .record = world.query_builder<const Position, const Rotation, History>().with<Tank>().build(),
@@ -80,6 +178,19 @@ void NetworkServer::teardown(flecs::world& world) {
     world.defer([&] -> void { world.query_builder().with<Peer>().or_().with<Replicated>().build().each([](flecs::entity e) -> void { e.destruct(); }); });
 }
 
+static auto to_message_command(const CommandInfo& info) -> MessageCommandInfo {
+    MessageCommandInfo entry;
+    entry.name = info.name;
+    entry.description = info.description;
+    for (const auto& arg : info.arguments) {
+        entry.arguments.push_back({.name = arg.name, .type = arg.type, .optional = static_cast<uint8_t>(arg.optional ? 1 : 0), .values = arg.values});
+    }
+    for (const auto& sub : info.subcommands) {
+        entry.subcommands.push_back(to_message_command(sub));
+    }
+    return entry;
+}
+
 static void send_welcome(flecs::world& world, NetworkHost& host, ENetPeer* peer, uint32_t pid, uint64_t entity) {
     MessageWelcome msg;
     msg.protocol = NETWORK_PROTOCOL;
@@ -89,9 +200,19 @@ static void send_welcome(flecs::world& world, NetworkHost& host, ENetPeer* peer,
     msg.tickrate = host.tickrate;
     msg.components = world.get<NetworkRegistry>().describe();
 
-    Writer w = wire::message(Message::Welcome);
-    util::encode(w, msg);
+    serialize::Writer w = wire::message(Message::Welcome);
+    serialize::encode(w, msg);
     wire::send(peer, w, CHANNEL_RELIABLE, true);
+
+    MessageCommandList list;
+    if (const auto* book = world.try_get<CommandBook>()) {
+        for (const auto& info : book->commands) {
+            list.commands.push_back(to_message_command(info));
+        }
+    }
+    serialize::Writer cw = wire::message(Message::CommandList);
+    serialize::encode(cw, list);
+    wire::send(peer, cw, CHANNEL_RELIABLE, true);
 }
 
 static void on_hello(flecs::world& world, NetworkHost& host, ENetPeer* epeer, const std::string& username) {
@@ -116,6 +237,8 @@ static void on_hello(flecs::world& world, NetworkHost& host, ENetPeer* epeer, co
                              .set(VelocityLinear{})
                              .set(VelocityAngular{})
                              .set(CollisionBox{.height = 30, .width = 40})
+                             .set(MovementStats{})
+                             .set(WeaponStats{})
                              .add<InputFlags>()
                              .add<Dynamic>()
                              .add<Tank>()
@@ -148,15 +271,21 @@ static void on_disconnect(flecs::world& world, ENetPeer* epeer) {
 }
 
 static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* packet) {
-    Reader r(packet->data, packet->dataLength);
+    serialize::Reader r(packet->data, packet->dataLength);
     auto kind = static_cast<Message>(r.get<uint8_t>());
     if (kind == Message::Hello) {
-        on_hello(world, world.get_mut<NetworkHost>(), epeer, util::decode<MessageHello>(r).username);
+        auto hello = serialize::decode<MessageHello>(r);
+        if (r.valid()) {
+            on_hello(world, world.get_mut<NetworkHost>(), epeer, hello.username);
+        }
         return;
     }
     if (kind == Message::Ping) {
-        auto ping = util::decode<MessagePing>(r);
-        Writer w = wire::message(Message::Pong);
+        auto ping = serialize::decode<MessagePing>(r);
+        if (!r.valid()) {
+            return;
+        }
+        serialize::Writer w = wire::message(Message::Pong);
         MessagePong pong{
             .protocol = NETWORK_PROTOCOL,
             .token = ping.token,
@@ -164,7 +293,7 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
             .max_players = MAX_PLAYERS,
             .tickrate = world.get<NetworkHost>().tickrate,
         };
-        util::encode(w, pong);
+        serialize::encode(w, pong);
         wire::send(epeer, w, CHANNEL_RELIABLE, true);
         enet_peer_disconnect_later(epeer, 0);
         return;
@@ -177,7 +306,10 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
     switch (kind) {
         case Message::Input: {
             Peer& p = pe.get_mut<Peer>();
-            auto in = util::decode<MessageInput>(r);
+            auto in = serialize::decode<MessageInput>(r);
+            if (!r.valid()) {
+                break;
+            }
             p.stamp = std::max(in.send_time, p.stamp);
             for (const auto& c : in.commands) {
                 if (c.tick_delta > in.newest_tick) {
@@ -196,17 +328,25 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
         }
         case Message::Hit: {
             Peer& p = pe.get_mut<Peer>();
-            auto hit = util::decode<MessageHit>(r);
+            auto hit = serialize::decode<MessageHit>(r);
+            if (!r.valid()) {
+                break;
+            }
             for (const auto& c : hit.claims) {
                 p.claims[c.prediction] = c.target;
             }
             break;
         }
         case Message::Ack: {
-            uint64_t ack = util::decode<MessageAcknowledge>(r).tick;
+            auto ackMsg = serialize::decode<MessageAcknowledge>(r);
+            if (!r.valid()) {
+                break;
+            }
+            uint64_t ack = ackMsg.tick;
             Peer& p = pe.get_mut<Peer>();
             if (!p.welcomed) {
                 p.welcomed = true;
+                world.entity().set(RequestPlayerJoin{.peer = pe, .username = p.username});
             }
             if (pe.has<Replication>()) {
                 auto& repl = pe.get_mut<Replication>();
@@ -243,15 +383,37 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
             break;
         }
         case Message::Chat: {
+            auto chat = serialize::decode<MessageChat>(r);
+            if (!r.valid()) {
+                break;
+            }
             const Peer& p = pe.get<Peer>();
-            std::string raw = util::decode<MessageChat>(r).text.substr(0, 200);
+            std::string raw = chat.text.substr(0, 200);
             size_t start = raw.find_first_not_of(' ');
             if (start == std::string::npos) {
                 break;
             }
             raw = raw.substr(start, raw.find_last_not_of(' ') - start + 1);
             std::string name = p.username.empty() ? ("player" + std::to_string(p.id)) : p.username;
+            if (raw[0] == '/') {
+                world.entity().set(RequestCommand{.sender = {.peer = pe, .tank = pe.target<Controls>(), .name = name, .admin = false}, .text = raw});
+                break;
+            }
             broadcast_chat(world, "<" + name + "> " + raw);
+            break;
+        }
+        case Message::ViewEvent: {
+            const Peer& p = pe.get<Peer>();
+            std::string name = p.username.empty() ? ("player" + std::to_string(p.id)) : p.username;
+            auto ev = serialize::decode<MessageViewEvent>(r);
+            if (!r.valid()) {
+                break;
+            }
+            std::vector<std::pair<std::string, std::string>> values;
+            for (auto& v : ev.values) {
+                values.emplace_back(std::move(v.key), std::move(v.value));
+            }
+            world.entity().set(RequestViewInteraction{.sender = {.peer = pe, .tank = pe.target<Controls>(), .name = name, .admin = false}, .handler = ev.handler, .values = std::move(values)});
             break;
         }
         default:
@@ -269,6 +431,7 @@ void NetworkServer::pump(flecs::iter& it) {
         auto& host = *probe;
 
         host.tick++;
+        world.set<ServerClock>({.tick = host.tick, .running = true});
 
         ENetEvent ev;
         while (enet_host_service(host.host, &ev, 0) > 0) {
@@ -294,7 +457,9 @@ void NetworkServer::pump(flecs::iter& it) {
                 if (hit != p.inputs.end()) {
                     uint32_t flags = hit->second.flags;
                     bool shoot = (flags & static_cast<uint32_t>(InputFlags::Shoot)) != 0;
-                    if (shoot && host.tick < p.last_fire + FIRE_COOLDOWN) {
+                    const auto* ws = tank.try_get<WeaponStats>();
+                    uint64_t cooldown = ws ? ws->cooldown : WeaponStats{}.cooldown;
+                    if (shoot && host.tick < p.last_fire + cooldown) {
                         flags &= ~static_cast<uint32_t>(InputFlags::Shoot);
                         shoot = false;
                     }
@@ -326,7 +491,7 @@ static auto ratify_claim(glm::vec2 bp, glm::vec2 vel, uint32_t lag, uint64_t tic
         const TransformSnapshot& s = h.ring[i];
         double bullet_tick = static_cast<double>(s.tick) + static_cast<double>(lag);
         glm::vec2 bpos = bp + vel * static_cast<float>((bullet_tick - static_cast<double>(tick)) * TICK_DT);
-        if (point_in_obb(bpos, s.pos, s.rot, hw, hh)) {
+        if (math::point_in_box(bpos, s.pos, s.rot, hw, hh)) {
             return true;
         }
     }
@@ -367,7 +532,7 @@ void NetworkServer::hits(flecs::iter& it) {
             }
 
             if (o.peer >= 1) {
-                glm::vec2 vel{BULLET_SPEED, 0};
+                glm::vec2 vel{0};
                 if (const auto* v = bullet.try_get<VelocityLinear>()) {
                     vel = v->value;
                 }
@@ -384,7 +549,7 @@ void NetworkServer::hits(flecs::iter& it) {
                 if ((d.x * d.x) + (d.y * d.y) > 60.0F * 60.0F) {
                     return false;
                 }
-                return point_in_obb(p, s->pos, s->rot, (box.width * 0.5F) + HIT_MARGIN_SERVER, (box.height * 0.5F) + HIT_MARGIN_SERVER);
+                return math::point_in_box(p, s->pos, s->rot, (box.width * 0.5F) + HIT_MARGIN_SERVER, (box.height * 0.5F) + HIT_MARGIN_SERVER);
             };
             const Position* fpos = (firer && firer.is_alive()) ? firer.try_get<Position>() : nullptr;
             bool pointblank = false;

@@ -56,9 +56,9 @@ struct NetworkRegistry {
     }
 
     void build(flecs::world& world);
-    static void write(flecs::world& world, flecs::entity e, const Component& c, Writer& out);
-    static void read(flecs::world& world, flecs::entity e, const Component& c, Reader& in);
-    static void decode(const Component& c, void* dst, Reader& in);
+    static void write(flecs::world& world, flecs::entity e, const Component& c, serialize::Writer& out);
+    static void read(flecs::world& world, flecs::entity e, const Component& c, serialize::Reader& in);
+    static void decode(const Component& c, void* dst, serialize::Reader& in);
 
     [[nodiscard]] auto describe() const -> std::vector<MessageComponentDescriptor>;
     void adopt(flecs::world& world, const std::vector<MessageComponentDescriptor>& descs, std::unordered_map<uint16_t, uint16_t>& remap);

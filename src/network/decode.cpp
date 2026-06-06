@@ -12,11 +12,48 @@
 #include "component/network.h"
 #include "component/object.h"
 #include "component/physics.h"
-#include "logic/movement.h"
+#include "component/script.h"
+#include "util/time.h"
 #include "network.h"
 #include "protocol.h"
 #include "registry.h"
-#include "util/time.h"
+
+static auto to_view_widget(const MessageViewWidget& w) -> ViewWidget {
+    ViewWidget out;
+    out.kind = static_cast<ViewKind>(w.kind);
+    out.layout = static_cast<ViewLayout>(w.layout);
+    out.text = w.text;
+    out.handler = w.handler;
+    out.bind = w.bind;
+    out.number = w.number;
+    out.bind_max = w.bind_max;
+    out.number_max = w.number_max;
+    out.color_r = w.color_r;
+    out.color_g = w.color_g;
+    out.color_b = w.color_b;
+    out.bg_r = w.bg_r;
+    out.bg_g = w.bg_g;
+    out.bg_b = w.bg_b;
+    out.bg_a = w.bg_a;
+    out.field = w.field;
+    for (const auto& c : w.children) {
+        out.children.push_back(to_view_widget(c));
+    }
+    return out;
+}
+
+static auto from_message_command(MessageCommandInfo& entry) -> CommandInfo {
+    CommandInfo info;
+    info.name = std::move(entry.name);
+    info.description = std::move(entry.description);
+    for (auto& arg : entry.arguments) {
+        info.arguments.push_back({.name = std::move(arg.name), .type = std::move(arg.type), .optional = arg.optional != 0, .values = std::move(arg.values)});
+    }
+    for (auto& sub : entry.subcommands) {
+        info.subcommands.push_back(from_message_command(sub));
+    }
+    return info;
+}
 
 static auto mirror(flecs::world& world, NetworkConnection& conn, uint64_t nid) -> flecs::entity {
     auto it = conn.entities.find(nid);
@@ -50,7 +87,7 @@ static void apply_components(flecs::world& world, const NetworkRegistry& reg, Ne
         if ((c == nullptr) || !e.is_alive()) {
             continue;
         }
-        Reader cr(cb.bytes.data(), cb.bytes.size());
+        serialize::Reader cr(cb.bytes.data(), cb.bytes.size());
         if (c->name == "Position") {
             Position t{};
             NetworkRegistry::decode(*c, &t, cr);
@@ -69,7 +106,10 @@ static void apply_components(flecs::world& world, const NetworkRegistry& reg, Ne
         }
     }
 
-    glm::vec2 bvel = is_bullet ? glm::vec2(std::cos(rot), std::sin(rot)) * BULLET_SPEED : glm::vec2(0);
+    glm::vec2 bvel{0};
+    if (is_bullet && e.is_alive() && e.has<Bullet>()) {
+        bvel = glm::vec2(std::cos(rot), std::sin(rot)) * e.get<Bullet>().speed;
+    }
 
     if (e.is_alive() && (got_pos || got_rot)) {
         bool has_interp = e.has<Interpolation>();
@@ -93,15 +133,18 @@ static void apply_components(flecs::world& world, const NetworkRegistry& reg, Ne
     }
 }
 
-static void apply_welcome(flecs::world& world, NetworkConnection& conn, Reader& r) {
-    auto msg = util::decode<MessageWelcome>(r);
+static void apply_welcome(flecs::world& world, NetworkConnection& conn, serialize::Reader& r) {
+    auto msg = serialize::decode<MessageWelcome>(r);
+    if (!r.valid()) {
+        return;
+    }
     if (msg.protocol != NETWORK_PROTOCOL) {
         SDL_Log("network: protocol mismatch (server %u, client %u)", msg.protocol, NETWORK_PROTOCOL);
         world.set<ConnectionStatus>({.state = ConnectionState::Disconnected, .reason = "Incompatible server version"});
         if (world.has<InterfacePage>()) {
             world.set(InterfacePage::Status);
         }
-        world.entity().add<NetworkRequestQuit>();
+        world.entity().add<RequestQuit>();
         return;
     }
     conn.peer_id = msg.peer_id;
@@ -122,9 +165,9 @@ static void apply_welcome(flecs::world& world, NetworkConnection& conn, Reader& 
         world.set(InterfacePage::Ingame);
     }
 
-    Writer w = wire::message(Message::Ack);
+    serialize::Writer w = wire::message(Message::Ack);
     MessageAcknowledge ack{tick};
-    util::encode(w, ack);
+    serialize::encode(w, ack);
     wire::send(conn.server, w, CHANNEL_RELIABLE, true);
 
     SDL_Log("network: welcome peer=%u self=%llu components=%zu", conn.peer_id, static_cast<unsigned long long>(conn.self), world.get<NetworkRegistry>().components.size());
@@ -141,9 +184,12 @@ static auto peek_is_bullet(const NetworkRegistry& reg, NetworkConnection& conn, 
     return false;
 }
 
-static void apply_snapshot(flecs::world& world, NetworkConnection& conn, Reader& r) {
+static void apply_snapshot(flecs::world& world, NetworkConnection& conn, serialize::Reader& r) {
     const auto& reg = world.get<NetworkRegistry>();
-    auto snap = util::decode<MessageSnapshot>(r);
+    auto snap = serialize::decode<MessageSnapshot>(r);
+    if (!r.valid()) {
+        return;
+    }
     uint64_t tick = snap.tick;
     uint64_t ack = snap.acknowledged_tick;
     uint32_t buffer = snap.input_buffer;
@@ -182,15 +228,18 @@ static void apply_snapshot(flecs::world& world, NetworkConnection& conn, Reader&
         }
     }
 
-    Writer w = wire::message(Message::Ack);
+    serialize::Writer w = wire::message(Message::Ack);
     MessageAcknowledge ack_msg{tick};
-    util::encode(w, ack_msg);
+    serialize::encode(w, ack_msg);
     wire::send(conn.server, w, CHANNEL_UNRELIABLE, false);
 }
 
-static void apply_structural(flecs::world& world, NetworkConnection& conn, Reader& r) {
+static void apply_structural(flecs::world& world, NetworkConnection& conn, serialize::Reader& r) {
     const auto& reg = world.get<NetworkRegistry>();
-    auto s = util::decode<MessageStructural>(r);
+    auto s = serialize::decode<MessageStructural>(r);
+    if (!r.valid()) {
+        return;
+    }
     uint64_t tick = s.tick;
 
     for (const auto& sp : s.spawns) {
@@ -219,7 +268,7 @@ static void apply_structural(flecs::world& world, NetworkConnection& conn, Reade
 }
 
 void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* packet) {
-    Reader r(packet->data, packet->dataLength);
+    serialize::Reader r(packet->data, packet->dataLength);
     switch (static_cast<Message>(r.get<uint8_t>())) {
         case Message::Welcome:
             apply_welcome(world, conn, r);
@@ -234,17 +283,65 @@ void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* pack
                 apply_structural(world, conn, r);
             }
             break;
-        case Message::Chat:
-            if (ChatLog* log = world.try_get_mut<ChatLog>()) {
-                log->push(util::decode<MessageChat>(r).text);
+        case Message::Chat: {
+            auto msg = serialize::decode<MessageChat>(r);
+            if (r.valid()) {
+                if (ChatLog* log = world.try_get_mut<ChatLog>()) {
+                    log->push(msg.text);
+                }
             }
             break;
-        case Message::Kick:
-            world.set<ConnectionStatus>({.state = ConnectionState::Disconnected, .reason = util::decode<MessageKick>(r).reason});
+        }
+        case Message::CommandList: {
+            auto msg = serialize::decode<MessageCommandList>(r);
+            if (!r.valid()) {
+                break;
+            }
+            CommandBook book;
+            for (auto& entry : msg.commands) {
+                book.commands.push_back(from_message_command(entry));
+            }
+            world.set<CommandBook>(std::move(book));
+            break;
+        }
+        case Message::ViewOpen: {
+            auto msg = serialize::decode<MessageViewOpen>(r);
+            if (!r.valid()) {
+                break;
+            }
+            if (auto* view = world.try_get_mut<ViewState>()) {
+                auto placement = static_cast<ViewPlacement>(msg.placement);
+                std::erase_if(view->views, [&](const ViewActive& s) -> bool { return s.id == msg.id; });
+                view->views.push_back({.id = msg.id, .placement = placement, .root = to_view_widget(msg.root)});
+                if (placement == ViewPlacement::Center) {
+                    if (auto* page = world.try_get<InterfacePage>(); page != nullptr && *page == InterfacePage::Chat) {
+                        world.set(InterfacePage::Ingame);
+                    }
+                }
+            }
+            break;
+        }
+        case Message::ViewClose: {
+            auto msg = serialize::decode<MessageViewClose>(r);
+            if (!r.valid()) {
+                break;
+            }
+            if (auto* view = world.try_get_mut<ViewState>()) {
+                std::erase_if(view->views, [&](const ViewActive& s) -> bool { return s.id == msg.id; });
+            }
+            break;
+        }
+        case Message::Kick: {
+            auto msg = serialize::decode<MessageKick>(r);
+            if (!r.valid()) {
+                break;
+            }
+            world.set<ConnectionStatus>({.state = ConnectionState::Disconnected, .reason = msg.reason});
             if (world.has<InterfacePage>()) {
                 world.set(InterfacePage::Status);
             }
             break;
+        }
         default:
             break;
     }

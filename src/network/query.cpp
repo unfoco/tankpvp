@@ -35,17 +35,17 @@ static void start_queries(flecs::world world) {
         std::string key = status_key(entry);
         ENetAddress address{};
         if (enet_address_set_host(&address, entry.address.c_str()) != 0) {
-            board.byAddress[key] = {.state = ServerStatus::State::Offline};
+            board.by_address[key] = {.state = ServerStatus::State::Offline};
             continue;
         }
         address.port = entry.port;
         ENetPeer* peer = enet_host_connect(query.host, &address, CHANNEL_COUNT, 0);
         if (peer == nullptr) {
-            board.byAddress[key] = {.state = ServerStatus::State::Offline};
+            board.by_address[key] = {.state = ServerStatus::State::Offline};
             continue;
         }
         query.pending[peer] = {.key = key, .start = util::now(), .sent = 0, .token = query.next_token++};
-        ServerStatus& status = board.byAddress[key];
+        ServerStatus& status = board.by_address[key];
         if (status.state == ServerStatus::State::Unknown) {
             status.state = ServerStatus::State::Querying;
         }
@@ -80,28 +80,30 @@ void NetworkQuery::pump(flecs::iter& it, size_t, NetworkQueryState& query) {
                 auto hit = query.pending.find(ev.peer);
                 if (hit != query.pending.end()) {
                     hit->second.sent = util::now();
-                    Writer w = wire::message(Message::Ping);
+                    serialize::Writer w = wire::message(Message::Ping);
                     MessagePing ping{.token = hit->second.token};
-                    util::encode(w, ping);
+                    serialize::encode(w, ping);
                     wire::send(ev.peer, w, CHANNEL_RELIABLE, true);
                 }
                 break;
             }
             case ENET_EVENT_TYPE_RECEIVE: {
-                Reader r(ev.packet->data, ev.packet->dataLength);
+                serialize::Reader r(ev.packet->data, ev.packet->dataLength);
                 auto kind = static_cast<Message>(r.get<uint8_t>());
                 auto hit = query.pending.find(ev.peer);
                 if (kind == Message::Pong && hit != query.pending.end()) {
-                    auto pong = util::decode<MessagePong>(r);
-                    ServerStatus status;
-                    status.state = (pong.protocol == NETWORK_PROTOCOL) ? ServerStatus::State::Online : ServerStatus::State::Incompatible;
-                    status.players = pong.players;
-                    status.max = pong.max_players;
-                    double base = hit->second.sent > 0 ? hit->second.sent : hit->second.start;
-                    status.ping = static_cast<uint16_t>(std::min(9999.0, (util::now() - base) * 1000.0));
-                    board.byAddress[hit->second.key] = status;
-                    enet_peer_disconnect(ev.peer, 0);
-                    query.pending.erase(hit);
+                    auto pong = serialize::decode<MessagePong>(r);
+                    if (r.valid()) {
+                        ServerStatus status;
+                        status.state = (pong.protocol == NETWORK_PROTOCOL) ? ServerStatus::State::Online : ServerStatus::State::Incompatible;
+                        status.players = pong.players;
+                        status.max = pong.max_players;
+                        double base = hit->second.sent > 0 ? hit->second.sent : hit->second.start;
+                        status.ping = static_cast<uint16_t>(std::min(9999.0, (util::now() - base) * 1000.0));
+                        board.by_address[hit->second.key] = status;
+                        enet_peer_disconnect(ev.peer, 0);
+                        query.pending.erase(hit);
+                    }
                 }
                 enet_packet_destroy(ev.packet);
                 break;
@@ -109,7 +111,7 @@ void NetworkQuery::pump(flecs::iter& it, size_t, NetworkQueryState& query) {
             case ENET_EVENT_TYPE_DISCONNECT: {
                 auto hit = query.pending.find(ev.peer);
                 if (hit != query.pending.end()) {
-                    board.byAddress[hit->second.key].state = ServerStatus::State::Offline;
+                    board.by_address[hit->second.key].state = ServerStatus::State::Offline;
                     query.pending.erase(hit);
                 }
                 break;
@@ -122,7 +124,7 @@ void NetworkQuery::pump(flecs::iter& it, size_t, NetworkQueryState& query) {
     double now = util::now();
     for (auto i = query.pending.begin(); i != query.pending.end();) {
         if (now - i->second.start > QUERY_TIMEOUT) {
-            board.byAddress[i->second.key].state = ServerStatus::State::Offline;
+            board.by_address[i->second.key].state = ServerStatus::State::Offline;
             enet_peer_reset(i->first);
             i = query.pending.erase(i);
         } else {
