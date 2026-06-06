@@ -116,3 +116,13 @@ struct RequestPlayerJoin {
     flecs::entity peer;
     std::string username;
 };
+
+struct RequestPlayerLeave {
+    flecs::entity peer;
+    std::string username;
+};
+
+struct RequestKick {
+    flecs::entity peer;
+    std::string reason;
+};

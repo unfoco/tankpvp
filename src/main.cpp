@@ -23,6 +23,7 @@
 #include "persist/persist.h"
 #include "physics/physics.h"
 #include "render/render.h"
+#include "script/script.h"
 
 struct State {
     flecs::world world;
@@ -87,6 +88,7 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
     world.import<Physics>();
     world.import<Network>();
     world.import<Logic>();
+    world.import<Script>();
 
     if (!state->headless) {
         world.import<Interface>();

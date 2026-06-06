@@ -161,6 +161,12 @@ NetworkServer::NetworkServer(flecs::world& world) {
         deliver_ui(world, req);
         e.destruct();
     });
+    world.observer<const RequestKick>("network::server::kick").event(flecs::OnSet).each([](flecs::entity e, const RequestKick& req) -> void {
+        if (ENetPeer* socket = peer_socket(req.peer); socket != nullptr) {
+            kick(socket, req.reason);
+        }
+        e.destruct();
+    });
 
     world.set<ServerQueries>({
         .inputs = world.query_builder<Peer>().build(),
@@ -260,6 +266,8 @@ static void on_hello(flecs::world& world, NetworkHost& host, ENetPeer* epeer, co
 static void on_disconnect(flecs::world& world, ENetPeer* epeer) {
     flecs::entity pe = peer_entity(world, epeer);
     if (pe && pe.is_alive()) {
+        std::string username = pe.has<Peer>() ? pe.get<Peer>().username : std::string();
+        world.entity().set(RequestPlayerLeave{.peer = pe, .username = username});
         flecs::entity tank = pe.target<Controls>();
         if (tank && tank.is_alive()) {
             tank.destruct();
