@@ -1,8 +1,9 @@
+#include "interface.h"
+
 #include <algorithm>
 #include <string>
 
 #include "component/network.h"
-#include "interface.h"
 
 auto Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
     prev.page = InterfacePage::Main;
@@ -67,7 +68,8 @@ auto Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& p
                 for (int i = 0; i < count; ++i) {
                     const ServerEntry& entry = list.entries[i];
                     const std::string& name = entry.name.empty() ? entry.address : entry.name;
-                    const std::string& sub = state.intern(entry.address + ":" + std::to_string(entry.port));
+                    std::string key = entry.address + ":" + std::to_string(entry.port);
+                    const std::string& sub = state.intern(key);
 
                     CLAY({.id = CLAY_IDI("ServerRow", i),
                           .layout =
@@ -91,8 +93,8 @@ auto Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& p
 
                         ServerStatus status;
                         if (board != nullptr) {
-                            auto found = board->byAddress.find(entry.address + ":" + std::to_string(entry.port));
-                            if (found != board->byAddress.end()) {
+                            auto found = board->by_address.find(key);
+                            if (found != board->by_address.end()) {
                                 status = found->second;
                             }
                         }
@@ -131,10 +133,10 @@ auto Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& p
 
                         ButtonStyle iconBtn = {.color = {.r = 66, .g = 66, .b = 74, .a = 255}, .fontSize = 32, .width = 48, .padding = {.left = 8, .right = 8, .top = 8, .bottom = 8}};
 
-                        if (Interface::button(state, CLAY_IDI("SrvConnect", i), "\xE2\x96\xB6", iconBtn)) {
+                        if (widget::button(state, CLAY_IDI("SrvConnect", i), "\xE2\x96\xB6", iconBtn)) {
                             connectIdx = i;
                         }
-                        if (Interface::button(state, CLAY_IDI("SrvEdit", i), "\xE2\x89\xA1", iconBtn)) {
+                        if (widget::button(state, CLAY_IDI("SrvEdit", i), "\xE2\x89\xA1", iconBtn)) {
                             editIdx = i;
                         }
                     }
@@ -146,14 +148,14 @@ auto Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& p
                       .childGap = 10,
                       .layoutDirection = CLAY_LEFT_TO_RIGHT,
                   }}) {
-                if (Interface::button(state, CLAY_ID("BtnBack"), "Back")) {
+                if (widget::button(state, CLAY_ID("BtnBack"), "Back")) {
                     prev.page = page;
                     page = InterfacePage::Main;
                 }
 
                 CLAY({.layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_FIT()}}}) {}
 
-                if (Interface::button(state, CLAY_ID("BtnAddServer"), "+ Add Server", {.color = {.r = 70, .g = 130, .b = 255, .a = 255}})) {
+                if (widget::button(state, CLAY_ID("BtnAddServer"), "+ Add Server", {.color = {.r = 70, .g = 130, .b = 255, .a = 255}})) {
                     add = true;
                 }
             }
@@ -176,7 +178,7 @@ auto Interface::connect(flecs::iter& it, InterfaceState& state, InterfacePage& p
         const ServerEntry& entry = list.entries[connectIdx];
         it.world().get_mut<NetworkTarget>() = {.address = entry.address, .port = entry.port};
         it.world().set<ConnectionStatus>({.state = ConnectionState::Connecting, .reason = ""});
-        it.world().entity().set(NetworkRequestJoin{.address = entry.address, .port = entry.port});
+        it.world().entity().set(RequestJoin{.address = entry.address, .port = entry.port});
         page = InterfacePage::Status;
     }
 

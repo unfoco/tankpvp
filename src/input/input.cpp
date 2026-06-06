@@ -3,7 +3,7 @@
 #include <clay.h>
 
 #include "component/interface.h"
-#include "component/object.h"
+#include "component/network.h"
 
 Input::Input(flecs::world& world) {
     world.component<InputFlags>()

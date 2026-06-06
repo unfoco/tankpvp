@@ -1,5 +1,6 @@
-#include "component/network.h"
 #include "interface.h"
+
+#include "component/network.h"
 
 auto Interface::pause(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
     prev.page = InterfacePage::Ingame;
@@ -20,23 +21,20 @@ auto Interface::pause(flecs::iter& it, InterfaceState& state, InterfacePage& pag
 
         CLAY({.layout = {.sizing = {CLAY_SIZING_FIXED(0), CLAY_SIZING_FIXED(40)}}}) {}
 
-        ButtonStyle menuBtn = {};
-        menuBtn.padding = {.left = 40, .right = 40, .top = 12, .bottom = 12};
-        menuBtn.fontSize = 32;
-        menuBtn.width = 520;
+        ButtonStyle menuBtn = {.fontSize = 32, .width = 520, .padding = {.left = 40, .right = 40, .top = 12, .bottom = 12}};
 
-        if (Interface::button(state, CLAY_ID("BtnReturn"), "Return", menuBtn)) {
+        if (widget::button(state, CLAY_ID("BtnReturn"), "Return", menuBtn)) {
             prev.page = page;
             page = InterfacePage::Ingame;
         }
 
-        if (Interface::button(state, CLAY_ID("BtnSettings"), "Settings", menuBtn)) {
+        if (widget::button(state, CLAY_ID("BtnSettings"), "Settings", menuBtn)) {
             prev.page = page;
             page = InterfacePage::Settings;
         }
 
-        if (Interface::button(state, CLAY_ID("BtnLeave"), "Leave", menuBtn)) {
-            it.world().entity().add<NetworkRequestQuit>();
+        if (widget::button(state, CLAY_ID("BtnLeave"), "Leave", menuBtn)) {
+            it.world().entity().add<RequestQuit>();
             page = InterfacePage::Main;
         }
     }

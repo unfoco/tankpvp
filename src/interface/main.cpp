@@ -1,6 +1,6 @@
-#include <cstdlib>
-
 #include "interface.h"
+
+#include <cstdlib>
 
 auto Interface::main(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
     prev.page = InterfacePage::Main;
@@ -20,27 +20,21 @@ auto Interface::main(flecs::iter& it, InterfaceState& state, InterfacePage& page
 
         CLAY({.layout = {.sizing = {CLAY_SIZING_FIXED(0), CLAY_SIZING_FIXED(40)}}}) {}
 
-        ButtonStyle menuBtn = {};
-        menuBtn.padding = {.left = 40, .right = 40, .top = 12, .bottom = 12};
-        menuBtn.fontSize = 32;
-        menuBtn.width = 520;
+        ButtonStyle menuBtn = {.fontSize = 32, .width = 520, .padding = {.left = 40, .right = 40, .top = 12, .bottom = 12}};
 
-        if (Interface::button(state, CLAY_ID("BtnHost"), "Host", menuBtn)) {
+        if (widget::button(state, CLAY_ID("BtnHost"), "Host", menuBtn)) {
             prev.page = page;
             page = InterfacePage::Host;
         }
-
-        if (Interface::button(state, CLAY_ID("BtnConnect"), "Connect", menuBtn)) {
+        if (widget::button(state, CLAY_ID("BtnConnect"), "Connect", menuBtn)) {
             prev.page = page;
             page = InterfacePage::Connect;
         }
-
-        if (Interface::button(state, CLAY_ID("BtnSettings"), "Settings", menuBtn)) {
+        if (widget::button(state, CLAY_ID("BtnSettings"), "Settings", menuBtn)) {
             prev.page = page;
             page = InterfacePage::Settings;
         }
-
-        if (Interface::button(state, CLAY_ID("BtnQuit"), "Quit", menuBtn)) {
+        if (widget::button(state, CLAY_ID("BtnQuit"), "Quit", menuBtn)) {
             exit(0);
         }
     }

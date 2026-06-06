@@ -36,7 +36,7 @@ auto Interface::server(flecs::iter& it, InterfaceState& state, InterfacePage& pa
             InputStyle inputStyle = {.sizing = {.width = CLAY_SIZING_GROW(), .height = CLAY_SIZING_FIT()}};
 
             CLAY_TEXT(Str("Name"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
-            Interface::input(state, events, CLAY_ID("EditName"), list.draft.name,
+            widget::input(state, events, CLAY_ID("EditName"), list.draft.name,
                              {
                                  .maxLength = 32,
                                  .placeholder = "e.g. My Server",
@@ -45,7 +45,7 @@ auto Interface::server(flecs::iter& it, InterfaceState& state, InterfacePage& pa
                              inputStyle);
 
             CLAY_TEXT(Str("Address"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
-            Interface::input(state, events, CLAY_ID("EditAddress"), list.draft.address,
+            widget::input(state, events, CLAY_ID("EditAddress"), list.draft.address,
                              {
                                  .maxLength = 253,
                                  .placeholder = "e.g. 127.0.0.1",
@@ -54,7 +54,7 @@ auto Interface::server(flecs::iter& it, InterfaceState& state, InterfacePage& pa
                              inputStyle);
 
             CLAY_TEXT(Str("Port"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
-            Interface::input(state, events, CLAY_ID("EditPort"), list.draft.port,
+            widget::input(state, events, CLAY_ID("EditPort"), list.draft.port,
                              {
                                  .min = 1,
                                  .max = 65535,
@@ -69,21 +69,23 @@ auto Interface::server(flecs::iter& it, InterfaceState& state, InterfacePage& pa
                       .childGap = 10,
                       .layoutDirection = CLAY_LEFT_TO_RIGHT,
                   }}) {
-                if (Interface::button(state, CLAY_ID("BtnEditCancel"), "Cancel")) {
+                if (widget::button(state, CLAY_ID("BtnEditCancel"), "Cancel")) {
                     cancel = true;
                 }
 
                 if (editing) {
-                    if (Interface::button(state, CLAY_ID("BtnEditDelete"), "Delete", {.color = {.r = 170, .g = 60, .b = 60, .a = 255}})) {
+                    if (widget::button(state, CLAY_ID("BtnEditDelete"), "Delete", {.color = {.r = 170, .g = 60, .b = 60, .a = 255}})) {
                         remove = true;
                     }
                 }
 
                 CLAY({.layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_FIT()}}}) {}
 
-                ButtonStyle saveBtn = {.color = valid ? Clay_Color{.r = 70, .g = 130, .b = 255, .a = 255} : Clay_Color{.r = 50, .g = 50, .b = 55, .a = 255}};
-                saveBtn.textColor = valid ? Clay_Color{.r = 255, .g = 255, .b = 255, .a = 255} : Clay_Color{.r = 255, .g = 255, .b = 255, .a = 100};
-                if (Interface::button(state, CLAY_ID("BtnEditSave"), "Save", saveBtn) && valid) {
+                ButtonStyle saveBtn = {
+                    .color = valid ? Clay_Color{.r = 70, .g = 130, .b = 255, .a = 255} : Clay_Color{.r = 50, .g = 50, .b = 55, .a = 255},
+                    .textColor = valid ? Clay_Color{.r = 255, .g = 255, .b = 255, .a = 255} : Clay_Color{.r = 255, .g = 255, .b = 255, .a = 100},
+                };
+                if (widget::button(state, CLAY_ID("BtnEditSave"), "Save", saveBtn) && valid) {
                     save = true;
                 }
             }

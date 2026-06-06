@@ -3,13 +3,14 @@
 
 #include "component/network.h"
 #include "logic.h"
-#include "logic/movement.h"
+#include "util/movement.h"
 
 void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Position& pos, const Rotation& rot, VelocityLinear& vel, VelocityAngular& ang) {
-    tank_velocity(flags.value, rot.angle, vel.value, ang.value);
+    flecs::entity tank = it.entity(i);
+    const auto* ms = tank.try_get<MovementStats>();
+    movement::velocity(flags.value, rot.angle, ms ? *ms : MovementStats{}, vel.value, ang.value);
 
     if (flags.has(InputFlags::Shoot)) {
-        flecs::entity tank = it.entity(i);
 
         uint32_t peer = 0;
         uint32_t prediction = 0;
@@ -18,7 +19,9 @@ void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Posi
             peer = o->peer;
         }
 
-        glm::vec2 muzzle = pos.value + MUZZLE_OFFSET * glm::vec2(glm::cos(rot.angle), glm::sin(rot.angle));
+        const auto* ws = tank.try_get<WeaponStats>();
+        WeaponStats weapon = ws ? *ws : WeaponStats{};
+        glm::vec2 muzzle = pos.value + weapon.muzzle * glm::vec2(glm::cos(rot.angle), glm::sin(rot.angle));
         float aim = rot.angle;
         if (const auto* f = tank.try_get<Firing>()) {
             prediction = f->prediction;
@@ -37,14 +40,14 @@ void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Posi
             .entity()
             .set(Position{.value = muzzle})
             .set(Rotation{.angle = aim})
-            .set(VelocityLinear{.value = fwd * BULLET_SPEED})
+            .set(VelocityLinear{.value = fwd * weapon.speed})
             .set(VelocityAngular{})
             .set(CollisionRing{.radius = 3})
             .add<CollisionContinuous>()
-            .set(Decay{.seconds = BULLET_LIFE})
+            .set(Decay{.seconds = weapon.life})
             .add<Dynamic>()
             .add<Sensor>()
-            .add<Bullet>()
+            .set(Bullet{.speed = weapon.speed})
             .set(ViewLag{.ticks = view})
             .set(Owner{.peer = peer, .prediction = prediction})
             .add<Replicated>()

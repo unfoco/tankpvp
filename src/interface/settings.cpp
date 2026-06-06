@@ -1,6 +1,6 @@
-#include "component/settings.h"
-
 #include "interface.h"
+
+#include "component/settings.h"
 
 auto Interface::settings(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
     auto& settings = it.world().get_mut<Settings>();
@@ -41,21 +41,21 @@ auto Interface::settings(flecs::iter& it, InterfaceState& state, InterfacePage& 
 
             SETTING_FIELD() {
                 CLAY_TEXT(Str("Player Name"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
-                Interface::input(state, events, CLAY_ID("NameInput"), settings.username, {.maxLength = 16, .disabled = inSession, .placeholder = "Enter name...", .allow = InputFilter::Name}, inputStyle);
+                widget::input(state, events, CLAY_ID("NameInput"), settings.username, {.maxLength = 16, .disabled = inSession, .placeholder = "Enter name...", .allow = InputFilter::Name}, inputStyle);
             }
 
             SETTING_FIELD() {
                 CLAY_TEXT(Str("Master Volume"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
-                Interface::slider(state, CLAY_ID("VolSlider"), settings.volume, 0.0F, 1.0F, {});
+                widget::slider(state, CLAY_ID("VolSlider"), settings.volume, 0.0F, 1.0F, {});
             }
 
             SETTING_FIELD() {
                 CLAY_TEXT(Str("Music Volume"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
-                Interface::slider(state, CLAY_ID("MusicSlider"), settings.music, 0.0F, 1.0F, {});
+                widget::slider(state, CLAY_ID("MusicSlider"), settings.music, 0.0F, 1.0F, {});
             }
 
             CLAY({.layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_FIXED(20)}}}) {}
-            if (Interface::button(state, CLAY_ID("BtnBackSettings"), "Back")) {
+            if (widget::button(state, CLAY_ID("BtnBackSettings"), "Back")) {
                 page = prev.page;
                 prev.page = InterfacePage::Settings;
             }

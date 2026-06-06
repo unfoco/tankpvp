@@ -1,5 +1,6 @@
-#include "component/network.h"
 #include "interface.h"
+
+#include "component/network.h"
 
 auto Interface::status(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
     prev.page = InterfacePage::Main;
@@ -29,14 +30,11 @@ auto Interface::status(flecs::iter& it, InterfaceState& state, InterfacePage& pa
 
         CLAY({.layout = {.sizing = {CLAY_SIZING_FIXED(0), CLAY_SIZING_FIXED(40)}}}) {}
 
-        ButtonStyle menuBtn = {};
-        menuBtn.padding = {.left = 40, .right = 40, .top = 12, .bottom = 12};
-        menuBtn.fontSize = 32;
-        menuBtn.width = 520;
+        ButtonStyle menuBtn = {.fontSize = 32, .width = 520, .padding = {.left = 40, .right = 40, .top = 12, .bottom = 12}};
 
         const char* label = connecting ? "Cancel" : "Return";
-        if (Interface::button(state, CLAY_ID("BtnStatusReturn"), label, menuBtn)) {
-            it.world().entity().add<NetworkRequestQuit>();
+        if (widget::button(state, CLAY_ID("BtnStatusReturn"), label, menuBtn)) {
+            it.world().entity().add<RequestQuit>();
             page = InterfacePage::Main;
         }
     }

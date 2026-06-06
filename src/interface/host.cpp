@@ -1,5 +1,6 @@
-#include "component/network.h"
 #include "interface.h"
+
+#include "component/network.h"
 
 auto Interface::host(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
     auto& target = it.world().get_mut<NetworkTarget>();
@@ -30,7 +31,7 @@ auto Interface::host(flecs::iter& it, InterfaceState& state, InterfacePage& page
             InputStyle inputStyle = {.sizing = {.width = CLAY_SIZING_GROW(), .height = CLAY_SIZING_FIT()}};
 
             CLAY_TEXT(Str("Address"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
-            Interface::input(state, events, CLAY_ID("AddressInput"), target.address,
+            widget::input(state, events, CLAY_ID("AddressInput"), target.address,
                              {
                                  .maxLength = 253,
                                  .placeholder = "e.g. 127.0.0.1",
@@ -39,7 +40,7 @@ auto Interface::host(flecs::iter& it, InterfaceState& state, InterfacePage& page
                              inputStyle);
 
             CLAY_TEXT(Str("Port"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
-            Interface::input(state, events, CLAY_ID("PortInput"), target.port,
+            widget::input(state, events, CLAY_ID("PortInput"), target.port,
                              {
                                  .min = 1,
                                  .max = 65535,
@@ -54,7 +55,7 @@ auto Interface::host(flecs::iter& it, InterfaceState& state, InterfacePage& page
                       .childGap = 10,
                       .layoutDirection = CLAY_LEFT_TO_RIGHT,
                   }}) {
-                if (Interface::button(state, CLAY_ID("BtnBack"), "Back")) {
+                if (widget::button(state, CLAY_ID("BtnBack"), "Back")) {
                     prev.page = page;
                     page = InterfacePage::Main;
                 }
@@ -62,8 +63,8 @@ auto Interface::host(flecs::iter& it, InterfaceState& state, InterfacePage& page
                 CLAY({.layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_FIT()}}}) {}
 
                 ButtonStyle hostBtn = {.color = {.r = 70, .g = 130, .b = 255, .a = 255}};
-                if (Interface::button(state, CLAY_ID("BtnDoHost"), "Host", hostBtn)) {
-                    it.world().entity().set(NetworkRequestHost{.address = target.address, .port = target.port});
+                if (widget::button(state, CLAY_ID("BtnDoHost"), "Host", hostBtn)) {
+                    it.world().entity().set(RequestHost{.address = target.address, .port = target.port});
                     page = InterfacePage::Ingame;
                 }
             }
