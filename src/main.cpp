@@ -13,6 +13,7 @@
 #include "component/object.h"
 #include "component/physics.h"
 #include "component/settings.h"
+
 #include "audio/audio.h"
 #include "input/input.h"
 #include "interface/interface.h"
@@ -99,10 +100,10 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
     world.component<Decay>().member<float>("seconds");
 
     if (cfg.role == NetworkRole::Server) {
-        world.entity().set(NetworkRequestHost{.address = cfg.address, .port = cfg.port});
+        world.entity().set(RequestHost{.address = cfg.address, .port = cfg.port});
     } else if (cfg.role == NetworkRole::Client) {
         world.set<ConnectionStatus>({.state = ConnectionState::Connecting, .reason = ""});
-        world.entity().set(NetworkRequestJoin{.address = cfg.address, .port = cfg.port});
+        world.entity().set(RequestJoin{.address = cfg.address, .port = cfg.port});
         if (!state->headless) {
             world.set(InterfacePage::Status);
         }
