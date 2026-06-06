@@ -13,6 +13,7 @@
 #include "component/object.h"
 #include "component/physics.h"
 #include "component/script.h"
+#include "util/math.h"
 #include "util/time.h"
 #include "network.h"
 #include "protocol.h"
@@ -108,7 +109,7 @@ static void apply_components(flecs::world& world, const NetworkRegistry& reg, Ne
 
     glm::vec2 bvel{0};
     if (is_bullet && e.is_alive() && e.has<Bullet>()) {
-        bvel = glm::vec2(std::cos(rot), std::sin(rot)) * e.get<Bullet>().speed;
+        bvel = math::heading(rot) * e.get<Bullet>().speed;
     }
 
     if (e.is_alive() && (got_pos || got_rot)) {

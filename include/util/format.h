@@ -11,6 +11,17 @@ namespace format {
 
 inline constexpr uint16_t FONT_EDIT = 1;
 
+inline auto line_height(TTF_Font* font, uint16_t size) -> int {
+    if (font == nullptr) {
+        return size;
+    }
+    TTF_SetFontSize(font, size);
+    int w = 0;
+    int h = 0;
+    TTF_GetStringSize(font, "Ay", 2, &w, &h);
+    return h > 0 ? h : size;
+}
+
 struct Text {
     SDL_Color color = {0, 0, 0, 255};
     bool hasColor = false;

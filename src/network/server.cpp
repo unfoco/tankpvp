@@ -546,7 +546,7 @@ void NetworkServer::hits(flecs::iter& it) {
                     return false;
                 }
                 glm::vec2 d = p - s->pos;
-                if ((d.x * d.x) + (d.y * d.y) > 60.0F * 60.0F) {
+                if (math::length_squared(d) > 60.0F * 60.0F) {
                     return false;
                 }
                 return math::point_in_box(p, s->pos, s->rot, (box.width * 0.5F) + HIT_MARGIN_SERVER, (box.height * 0.5F) + HIT_MARGIN_SERVER);
@@ -555,7 +555,7 @@ void NetworkServer::hits(flecs::iter& it) {
             bool pointblank = false;
             if (fpos) {
                 glm::vec2 fd = bp.value - fpos->value;
-                pointblank = (fd.x * fd.x) + (fd.y * fd.y) < 80.0F * 80.0F;
+                pointblank = math::length_squared(fd) < 80.0F * 80.0F;
             }
 
             flecs::entity victim;
@@ -576,7 +576,7 @@ void NetworkServer::hits(flecs::iter& it) {
                 }
                 if (hit) {
                     glm::vec2 d = bp.value - s->pos;
-                    float dd = (d.x * d.x) + (d.y * d.y);
+                    float dd = math::length_squared(d);
                     if (dd < vd2) {
                         vd2 = dd;
                         victim = tank;
@@ -713,7 +713,7 @@ void NetworkServer::replicate(flecs::iter& it) {
                             continue;
                         }
                         glm::vec2 d = en.pos - center;
-                        float d2 = (d.x * d.x) + (d.y * d.y);
+                        float d2 = math::length_squared(d);
                         bool tracked = repl.acked.contains(en.nid) || repl.pending.contains(en.nid);
                         if (d2 <= r2 || (tracked && d2 <= keep2)) {
                             relevant[en.nid] = en.e;

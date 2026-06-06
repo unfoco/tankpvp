@@ -1,8 +1,8 @@
 #include <cmath>
-#include <numbers>
 
 #include "component/network.h"
 #include "logic.h"
+#include "util/math.h"
 #include "util/movement.h"
 
 void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Position& pos, const Rotation& rot, VelocityLinear& vel, VelocityAngular& ang) {
@@ -21,7 +21,7 @@ void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Posi
 
         const auto* ws = tank.try_get<WeaponStats>();
         WeaponStats weapon = ws ? *ws : WeaponStats{};
-        glm::vec2 muzzle = pos.value + weapon.muzzle * glm::vec2(glm::cos(rot.angle), glm::sin(rot.angle));
+        glm::vec2 muzzle = pos.value + weapon.muzzle * math::heading(rot.angle);
         float aim = rot.angle;
         if (const auto* f = tank.try_get<Firing>()) {
             prediction = f->prediction;
@@ -30,7 +30,7 @@ void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Posi
                 if (glm::distance(f->muzzle, muzzle) <= 60.0F) {
                     muzzle = f->muzzle;
                 }
-                if (std::abs(std::remainder(f->aim - rot.angle, 2 * std::numbers::pi)) <= 0.40F) {
+                if (std::abs(math::angle_difference(f->aim, rot.angle)) <= 0.40F) {
                     aim = f->aim;
                 }
             }

@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
-#include <numbers>
 #include <utility>
 
 #include "component/input.h"
@@ -108,7 +107,7 @@ void prediction_smooth(const flecs::query<const NetworkId, Position, Rotation>& 
         } else {
             constexpr float k = 0.30F;
             o->vpos += (tp - o->vpos) * k;
-            o->vang += static_cast<float>(std::remainder(ta - o->vang, 2 * std::numbers::pi)) * k;
+            o->vang += math::angle_difference(ta, o->vang) * k;
         }
         p.value = o->vpos;
         r.angle = o->vang;
@@ -125,7 +124,7 @@ struct Shot {
 
 void ghosts_advance(flecs::world& world, const ClientQueries& q, const std::vector<Shot>& shots, float dt) {
     for (const auto& s : shots) {
-        glm::vec2 fwd(std::cos(s.angle), std::sin(s.angle));
+        glm::vec2 fwd = math::heading(s.angle);
         world.entity()
             .set(Position{.value = s.muzzle})
             .set(Rotation{.angle = s.angle})
@@ -180,7 +179,7 @@ void prediction_hit(const ClientQueries& q, NetworkConnection& conn, glm::vec2 s
             }
             if (hit) {
                 glm::vec2 d = p.value - e.pos;
-                float dd = (d.x * d.x) + (d.y * d.y);
+                float dd = math::length_squared(d);
                 if (dd < bestd2) {
                     bestd2 = dd;
                     best = &e;
@@ -414,7 +413,7 @@ void NetworkClient::interpolate(flecs::iter& it) {
                 double span = hi->tick - lo->tick;
                 float f = (span > 1e-6) ? static_cast<float>(std::clamp((render - lo->tick) / span, 0.0, 1.0)) : 1.0F;
                 pos.value = glm::mix(lo->position, hi->position, f);
-                rot.angle = lo->angle + (static_cast<float>(std::remainder(hi->angle - lo->angle, 2 * std::numbers::pi)) * f);
+                rot.angle = lo->angle + (math::angle_difference(hi->angle, lo->angle) * f);
             } else if (lo) {
                 pos.value = lo->position;
                 rot.angle = lo->angle;
@@ -527,7 +526,7 @@ void NetworkClient::predict(flecs::iter& it) {
                         },
                         false);
                     interp.vis_error += e.pos - p;
-                    interp.vis_error_angle += static_cast<float>(std::remainder(e.angle - a, 2 * std::numbers::pi));
+                    interp.vis_error_angle += math::angle_difference(e.angle, a);
                     if (glm::length(interp.vis_error) > 200.0F) {
                         interp.vis_error = {0, 0};
                     }
@@ -549,7 +548,7 @@ void NetworkClient::predict(flecs::iter& it) {
             have_self = true;
 
             if (fire) {
-                glm::vec2 fwd(std::cos(rot.angle), std::sin(rot.angle));
+                glm::vec2 fwd = math::heading(rot.angle);
                 glm::vec2 muzzle = pos.value + weapon.muzzle * fwd;
                 shots.push_back({.muzzle = muzzle, .angle = rot.angle, .speed = weapon.speed, .prediction = prediction, .life = weapon.life});
                 if (!conn.commands.empty()) {

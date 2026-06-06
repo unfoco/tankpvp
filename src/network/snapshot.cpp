@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "component/object.h"
+#include "util/math.h"
 #include "protocol.h"
 
 static auto collect(flecs::world& world, const NetworkRegistry& reg, NetworkHost& host, Replication& repl, flecs::entity e, uint64_t nid, bool full, std::vector<MessageComponentData>& out)
@@ -45,7 +46,7 @@ void send_snapshot(flecs::world& world, const NetworkRegistry& reg, NetworkHost&
             p = pp->value;
         }
         glm::vec2 d = p - view;
-        return (d.x * d.x) + (d.y * d.y);
+        return math::length_squared(d);
     };
 
     for (const auto& [nid, eid] : relevant) {

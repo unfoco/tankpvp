@@ -110,14 +110,7 @@ struct FieldCtx {
     }
 
     auto measureLine() const -> int {
-        if (!state.font) {
-            return static_cast<int>(st.fontSize);
-        }
-        TTF_SetFontSize(state.font, st.fontSize);
-        int w = 0;
-        int h = 0;
-        TTF_GetStringSize(state.font, "A", 1, &w, &h);
-        return h > 0 ? h : static_cast<int>(st.fontSize);
+        return format::line_height(state.font, st.fontSize);
     }
     auto lineWidth(const char* lineData, size_t byteEnd) const -> float {
         format::Text fmt;

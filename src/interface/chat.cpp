@@ -7,17 +7,7 @@
 
 #include "component/network.h"
 #include "component/script.h"
-
-static auto chatLineHeight(InterfaceState& state) -> float {
-    if (state.font == nullptr) {
-        return 32;
-    }
-    TTF_SetFontSize(state.font, 32);
-    int w = 0;
-    int h = 0;
-    TTF_GetStringSize(state.font, "Ay", 2, &w, &h);
-    return static_cast<float>(h);
-}
+#include "util/format.h"
 
 struct Completion {
     bool slash = false;
@@ -133,7 +123,7 @@ auto Interface::chat(flecs::iter& it, InterfaceState& state, InterfacePage& page
     auto& chatInput = it.world().get_mut<ChatInput>();
     uint32_t chatId = CLAY_ID("ChatPageInput").id;
 
-    float lineHeight = chatLineHeight(state);
+    float lineHeight = static_cast<float>(format::line_height(state.font, 32));
 
     bool enter = false;
     bool escape = false;

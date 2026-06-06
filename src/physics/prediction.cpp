@@ -1,9 +1,9 @@
 #include "util/prediction.h"
+#include "util/math.h"
 
 #include <box2d/box2d.h>
 
 #include <cmath>
-#include <numbers>
 #include <unordered_set>
 
 struct Prediction::Impl {
@@ -116,7 +116,7 @@ struct Prediction::Impl {
                 float angle = b2Rot_GetAngle(b2Body_GetRotation(o.id));
                 float dx = bp.x - o.pos.x;
                 float dy = bp.y - o.pos.y;
-                auto da = static_cast<float>(std::remainder(angle - o.angle, 2 * std::numbers::pi));
+                auto da = math::angle_difference(angle, o.angle);
                 if ((dx * dx) + (dy * dy) >= 0.04F || std::abs(da) >= 0.02F) {
                     shoved[id] = {.pos = {bp.x, bp.y}, .angle = angle};
                 }

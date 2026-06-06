@@ -1,16 +1,17 @@
 #pragma once
 
-#include <cmath>
 #include <cstdint>
 #include <glm/glm.hpp>
 
 #include "component/input.h"
 #include "component/object.h"
 
+#include "util/math.h"
+
 namespace movement {
 
 inline void velocity(uint32_t flags, float angle, const MovementStats& stats, glm::vec2& linear, float& angular) {
-    glm::vec2 forward(std::cos(angle), std::sin(angle));
+    glm::vec2 forward = math::heading(angle);
 
     linear = {0, 0};
     if ((flags & InputFlags::Forward) != 0U) {

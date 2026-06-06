@@ -36,6 +36,41 @@ Render::Render(flecs::world& world) {
     world.set<RenderPipeline>({pipeline.id()});
 }
 
+static auto measure_text(Clay_StringSlice text, Clay_TextElementConfig* config, void* userData) -> Clay_Dimensions {
+    auto** f = static_cast<TTF_Font**>(userData);
+    bool editMode = config->fontId == format::FONT_EDIT;
+    auto length = static_cast<size_t>(text.length);
+
+    format::Text state;
+    for (const char* p = text.baseChars; p != nullptr && p < text.chars;) {
+        if (format::is_escape(p, static_cast<size_t>(text.chars - p))) {
+            p += 4;
+        } else if (format::is_code(p, static_cast<size_t>(text.chars - p))) {
+            format::apply(p[2], state);
+            p += 3;
+        } else {
+            ++p;
+        }
+    }
+
+    int maxW = 0;
+    int lineH = 0;
+    size_t start = 0;
+    for (size_t i = 0; i <= length; ++i) {
+        if (i == length || text.chars[i] == '\n') {
+            int h = 0;
+            int w = format::width(f[0], f[1], text.chars + start, i - start, config->fontSize, state, editMode, &h);
+            maxW = std::max(maxW, w);
+            lineH = std::max(lineH, h);
+            start = i + 1;
+        }
+    }
+    return {
+        .width = static_cast<float>(maxW),
+        .height = static_cast<float>(lineH),
+    };
+}
+
 void Render::init(flecs::iter& it, size_t) {
     auto* window = SDL_CreateWindow("Tank Trouble", WIDTH, HEIGHT, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 
@@ -74,42 +109,7 @@ void Render::init(flecs::iter& it, size_t) {
 
     auto* textEngine = TTF_CreateRendererTextEngine(renderer);
 
-    Clay_SetMeasureTextFunction(
-        [](Clay_StringSlice text, Clay_TextElementConfig* config, void* userData) -> Clay_Dimensions {
-            auto** f = static_cast<TTF_Font**>(userData);
-            bool editMode = config->fontId == format::FONT_EDIT;
-            auto length = static_cast<size_t>(text.length);
-
-            format::Text state;
-            for (const char* p = text.baseChars; p != nullptr && p < text.chars;) {
-                if (format::is_escape(p, static_cast<size_t>(text.chars - p))) {
-                    p += 4;
-                } else if (format::is_code(p, static_cast<size_t>(text.chars - p))) {
-                    format::apply(p[2], state);
-                    p += 3;
-                } else {
-                    ++p;
-                }
-            }
-
-            int maxW = 0;
-            int lineH = 0;
-            size_t start = 0;
-            for (size_t i = 0; i <= length; ++i) {
-                if (i == length || text.chars[i] == '\n') {
-                    int h = 0;
-                    int w = format::width(f[0], f[1], text.chars + start, i - start, config->fontSize, state, editMode, &h);
-                    maxW = std::max(maxW, w);
-                    lineH = std::max(lineH, h);
-                    start = i + 1;
-                }
-            }
-            return {
-                .width = static_cast<float>(maxW),
-                .height = static_cast<float>(lineH),
-            };
-        },
-        static_cast<void*>(fonts));
+    Clay_SetMeasureTextFunction(measure_text, static_cast<void*>(fonts));
 
     SDL_Texture* tankBaseTexture = IMG_LoadTexture(renderer, "asset/texture/tank/base.png");
     SDL_Texture* tankTurretTexture = IMG_LoadTexture(renderer, "asset/texture/tank/turret0.png");
