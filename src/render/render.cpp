@@ -22,14 +22,14 @@ Render::Render(flecs::world& world) {
     auto camera = world.entity("render::camera_phase").add<Rendering>().depends_on(begin);
     auto tanks = world.entity("render::tanks").add<Rendering>().depends_on(camera);
     auto bullets = world.entity("render::bullets").add<Rendering>().depends_on(tanks);
-    auto ui = world.entity("render::ui").add<Rendering>().depends_on(bullets);
-    auto present = world.entity("render::present").add<Rendering>().depends_on(ui);
+    auto view = world.entity("render::view").add<Rendering>().depends_on(bullets);
+    auto present = world.entity("render::present").add<Rendering>().depends_on(view);
 
     world.system<RenderState>("render::start").kind(begin).each(Render::start);
     world.system<RenderState, Position>("render::camera").kind(camera).with<Local>().each(Render::camera);
     world.system<RenderState, Color, Position, Rotation>("render::tank").kind(tanks).with<Tank>().without<Dying>().each(Render::tank);
     world.system<RenderState, Position>("render::bullet").kind(bullets).with<Bullet>().without<Latent>().each(Render::bullet);
-    world.system<RenderState, InterfaceCommands>("render::interface").kind(ui).each(Render::interface);
+    world.system<RenderState, InterfaceCommands>("render::interface").kind(view).each(Render::interface);
     world.system<RenderState>("render::finish").kind(present).each(Render::finish);
 
     flecs::entity pipeline = world.pipeline().with(flecs::System).with<Rendering>().cascade(flecs::DependsOn).build();
@@ -77,15 +77,15 @@ void Render::init(flecs::iter& it, size_t) {
     Clay_SetMeasureTextFunction(
         [](Clay_StringSlice text, Clay_TextElementConfig* config, void* userData) -> Clay_Dimensions {
             auto** f = static_cast<TTF_Font**>(userData);
-            bool editMode = config->fontId == FONT_EDIT;
+            bool editMode = config->fontId == format::FONT_EDIT;
             auto length = static_cast<size_t>(text.length);
 
-            TextFormat state;
+            format::Text state;
             for (const char* p = text.baseChars; p != nullptr && p < text.chars;) {
-                if (format_is_escape(p, static_cast<size_t>(text.chars - p))) {
+                if (format::is_escape(p, static_cast<size_t>(text.chars - p))) {
                     p += 4;
-                } else if (format_is_code(p, static_cast<size_t>(text.chars - p))) {
-                    format_apply(p[2], state);
+                } else if (format::is_code(p, static_cast<size_t>(text.chars - p))) {
+                    format::apply(p[2], state);
                     p += 3;
                 } else {
                     ++p;
@@ -98,7 +98,7 @@ void Render::init(flecs::iter& it, size_t) {
             for (size_t i = 0; i <= length; ++i) {
                 if (i == length || text.chars[i] == '\n') {
                     int h = 0;
-                    int w = format_width(f[0], f[1], text.chars + start, i - start, config->fontSize, state, editMode, &h);
+                    int w = format::width(f[0], f[1], text.chars + start, i - start, config->fontSize, state, editMode, &h);
                     maxW = std::max(maxW, w);
                     lineH = std::max(lineH, h);
                     start = i + 1;

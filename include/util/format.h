@@ -7,9 +7,11 @@
 #include <cstddef>
 #include <cstdint>
 
+namespace format {
+
 inline constexpr uint16_t FONT_EDIT = 1;
 
-struct TextFormat {
+struct Text {
     SDL_Color color = {0, 0, 0, 255};
     bool hasColor = false;
     bool bold = false;
@@ -18,7 +20,7 @@ struct TextFormat {
     bool strike = false;
 };
 
-inline auto format_color(char code, SDL_Color* out) -> bool {
+inline auto color(char code, SDL_Color* out) -> bool {
     struct Entry {
         char code;
         uint32_t rgb;
@@ -42,10 +44,10 @@ inline auto format_color(char code, SDL_Color* out) -> bool {
     return false;
 }
 
-inline auto format_apply(char code, TextFormat& format) -> bool {
-    SDL_Color color = {};
-    if (format_color(code, &color)) {
-        format = TextFormat{.color = color, .hasColor = true};
+inline auto apply(char code, Text& format) -> bool {
+    SDL_Color parsed = {};
+    if (color(code, &parsed)) {
+        format = Text{.color = parsed, .hasColor = true};
         return true;
     }
     char lower = (code >= 'A' && code <= 'Z') ? static_cast<char>(code + 32) : code;
@@ -63,25 +65,25 @@ inline auto format_apply(char code, TextFormat& format) -> bool {
             format.italic = true;
             return true;
         case 'r':
-            format = TextFormat{};
+            format = Text{};
             return true;
         default:
             return false;
     }
 }
 
-inline auto format_is_code(const char* text, size_t remaining) -> bool {
+inline auto is_code(const char* text, size_t remaining) -> bool {
     return remaining >= 3 && static_cast<unsigned char>(text[0]) == 0xC2 && static_cast<unsigned char>(text[1]) == 0xA7 && static_cast<unsigned char>(text[2]) < 0x80;
 }
 
-inline auto format_is_escape(const char* text, size_t remaining) -> bool {
+inline auto is_escape(const char* text, size_t remaining) -> bool {
     return remaining >= 4 && static_cast<unsigned char>(text[0]) == 0xC2 && static_cast<unsigned char>(text[1]) == 0xA7 && static_cast<unsigned char>(text[2]) == 0xC2 && static_cast<unsigned char>(text[3]) == 0xA7;
 }
 
-inline auto format_width(TTF_Font* normal, TTF_Font* italic, const char* text, size_t length, uint16_t fontSize, TextFormat& state, bool editMode, int* outHeight) -> int {
+inline auto width(TTF_Font* normal, TTF_Font* italic, const char* text, size_t length, uint16_t fontSize, Text& state, bool editMode, int* outHeight) -> int {
     int width = 0;
     int height = 0;
-    auto run = [&](const char* part, size_t count, const TextFormat& format) -> void {
+    auto run = [&](const char* part, size_t count, const Text& format) -> void {
         if (count == 0) {
             return;
         }
@@ -105,22 +107,22 @@ inline auto format_width(TTF_Font* normal, TTF_Font* italic, const char* text, s
 
     size_t start = 0;
     for (size_t i = 0; i < length;) {
-        if (format_is_escape(text + i, length - i)) {
+        if (is_escape(text + i, length - i)) {
             run(text + start, i - start, state);
             run(text + i, editMode ? 4 : 2, state);
             i += 4;
             start = i;
-        } else if (format_is_code(text + i, length - i)) {
+        } else if (is_code(text + i, length - i)) {
             run(text + start, i - start, state);
             if (editMode) {
-                run(text + i, 3, TextFormat{});
+                run(text + i, 3, Text{});
             }
-            format_apply(text[i + 2], state);
+            apply(text[i + 2], state);
             i += 3;
             start = i;
         } else if (editMode && length - i >= 2 && static_cast<unsigned char>(text[i]) == 0xC2 && static_cast<unsigned char>(text[i + 1]) == 0xA7) {
             run(text + start, i - start, state);
-            run(text + i, 2, TextFormat{});
+            run(text + i, 2, Text{});
             i += 2;
             start = i;
         } else {
@@ -134,7 +136,7 @@ inline auto format_width(TTF_Font* normal, TTF_Font* italic, const char* text, s
     return width;
 }
 
-inline auto format_trailing_bearing(TTF_Font* font, const char* text, size_t length) -> int {
+inline auto trailing_bearing(TTF_Font* font, const char* text, size_t length) -> int {
     if (font == nullptr || length == 0) {
         return 0;
     }
@@ -162,4 +164,6 @@ inline auto format_trailing_bearing(TTF_Font* font, const char* text, size_t len
         return 0;
     }
     return std::max(0, advance - maxx);
+}
+
 }

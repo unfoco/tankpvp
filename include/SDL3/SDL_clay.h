@@ -207,15 +207,15 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
                 const char* chars = d.stringContents.chars;
                 const auto length = static_cast<size_t>(d.stringContents.length);
                 const auto alpha = static_cast<Uint8>(d.textColor.a);
-                const bool editMode = d.fontId == FONT_EDIT;
+                const bool editMode = d.fontId == format::FONT_EDIT;
 
-                TextFormat fmt;
+                format::Text fmt;
                 const char* base = d.stringContents.baseChars;
                 for (const char* p = base; p != nullptr && p < chars;) {
-                    if (format_is_escape(p, static_cast<size_t>(chars - p))) {
+                    if (format::is_escape(p, static_cast<size_t>(chars - p))) {
                         p += 4;
-                    } else if (format_is_code(p, static_cast<size_t>(chars - p))) {
-                        format_apply(p[2], fmt);
+                    } else if (format::is_code(p, static_cast<size_t>(chars - p))) {
+                        format::apply(p[2], fmt);
                         p += 3;
                     } else {
                         ++p;
@@ -270,7 +270,7 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
                     penY = layerPad;
                 }
 
-                auto draw_run = [&](size_t from, size_t to, const TextFormat& format) -> void {
+                auto draw_run = [&](size_t from, size_t to, const format::Text& format) -> void {
                     if (to <= from) {
                         return;
                     }
@@ -296,7 +296,7 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
                         int tw = 0;
                         int th = 0;
                         TTF_GetStringSize(fontToUse, chars + from, to - from, &tw, &th);
-                        float lineW = static_cast<float>(tw - format_trailing_bearing(fontToUse, chars + from, to - from));
+                        float lineW = static_cast<float>(tw - format::trailing_bearing(fontToUse, chars + from, to - from));
                         if (lineW > 0.0f) {
                             const float thickness = std::max(1.0f, static_cast<float>(d.fontSize) / 14.0f);
                             SDL_SetRenderDrawBlendMode(rd.renderer, SDL_BLENDMODE_BLEND);
@@ -315,23 +315,23 @@ void SDL_Clay_Render(const SDL_Clay_RendererData& rd, Clay_RenderCommandArray& c
                     TTF_SetFontStyle(fontToUse, TTF_STYLE_NORMAL);
                 };
 
-                TextFormat marker;
+                format::Text marker;
                 marker.hasColor = true;
                 marker.color = {130, 130, 130, 255};
 
                 size_t runStart = 0;
                 for (size_t i = 0; i < length;) {
-                    if (format_is_escape(chars + i, length - i)) {
+                    if (format::is_escape(chars + i, length - i)) {
                         draw_run(runStart, i, fmt);
                         draw_run(i, editMode ? i + 4 : i + 2, fmt);
                         i += 4;
                         runStart = i;
-                    } else if (format_is_code(chars + i, length - i)) {
+                    } else if (format::is_code(chars + i, length - i)) {
                         draw_run(runStart, i, fmt);
                         if (editMode) {
                             draw_run(i, i + 3, marker);
                         }
-                        format_apply(chars[i + 2], fmt);
+                        format::apply(chars[i + 2], fmt);
                         i += 3;
                         runStart = i;
                     } else if (editMode && length - i >= 2 && static_cast<unsigned char>(chars[i]) == 0xC2 && static_cast<unsigned char>(chars[i + 1]) == 0xA7) {

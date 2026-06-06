@@ -20,9 +20,9 @@ struct Physics {
     static void transform(const B2Body& body, Position& pos, Rotation& rot);
     static void velocity(const B2Body& b, VelocityLinear& lv, VelocityAngular& av);
     static void event(flecs::iter& it);
-    static void raycast(flecs::entity e, const RaycastRequest& req);
-    static void area(flecs::entity e, const AreaQueryRequest& req);
-    static void explosion(flecs::entity e, const ExplosionRequest& req);
+    static void raycast(flecs::entity e, const RequestRaycast& req);
+    static void area(flecs::entity e, const RequestAreaQuery& req);
+    static void explosion(flecs::entity e, const RequestExplosion& req);
     static void cleanup(B2Body& body);
     static void ldamp(const B2Body& body, const DampingLinear& d);
     static void adamp(const B2Body& body, const DampingAngular& d);

@@ -85,9 +85,9 @@ Physics::Physics(flecs::world& world) {
     world.system<const B2Body, Position, Rotation>("physics::transform").kind(PO).multi_threaded().each(Physics::transform);
     world.system<const B2Body, VelocityLinear, VelocityAngular>("physics::velocity").kind(PO).multi_threaded().each(Physics::velocity);
     world.system("physics::event").kind(PO).run(Physics::event);
-    world.system<const RaycastRequest>("physics::raycast").without<RaycastResult>().kind(PO).each(Physics::raycast);
-    world.system<const AreaQueryRequest>("physics::area").without<AreaQueryResult>().kind(PO).each(Physics::area);
-    world.system<const ExplosionRequest>("physics::explosion").without<ExplosionResult>().kind(PO).each(Physics::explosion);
+    world.system<const RequestRaycast>("physics::raycast").without<ResponseRaycast>().kind(PO).each(Physics::raycast);
+    world.system<const RequestAreaQuery>("physics::area").without<ResponseAreaQuery>().kind(PO).each(Physics::area);
+    world.system<const RequestExplosion>("physics::explosion").without<ResponseExplosion>().kind(PO).each(Physics::explosion);
 
     world.observer<B2Body>("physics::cleanup").event(flecs::OnRemove).each(Physics::cleanup);
     world.observer<const B2Body, const DampingLinear>("physics::ldamp").event(flecs::OnSet).each(Physics::ldamp);
@@ -186,46 +186,46 @@ void Physics::event(flecs::iter& it) {
         for (int j = 0; j < contacts.beginCount; j++) {
             auto& c = contacts.beginEvents[j];
             ev.contactBegin.push({
-                .entityA = entity_from_body(w, b2Shape_GetBody(c.shapeIdA)),
-                .entityB = entity_from_body(w, b2Shape_GetBody(c.shapeIdB)),
+                .entity_a = entity_from_body(w, b2Shape_GetBody(c.shapeIdA)),
+                .entity_b = entity_from_body(w, b2Shape_GetBody(c.shapeIdB)),
             });
         }
         for (int j = 0; j < contacts.endCount; j++) {
             auto& c = contacts.endEvents[j];
             ev.contactEnd.push({
-                .entityA = entity_from_body(w, b2Shape_GetBody(c.shapeIdA)),
-                .entityB = entity_from_body(w, b2Shape_GetBody(c.shapeIdB)),
+                .entity_a = entity_from_body(w, b2Shape_GetBody(c.shapeIdA)),
+                .entity_b = entity_from_body(w, b2Shape_GetBody(c.shapeIdB)),
             });
         }
         b2SensorEvents sensors = b2World_GetSensorEvents(eng.world_id);
         for (int j = 0; j < sensors.beginCount; j++) {
             auto& s = sensors.beginEvents[j];
             ev.sensorBegin.push({
-                .entityA = entity_from_body(w, b2Shape_GetBody(s.sensorShapeId)),
-                .entityB = entity_from_body(w, b2Shape_GetBody(s.visitorShapeId)),
+                .entity_a = entity_from_body(w, b2Shape_GetBody(s.sensorShapeId)),
+                .entity_b = entity_from_body(w, b2Shape_GetBody(s.visitorShapeId)),
             });
         }
         for (int j = 0; j < sensors.endCount; j++) {
             auto& s = sensors.endEvents[j];
             ev.sensorEnd.push({
-                .entityA = entity_from_body(w, b2Shape_GetBody(s.sensorShapeId)),
-                .entityB = entity_from_body(w, b2Shape_GetBody(s.visitorShapeId)),
+                .entity_a = entity_from_body(w, b2Shape_GetBody(s.sensorShapeId)),
+                .entity_b = entity_from_body(w, b2Shape_GetBody(s.visitorShapeId)),
             });
         }
     }
 }
 
-void Physics::raycast(flecs::entity e, const RaycastRequest& req) {
+void Physics::raycast(flecs::entity e, const RequestRaycast& req) {
     const auto* eng = e.world().try_get<PhysicsEngine>();
-    RaycastResult result;
+    ResponseRaycast result;
     struct Ctx {
         const flecs::world& w;
-        RaycastResult* r;
+        ResponseRaycast* r;
     };
     Ctx ctx{.w = e.world(), .r = &result};
 
     b2Vec2 o = {.x = req.origin.x, .y = req.origin.y};
-    b2Vec2 t = {.x = o.x + (req.direction.x * req.max_dist), .y = o.y + (req.direction.y * req.max_dist)};
+    b2Vec2 t = {.x = o.x + (req.direction.x * req.range), .y = o.y + (req.direction.y * req.range)};
     b2World_CastRay(
         eng->world_id, o, t, b2DefaultQueryFilter(),
         [](b2ShapeId shape, b2Vec2 pt, b2Vec2 n, float frac, void* ud) -> float {
@@ -242,12 +242,12 @@ void Physics::raycast(flecs::entity e, const RaycastRequest& req) {
     e.set(result);
 }
 
-void Physics::area(flecs::entity e, const AreaQueryRequest& req) {
+void Physics::area(flecs::entity e, const RequestAreaQuery& req) {
     const auto* eng = e.world().try_get<PhysicsEngine>();
-    AreaQueryResult result;
+    ResponseAreaQuery result;
     struct Ctx {
         const flecs::world& w;
-        AreaQueryResult* r;
+        ResponseAreaQuery* r;
         glm::vec2 center;
         float radius;
     };
@@ -273,9 +273,9 @@ void Physics::area(flecs::entity e, const AreaQueryRequest& req) {
     e.set(result);
 }
 
-void Physics::explosion(flecs::entity e, const ExplosionRequest& req) {
+void Physics::explosion(flecs::entity e, const RequestExplosion& req) {
     const auto* eng = e.world().try_get<PhysicsEngine>();
-    ExplosionResult result;
+    ResponseExplosion result;
     struct RawHit {
         b2BodyId body;
         float dist;

@@ -1,22 +1,54 @@
 #pragma once
 
+#include <algorithm>
+#include <bit>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
+#include <span>
 #include <string>
 #include <type_traits>
 #include <vector>
 
+static_assert(
+    std::endian::native == std::endian::little ||
+    std::endian::native == std::endian::big,
+    "serialize.h requires host to be purely little or big endian"
+);
+
+namespace serialize {
+
+template <typename T>
+static void wire_swap(T& value) {
+    if constexpr (sizeof(T) > 1) {
+        if constexpr (std::endian::native == std::endian::big) {
+            auto* bytes = reinterpret_cast<uint8_t*>(&value);
+            std::reverse(bytes, bytes + sizeof(T));
+        }
+    }
+}
+
 struct Writer {
     std::vector<uint8_t> data;
 
+    Writer() = default;
+    explicit Writer(size_t reserve) {
+        data.reserve(reserve);
+    }
+
     [[nodiscard]] auto size() const -> size_t {
         return data.size();
+    }
+    void clear() {
+        data.clear();
     }
 
     template <typename T>
     void put(T value) {
         static_assert(std::is_trivially_copyable_v<T>);
+        wire_swap(value);
         size_t at = data.size();
         data.resize(at + sizeof(T));
         std::memcpy(data.data() + at, &value, sizeof(T));
@@ -29,8 +61,9 @@ struct Writer {
     }
 
     void text(const std::string& s) {
-        put<uint16_t>(static_cast<uint16_t>(s.size()));
-        bytes(s.data(), s.size());
+        auto n = static_cast<uint16_t>(std::min<size_t>(s.size(), std::numeric_limits<uint16_t>::max()));
+        put<uint16_t>(n);
+        bytes(s.data(), n);
     }
 };
 
@@ -38,12 +71,27 @@ struct Reader {
     const uint8_t* data = nullptr;
     size_t size = 0;
     size_t at = 0;
+    bool failed = false;
 
     Reader() = default;
     Reader(const uint8_t* d, size_t n) : data(d), size(n) {}
+    explicit Reader(std::span<const uint8_t> bytes) : data(bytes.data()), size(bytes.size()) {}
 
-    [[nodiscard]] auto ok(size_t need) const -> bool {
-        return at + need <= size;
+    [[nodiscard]] auto remaining() const -> size_t {
+        return size - at;
+    }
+    [[nodiscard]] auto valid() const -> bool {
+        return !failed;
+    }
+    void fail() {
+        failed = true;
+    }
+    auto ok(size_t need) -> bool {
+        if (failed || at + need > size) {
+            failed = true;
+            return false;
+        }
+        return true;
     }
 
     template <typename T>
@@ -53,6 +101,7 @@ struct Reader {
         if (ok(sizeof(T))) {
             std::memcpy(&value, data + at, sizeof(T));
             at += sizeof(T);
+            wire_swap(value);
         }
         return value;
     }
@@ -97,6 +146,7 @@ struct WriteArchive {
     }
     template <typename Count, typename T>
     void vector(std::vector<T>& v) {
+        assert(v.size() <= std::numeric_limits<Count>::max());
         writer.put(static_cast<Count>(v.size()));
         for (auto& element : v) {
             value(element);
@@ -104,9 +154,18 @@ struct WriteArchive {
     }
     template <typename Length>
     void blob(std::vector<uint8_t>& b) {
+        assert(b.size() <= std::numeric_limits<Length>::max());
         writer.put(static_cast<Length>(b.size()));
         if (!b.empty()) {
             writer.bytes(b.data(), b.size());
+        }
+    }
+    template <typename Count>
+    void strings(std::vector<std::string>& v) {
+        assert(v.size() <= std::numeric_limits<Count>::max());
+        writer.put(static_cast<Count>(v.size()));
+        for (auto& s : v) {
+            writer.text(s);
         }
     }
 };
@@ -135,6 +194,10 @@ struct ReadArchive {
     void vector(std::vector<T>& v) {
         auto n = reader.get<Count>();
         v.clear();
+        if (n > reader.remaining()) {
+            reader.fail();
+            return;
+        }
         v.resize(n);
         for (auto& element : v) {
             value(element);
@@ -143,14 +206,30 @@ struct ReadArchive {
     template <typename Length>
     void blob(std::vector<uint8_t>& b) {
         auto n = reader.get<Length>();
+        b.clear();
+        if (n > reader.remaining()) {
+            reader.fail();
+            return;
+        }
         b.resize(n);
-        if (n) {
+        if (n != 0) {
             reader.bytes(b.data(), n);
         }
     }
+    template <typename Count>
+    void strings(std::vector<std::string>& v) {
+        auto n = reader.get<Count>();
+        v.clear();
+        if (n > reader.remaining()) {
+            reader.fail();
+            return;
+        }
+        v.resize(n);
+        for (auto& s : v) {
+            s = reader.text();
+        }
+    }
 };
-
-namespace util {
 
 template <typename T>
 void encode(Writer& writer, T& message) {
