@@ -1,5 +1,6 @@
 #pragma once
 
+#include <flecs.h>
 #include <glm/glm.hpp>
 
 #include <cstdint>
@@ -23,6 +24,11 @@ struct SimulationClock {
     double scale = 1.0;
 };
 
+struct ServerClock {
+    uint64_t tick = 0;
+    bool running = false;
+};
+
 enum class ConnectionState : std::uint8_t {
     Idle,
     Connecting,
@@ -35,17 +41,29 @@ struct ConnectionStatus {
     std::string reason;
 };
 
-struct NetworkRequestHost {
+struct NetworkTarget {
+    std::string address;
+    uint16_t port = 0;
+};
+
+struct RequestHost {
     std::string address;
     uint16_t port;
 };
-struct NetworkRequestJoin {
+struct RequestJoin {
     std::string address;
     uint16_t port;
 };
-struct NetworkRequestQuit {};
-struct NetworkRequestChat {
+struct RequestQuit {};
+struct RequestChat {
     std::string text;
+};
+struct RequestBroadcast {
+    std::string line;
+};
+struct RequestReply {
+    flecs::entity peer;
+    std::string line;
 };
 
 struct ServerStatus {
@@ -57,29 +75,33 @@ struct ServerStatus {
 };
 
 struct ServerStatusBoard {
-    std::unordered_map<std::string, ServerStatus> byAddress;
-};
-
-struct NetworkTarget {
-    std::string address;
-    uint16_t port = 0;
+    std::unordered_map<std::string, ServerStatus> by_address;
 };
 
 struct NetworkId {
     uint64_t value = 0;
 };
 
+struct Networked {};
 struct Replicated {};
+struct Local {};
 struct Remote {};
 
-struct Predicted {
-    float life = 0;
-    uint32_t id = 0;
+struct Quantize {
+    float precision = 0;
+    uint8_t bytes = 4;
 };
 
 struct Owner {
     uint32_t peer = 0;
     uint32_t prediction = 0;
+};
+
+struct Controls {};
+
+struct Predicted {
+    float life = 0;
+    uint32_t id = 0;
 };
 
 struct Firing {
@@ -90,13 +112,6 @@ struct Firing {
     bool aimed = false;
 };
 
-struct Networked {};
-
-struct Quantize {
-    float precision = 0;
-    uint8_t bytes = 4;
-};
-
 struct ViewLag {
     uint32_t ticks = 0;
 };
@@ -104,5 +119,5 @@ struct ViewLag {
 struct Latent {};
 
 struct Dying {
-    uint64_t revive_tick = 0;
+    uint64_t revive = 0;
 };

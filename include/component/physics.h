@@ -63,7 +63,7 @@ struct PhysicsConfig {
 };
 
 struct ContactEvent {
-    flecs::entity entityA, entityB;
+    flecs::entity entity_a, entity_b;
     glm::vec2 point{0}, normal{0};
 };
 
@@ -85,8 +85,8 @@ struct PhysicsEvents {
 
         void skip() {
             while (ptr != last) {
-                if (ptr->entityA.is_alive() && ptr->entityB.is_alive() &&
-                    ((ptr->entityA.template has<A>() && ptr->entityB.template has<B>()) || (ptr->entityB.template has<A>() && ptr->entityA.template has<B>()))) {
+                if (ptr->entity_a.is_alive() && ptr->entity_b.is_alive() &&
+                    ((ptr->entity_a.template has<A>() && ptr->entity_b.template has<B>()) || (ptr->entity_b.template has<A>() && ptr->entity_a.template has<B>()))) {
                     return;
                 }
                 ++ptr;
@@ -94,10 +94,10 @@ struct PhysicsEvents {
         }
 
         auto operator*() const -> std::pair<flecs::entity, flecs::entity> {
-            if (ptr->entityA.template has<A>()) {
-                return {ptr->entityA, ptr->entityB};
+            if (ptr->entity_a.template has<A>()) {
+                return {ptr->entity_a, ptr->entity_b};
             }
-            return {ptr->entityB, ptr->entityA};
+            return {ptr->entity_b, ptr->entity_a};
         }
         auto operator++() -> View& {
             ++ptr;
@@ -136,12 +136,12 @@ struct PhysicsEvents {
     }
 };
 
-struct RaycastRequest {
+struct RequestRaycast {
     glm::vec2 origin, direction;
-    float max_dist;
+    float range;
 };
 
-struct RaycastResult {
+struct ResponseRaycast {
     struct Hit {
         flecs::entity entity;
         glm::vec2 point{0}, normal{0};
@@ -150,12 +150,12 @@ struct RaycastResult {
     FixedBuffer<Hit, 32> hits;
 };
 
-struct AreaQueryRequest {
+struct RequestAreaQuery {
     glm::vec2 center;
     float radius;
 };
 
-struct AreaQueryResult {
+struct ResponseAreaQuery {
     struct Hit {
         flecs::entity entity;
         float distance;
@@ -163,7 +163,7 @@ struct AreaQueryResult {
     FixedBuffer<Hit, 64> hits;
 };
 
-struct ExplosionRequest {
+struct RequestExplosion {
     glm::vec2 center;
     float radius;
     float force;
@@ -171,7 +171,7 @@ struct ExplosionRequest {
     flecs::entity source;
 };
 
-struct ExplosionResult {
+struct ResponseExplosion {
     struct Hit {
         flecs::entity entity;
         float intensity;

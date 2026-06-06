@@ -12,12 +12,12 @@ enum class InterfacePage : std::uint8_t {
     None,
     Main,
     Host,
+    Chat,
     Pause,
     Ingame,
     Server,
     Connect,
     Settings,
-    Chat,
     Status,
 };
 
@@ -34,8 +34,8 @@ struct InterfaceTransition {
     double duration = 0.18;
     TransitionKind kind = TransitionKind::Crossfade;
     TransitionDir dir = TransitionDir::Left;
-    InterfacePage lastFrom = InterfacePage::None;
-    InterfacePage lastTo = InterfacePage::None;
+    InterfacePage last_from = InterfacePage::None;
+    InterfacePage last_to = InterfacePage::None;
 };
 
 struct InterfaceCommands {
@@ -69,8 +69,9 @@ struct ChatInput {
     std::string draft;
     float scroll = 0;
     std::vector<std::string> sent;
-    int historyIndex = -1;
+    int history_index = -1;
     std::string stash;
+    int complete = 0;
 };
 
 struct InputCapture {
