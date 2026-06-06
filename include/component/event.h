@@ -5,29 +5,30 @@
 #include "util/fixed_buffer.h"
 
 struct WindowEvents : FixedBuffer<SDL_Event, 256> {
-    SDL_Window* target;
+    SDL_Window* target = nullptr;
+    char text_arena[4096];
+    int text_used = 0;
 
-    static constexpr int kTextSlots = 64;
-    static constexpr int kTextMaxBytes = 64;
-    char textPool[kTextSlots][kTextMaxBytes];
-    int textPoolCount = 0;
-
-    void pushEvent(const SDL_Event& e) {
+    void push(const SDL_Event& src) {
         if (full()) {
             return;
         }
-        if (e.type == SDL_EVENT_TEXT_INPUT && e.text.text && textPoolCount < kTextSlots) {
-            SDL_Event copy = e;
-            SDL_strlcpy(textPool[textPoolCount], e.text.text, kTextMaxBytes);
-            copy.text.text = textPool[textPoolCount++];
-            push(copy);
-        } else if (e.type != SDL_EVENT_TEXT_INPUT) {
-            push(e);
+        SDL_Event copy = src;
+        if (src.type == SDL_EVENT_TEXT_INPUT && src.text.text != nullptr) {
+            size_t len = SDL_strlen(src.text.text) + 1;
+            if (text_used + static_cast<int>(len) > static_cast<int>(sizeof(text_arena))) {
+                return;
+            }
+            char* dst = text_arena + text_used;
+            SDL_memcpy(dst, src.text.text, len);
+            text_used += static_cast<int>(len);
+            copy.text.text = dst;
         }
+        FixedBuffer::push(copy);
     }
 
-    void clearAll() {
-        clear();
-        textPoolCount = 0;
+    void clear() {
+        text_used = 0;
+        FixedBuffer::clear();
     }
 };

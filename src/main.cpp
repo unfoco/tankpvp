@@ -68,43 +68,43 @@ static auto parse_args(int argc, char** argv, bool& headless) -> NetworkConfig {
 
 auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
     auto* state = new State();
+    auto& world = state->world;
 
-    NetworkConfig cfg = parse_args(argc, argv, state->headless);
-    state->world.set<NetworkConfig>(cfg);
+    world.set_threads(4);
 
-    state->world.set<SimulationClock>({});
-
-    state->world.set_threads(4);
-
-    state->world.set<Settings>({
+    world.set<Settings>({
         .volume = 1.0F,
         .music = 1.0F,
     });
 
-    state->world.set<PhysicsConfig>({.gravity = {0.0F, 0.0F}});
+    world.set<PhysicsConfig>({.gravity = {0.0F, 0.0F}});
 
-    state->world.import<Physics>();
-    state->world.import<Network>();
-    state->world.import<Logic>();
+    auto cfg = parse_args(argc, argv, state->headless);
+    world.set<NetworkConfig>(cfg);
+    world.set<SimulationClock>({});
+
+    world.import<Physics>();
+    world.import<Network>();
+    world.import<Logic>();
 
     if (!state->headless) {
-        state->world.import<Interface>();
-        state->world.import<Render>();
-        state->world.import<Input>();
-        state->world.import<Audio>();
-        state->world.import<Persist>();
-        state->world.import<NetworkQuery>();
+        world.import<Interface>();
+        world.import<Render>();
+        world.import<Input>();
+        world.import<Audio>();
+        world.import<Persist>();
+        world.import<NetworkQuery>();
     }
 
-    state->world.component<Decay>().member<float>("seconds");
+    world.component<Decay>().member<float>("seconds");
 
     if (cfg.role == NetworkRole::Server) {
-        state->world.entity().set(NetworkRequestHost{.address = cfg.address, .port = cfg.port});
+        world.entity().set(NetworkRequestHost{.address = cfg.address, .port = cfg.port});
     } else if (cfg.role == NetworkRole::Client) {
-        state->world.set<ConnectionStatus>({.state = ConnectionState::Connecting, .reason = ""});
-        state->world.entity().set(NetworkRequestJoin{.address = cfg.address, .port = cfg.port});
+        world.set<ConnectionStatus>({.state = ConnectionState::Connecting, .reason = ""});
+        world.entity().set(NetworkRequestJoin{.address = cfg.address, .port = cfg.port});
         if (!state->headless) {
-            state->world.set(InterfacePage::Status);
+            world.set(InterfacePage::Status);
         }
     }
 
@@ -114,13 +114,14 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
 
 auto SDL_AppEvent(void* appstate, SDL_Event* event) -> SDL_AppResult {
     auto* state = static_cast<State*>(appstate);
+    auto& world = state->world;
 
     if (event->type == SDL_EVENT_QUIT) {
         return SDL_APP_SUCCESS;
     }
 
-    if (state->world.try_get<WindowEvents>() != nullptr) {
-        state->world.get_mut<WindowEvents>().pushEvent(*event);
+    if (auto* events = world.try_get_mut<WindowEvents>()) {
+        events->push(*event);
     }
 
     return SDL_APP_CONTINUE;
@@ -128,18 +129,17 @@ auto SDL_AppEvent(void* appstate, SDL_Event* event) -> SDL_AppResult {
 
 auto SDL_AppIterate(void* appstate) -> SDL_AppResult {
     auto* state = static_cast<State*>(appstate);
+    auto& world = state->world;
 
     auto tick_once = [&] -> void {
-        state->world.progress(TICK_DT);
-        if (state->world.try_get<WindowEvents>()) {
-            state->world.get_mut<WindowEvents>().clearAll();
+        world.progress(TICK_DT);
+        if (auto* events = world.try_get_mut<WindowEvents>()) {
+            events->clear();
         }
     };
 
     uint64_t now = SDL_GetTicks();
-    if (state->last_ticks == 0) {
-        state->last_ticks = now;
-    }
+    if (state->last_ticks == 0) state->last_ticks = now;
     state->accumulator += static_cast<double>(now - state->last_ticks) / 1000.0;
     state->last_ticks = now;
     state->accumulator = std::min(state->accumulator, 0.25);
@@ -150,11 +150,10 @@ auto SDL_AppIterate(void* appstate) -> SDL_AppResult {
         state->accumulator -= TICK_DT;
     }
 
-    if (!state->headless) {
-        state->world.run_pipeline(state->world.get<RenderPipeline>().value);
-    }
     if (state->headless) {
         SDL_Delay(1);
+    } else {
+        world.run_pipeline(world.get<RenderPipeline>().value);
     }
 
     return SDL_APP_CONTINUE;
