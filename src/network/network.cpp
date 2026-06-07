@@ -7,7 +7,6 @@
 
 #include "component/asset.h"
 #include "component/audio.h"
-#include "client.h"
 #include "component/network.h"
 #include "component/interface.h"
 #include "component/input.h"
@@ -15,6 +14,8 @@
 #include "component/physics.h"
 #include "component/script.h"
 #include "component/settings.h"
+
+#include "client.h"
 #include "protocol.h"
 #include "registry.h"
 #include "server.h"

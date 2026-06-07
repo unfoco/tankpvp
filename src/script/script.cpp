@@ -6,7 +6,6 @@
 
 #include <LuaBridge/LuaBridge.h>
 
-
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

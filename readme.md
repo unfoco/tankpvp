@@ -1,7 +1,9 @@
 # tankpvp
 
 todo:
-  - walls
+  - raw udp server list pinging protocol
+  - chunked tile based world system
+  - turret customization
   - ai players
   - labyrinth generator
   - prevent internal dependency leak for modules
