@@ -72,5 +72,5 @@ struct Render {
     static void camera(flecs::iter& it, size_t i, RenderState& render, const Position& pos);
 
     static void bullet(flecs::iter& it, size_t i, RenderState& render, const Position& pos);
-    static void tank(flecs::iter& it, size_t i, const RenderState& render, const Color& col, const Position& pos, const Rotation& rot, const Sprite* sprite);
+    static void sprite(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col);
 };

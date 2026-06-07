@@ -744,16 +744,65 @@ static void setup_api(flecs::world world, lua_State* lua) {
             self->entity.child_of(parent->entity);
         }
     });
-    api_method(entity, state, "Entity", "sprite", "(self: Entity, string) -> ()", [](const ScriptEntity* self, const std::string& name) -> void {
+
+    auto set_layer = [](const ScriptEntity* self, int index, const std::string& name) -> void {
+        if (index < 0 || index >= SPRITE_LAYERS) {
+            return;
+        }
         flecs::world world = self->entity.world();
         const auto* catalog = world.try_get<AssetCatalog>();
-        if (catalog != nullptr) {
-            uint64_t hash = catalog->hash_of(name);
-            if (hash != 0) {
-                self->entity.set<Sprite>({.hash = hash});
+        if (catalog == nullptr) {
+            return;
+        }
+        uint64_t hash = catalog->hash_of(name);
+        if (hash == 0) {
+            return;
+        }
+        Sprite s = self->entity.has<Sprite>() ? self->entity.get<Sprite>() : Sprite{};
+        s.texture[index] = hash;
+        self->entity.set<Sprite>(s);
+    };
+
+    api_method(entity, state, "Entity", "sprite", "(self: Entity, string | { { tex: string, pivot: { number }?, offset: { number }? } }) -> ()", [set_layer](const ScriptEntity* self, const LuaRef& spec) -> void {
+        if (spec.isString()) {
+            set_layer(self, 0, spec.unsafe_cast<std::string>());
+            return;
+        }
+        if (!spec.isTable()) {
+            return;
+        }
+        const auto* catalog = self->entity.world().try_get<AssetCatalog>();
+        if (catalog == nullptr) {
+            return;
+        }
+        Sprite s{};
+        int count = spec.length();
+        for (int i = 1; i <= count && i <= SPRITE_LAYERS; ++i) {
+            LuaRef layer = spec[i];
+            if (!layer.isTable()) {
+                continue;
+            }
+            LuaRef tex = layer["tex"];
+            if (!tex.isString()) {
+                continue;
+            }
+            uint64_t hash = catalog->hash_of(tex.unsafe_cast<std::string>());
+            if (hash == 0) {
+                continue;
+            }
+            s.texture[i - 1] = hash;
+            if (LuaRef pivot = layer["pivot"]; pivot.isTable() && pivot.length() >= 2) {
+                s.pivot_x[i - 1] = static_cast<float>(pivot[1].unsafe_cast<double>()) - 0.5F;
+                s.pivot_y[i - 1] = static_cast<float>(pivot[2].unsafe_cast<double>()) - 0.5F;
+            }
+            if (LuaRef offset = layer["offset"]; offset.isTable() && offset.length() >= 2) {
+                s.offset_x[i - 1] = static_cast<float>(offset[1].unsafe_cast<double>());
+                s.offset_y[i - 1] = static_cast<float>(offset[2].unsafe_cast<double>());
             }
         }
+        self->entity.set<Sprite>(s);
     });
+    api_method(entity, state, "Entity", "layer", "(self: Entity, number, string) -> ()", [set_layer](const ScriptEntity* self, int index, const std::string& name) -> void { set_layer(self, index - 1, name); });
     api_method(entity, state, "Entity", "apply", "(self: Entity, any) -> ()", [](const ScriptEntity* self, const LuaRef& def) -> void {
         if (!def.isTable()) {
             return;

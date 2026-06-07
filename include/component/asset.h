@@ -22,9 +22,25 @@ struct AssetDesc {
     uint32_t size = 0;
 };
 
+inline constexpr int SPRITE_LAYERS = 16;
+inline constexpr uint64_t SPRITE_ENGINE_BASE = 1;
+inline constexpr uint64_t SPRITE_ENGINE_TURRET = 2;
+
 struct Sprite {
-    uint64_t hash = 0;
+    uint64_t texture[SPRITE_LAYERS] = {};
+    float offset_x[SPRITE_LAYERS] = {};
+    float offset_y[SPRITE_LAYERS] = {};
+    float pivot_x[SPRITE_LAYERS] = {};
+    float pivot_y[SPRITE_LAYERS] = {};
 };
+
+inline auto tank_default_sprite() -> Sprite {
+    Sprite s;
+    s.texture[0] = SPRITE_ENGINE_BASE;
+    s.texture[1] = SPRITE_ENGINE_TURRET;
+    s.pivot_x[1] = -0.25F;
+    return s;
+}
 
 struct AssetStore {
     struct Incoming {

@@ -116,9 +116,11 @@ void Asset::scan(flecs::entity e) {
 
     if (!rehash.empty()) {
         world.query_builder<Sprite>().build().each([&](Sprite& s) -> void {
-            auto it = rehash.find(s.hash);
-            if (it != rehash.end()) {
-                s.hash = it->second;
+            for (auto& tex : s.texture) {
+                auto it = rehash.find(tex);
+                if (it != rehash.end()) {
+                    tex = it->second;
+                }
             }
         });
     }

@@ -87,7 +87,7 @@ Audio::Audio(flecs::world& world) {
     world.system<AudioState>("audio::reap").kind(flecs::PreFrame).each(Audio::reap);
     world.system<AudioState, const Position>("audio::listener").with<Local>().kind(flecs::PreFrame).each(Audio::listener);
     world.system<AudioState>("audio::music").kind(flecs::OnStore).each(Audio::music);
-    world.system<AudioState, const Position>("audio::shoot").with<Bullet>().without<Latent>().without<Sounded>().kind(flecs::OnStore).each(Audio::shoot);
+    world.observer<AudioState, const Position>("audio::shoot").with<Bullet>().event(flecs::OnAdd).each(Audio::shoot);
     world.observer("audio::puff").with<Bullet>().event(flecs::OnRemove).each(Audio::puff);
     world.observer<const RequestSound>("audio::custom").event(flecs::OnSet).each([](flecs::entity e, const RequestSound& s) -> void {
         flecs::world world = e.world();

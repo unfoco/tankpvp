@@ -34,7 +34,12 @@ Network::Network(flecs::world& world) {
     world.component<MovementStats>().member<float>("speed").member<float>("turn");
     world.component<WeaponStats>().member<uint32_t>("cooldown").member<float>("speed").member<float>("muzzle").member<float>("life");
     world.component<Bullet>().member<float>("speed");
-    world.component<Sprite>().member<uint64_t>("hash");
+    world.component<Sprite>()
+        .member<uint64_t>("texture", SPRITE_LAYERS)
+        .member<float>("offset_x", SPRITE_LAYERS)
+        .member<float>("offset_y", SPRITE_LAYERS)
+        .member<float>("pivot_x", SPRITE_LAYERS)
+        .member<float>("pivot_y", SPRITE_LAYERS);
 
     world.component<Sprite>().add<Networked>();
     world.component<Position>().add<Networked>().set<Quantize>({.precision = 1.0F / 8192.0F, .bytes = 4});
@@ -60,6 +65,8 @@ Network::Network(flecs::world& world) {
     world.observer<const RequestHost>("network::host").event(flecs::OnSet).each(Network::host);
     world.observer<const RequestJoin>("network::join").event(flecs::OnSet).each(Network::join);
     world.observer().with<RequestQuit>().event(flecs::OnAdd).each([](flecs::entity e) -> void { Network::quit(e, RequestQuit{}); });
+
+    world.observer("network::tank_sprite").with<Tank>().without<Sprite>().event(flecs::OnAdd).each([](flecs::entity e) -> void { e.set<Sprite>(tank_default_sprite()); });
 
     world.system<const RequestSound>("network::sounds").kind(flecs::OnStore).each([](flecs::entity e, const RequestSound&) -> void { e.destruct(); });
 
@@ -117,7 +124,7 @@ void Network::host(flecs::entity e, const RequestHost& req) {
     }
 
     const auto* cfg = world.try_get<NetworkConfig>();
-    bool dedicated = (cfg != nullptr) && cfg->role == NetworkRole::Server;
+    bool dedicated = false;
     world.set<NetworkHost>({.host = host, .tickrate = static_cast<uint16_t>((cfg != nullptr) ? cfg->tickrate : 60)});
     SDL_Log("network: hosting on port %u", req.port);
 
