@@ -61,9 +61,9 @@ Network::Network(flecs::world& world) {
 static void rebuild_registry(flecs::world world) {
     NetworkRegistry rebuilt;
     rebuilt.build(world);
-    if (rebuilt.components.size() != world.get<NetworkRegistry>().components.size()) {
-        SDL_Log("network: registry rebuilt with %zu replicated components", rebuilt.components.size());
-    }
+    const auto* previous = world.try_get<NetworkRegistry>();
+    rebuilt.version = static_cast<uint16_t>((previous != nullptr ? previous->version : 0) + 1);
+    SDL_Log("network: registry rebuilt (v%u) with %zu replicated components", rebuilt.version, rebuilt.components.size());
     world.set<NetworkRegistry>(std::move(rebuilt));
 }
 

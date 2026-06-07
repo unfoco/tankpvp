@@ -47,6 +47,7 @@ struct NetworkRegistry {
 
     std::vector<Component> components;
     std::unordered_map<std::string, uint16_t> ids;
+    uint16_t version = 0;
 
     [[nodiscard]] auto find(uint16_t id) const -> const Component* {
         if (id == 0 || id > components.size()) {

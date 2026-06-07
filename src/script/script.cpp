@@ -369,10 +369,22 @@ static void reload_scripts(flecs::world world) {
     state.inferred_next = 0;
     state.enum_aliases.clear();
     state.modules.clear();
+    state.declared_this_load.clear();
     Mods::load(world);
+    std::vector<std::string> removed;
+    for (const std::string& name : state.author_components) {
+        if (!state.declared_this_load.contains(name)) {
+            removed.push_back(name);
+        }
+    }
+    for (const std::string& name : removed) {
+        Reflect::remove_component(world, name);
+    }
     Reflect::refresh_components(world);
     generate_types(world);
     wire_component_observers(world);
+    world.set<CommandBook>({.commands = Command::command_list(world)});
+    world.entity().add<RequestReload>();
     SDL_Log("[script] reloaded mods");
 }
 
@@ -430,7 +442,7 @@ static void setup_api(flecs::world world, lua_State* lua) {
 
     auto worldns = luabridge::getGlobalNamespace(lua).beginNamespace("world");
     api_fn(worldns, state, "world", "broadcast", "(string) -> ()", [world](const std::string& message) -> void { world.entity().set(RequestBroadcast{.line = message}); });
-    api_fn(worldns, state, "world", "reload", "() -> ()", [world]() -> void { reload_scripts(world); });
+    api_fn(worldns, state, "world", "reload", "() -> ()", [world]() -> void { ScriptState::of(world).reload_pending = true; });
     api_fn(worldns, state, "world", "each", "(any, (Entity) -> ()) -> ()", [world](const LuaRef& names, const LuaRef& fn) -> void { query_each(world, names, fn); });
     api_fn(worldns, state, "world", "spawn", "(any) -> Entity", [world](const LuaRef& def, lua_State* s) -> LuaRef {
         flecs::entity e = world.entity();
@@ -940,6 +952,14 @@ Script::Script(flecs::world& world) {
             }
             uint64_t tick = clock->tick;
             ScriptState& state = world.get_mut<ScriptState>();
+            if (state.reload_pending) {
+                state.reload_pending = false;
+                const auto* cfg = world.try_get<NetworkConfig>();
+                if (cfg == nullptr || cfg->role != NetworkRole::Client) {
+                    reload_scripts(world);
+                }
+                continue;
+            }
             emit(state, "tick", [&](lua_State* lua) -> void {
                 LuaRef ev = luabridge::newTable(lua);
                 ev["tick"] = static_cast<double>(tick);

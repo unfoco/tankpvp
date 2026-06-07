@@ -35,6 +35,8 @@ static void kick(ENetPeer* peer, const std::string& reason) {
     enet_peer_disconnect_later(peer, 0);
 }
 
+static void broadcast_reload(flecs::world& world);
+
 static void broadcast_chat(flecs::world& world, const std::string& line) {
     serialize::Writer w = wire::message(Message::Chat);
     MessageChat out{line};
@@ -151,6 +153,11 @@ NetworkServer::NetworkServer(flecs::world& world) {
         broadcast_chat(world, c.line);
         e.destruct();
     });
+    world.observer().with<RequestReload>().event(flecs::OnAdd).each([](flecs::entity e) -> void {
+        flecs::world world = e.world();
+        broadcast_reload(world);
+        e.destruct();
+    });
     world.observer<const RequestReply>("network::server::chat_reply").event(flecs::OnSet).each([](flecs::entity e, const RequestReply& c) -> void {
         flecs::world world = e.world();
         send_chat(world, c.peer, c.line);
@@ -204,6 +211,7 @@ static void send_welcome(flecs::world& world, NetworkHost& host, ENetPeer* peer,
     msg.controlled_entity = entity;
     msg.tick = host.tick;
     msg.tickrate = host.tickrate;
+    msg.registry_version = world.get<NetworkRegistry>().version;
     msg.components = world.get<NetworkRegistry>().describe();
 
     serialize::Writer w = wire::message(Message::Welcome);
@@ -219,6 +227,39 @@ static void send_welcome(flecs::world& world, NetworkHost& host, ENetPeer* peer,
     serialize::Writer cw = wire::message(Message::CommandList);
     serialize::encode(cw, list);
     wire::send(peer, cw, CHANNEL_RELIABLE, true);
+}
+
+static void broadcast_reload(flecs::world& world) {
+    NetworkRegistry rebuilt;
+    rebuilt.build(world);
+    rebuilt.version = static_cast<uint16_t>(world.get<NetworkRegistry>().version + 1);
+    world.set<NetworkRegistry>(std::move(rebuilt));
+    const auto& reg = world.get<NetworkRegistry>();
+
+    MessageRegistry rmsg;
+    rmsg.registry_version = reg.version;
+    rmsg.components = reg.describe();
+    serialize::Writer rw = wire::message(Message::Registry);
+    serialize::encode(rw, rmsg);
+
+    MessageCommandList list;
+    if (const auto* book = world.try_get<CommandBook>()) {
+        for (const auto& info : book->commands) {
+            list.commands.push_back(to_message_command(info));
+        }
+    }
+    serialize::Writer cw = wire::message(Message::CommandList);
+    serialize::encode(cw, list);
+
+    int peers = 0;
+    world.query_builder<Peer>().build().each([&](const Peer& p) {
+        if (p.welcomed && (p.peer != nullptr)) {
+            wire::send(p.peer, rw, CHANNEL_RELIABLE, true);
+            wire::send(p.peer, cw, CHANNEL_RELIABLE, true);
+            ++peers;
+        }
+    });
+    SDL_Log("network: hot-reload synced registry v%u + commands to %d client(s)", reg.version, peers);
 }
 
 static void on_hello(flecs::world& world, NetworkHost& host, ENetPeer* epeer, const std::string& username) {

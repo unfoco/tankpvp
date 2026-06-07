@@ -228,10 +228,43 @@ static auto type_primitive(const std::string& type) -> ecs_entity_t {
     return ecs_id(ecs_f32_t);
 }
 
+static void forget_observers(ScriptState& state, const std::string& name) {
+    state.observed.erase("set:" + name);
+    state.observed.erase("add:" + name);
+    state.observed.erase("remove:" + name);
+}
+
+void Reflect::remove_component(flecs::world world, const std::string& name) {
+    ScriptState& state = ScriptState::of(world);
+    auto it = state.components.find(name);
+    if (it != state.components.end()) {
+        flecs::entity(world, it->second).destruct();
+        state.components.erase(it);
+    }
+    state.author_components.erase(name);
+    state.component_defs.erase(name);
+    forget_observers(state, name);
+    lua_pushnil(state.lua);
+    lua_setglobal(state.lua, name.c_str());
+}
+
 void Reflect::define_component(flecs::world world, const ComponentDef& def) {
     ScriptState& state = ScriptState::of(world);
-    if (def.name.empty() || state.components.contains(def.name) || def.fields.size() > ECS_MEMBER_DESC_CACHE_SIZE) {
+    if (def.name.empty() || def.fields.size() > ECS_MEMBER_DESC_CACHE_SIZE) {
         return;
+    }
+    state.declared_this_load.insert(def.name);
+    auto previous = state.component_defs.find(def.name);
+    if (previous != state.component_defs.end()) {
+        if (previous->second == def) {
+            return;
+        }
+        auto live = state.components.find(def.name);
+        if (live != state.components.end()) {
+            flecs::entity(world, live->second).destruct();
+            state.components.erase(live);
+        }
+        forget_observers(state, def.name);
     }
     ecs_world_t* raw = world.c_ptr();
     ecs_entity_desc_t entity_desc = {};
@@ -254,6 +287,7 @@ void Reflect::define_component(flecs::world world, const ComponentDef& def) {
     }
     state.components[def.name] = comp;
     state.author_components.insert(def.name);
+    state.component_defs[def.name] = def;
     create_binding_proxy(state.lua, def.name);
 }
 
@@ -294,4 +328,3 @@ void Reflect::refresh_components(flecs::world world) {
         create_binding_proxy(state.lua, name);
     });
 }
-

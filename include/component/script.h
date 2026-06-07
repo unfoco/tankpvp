@@ -126,3 +126,5 @@ struct RequestKick {
     flecs::entity peer;
     std::string reason;
 };
+
+struct RequestReload {};

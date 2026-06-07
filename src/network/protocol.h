@@ -26,18 +26,19 @@ constexpr float CLAIM_MARGIN = 12.0F;
 constexpr int CLAIM_REDUNDANCY = 4;
 
 enum class Message : uint8_t {
-    Welcome,
-    Snapshot,
-    Structural,
-    Input,
-    Ack,
-    Hit,
-    Hello,
-    Chat,
-    Kick,
     Ping,
     Pong,
+    Ack,
+    Hello,
+    Welcome,
+    Registry,
     CommandList,
+    Kick,
+    Chat,
+    Hit,
+    Input,
+    Snapshot,
+    Structural,
     ViewOpen,
     ViewClose,
     ViewEvent,
@@ -88,24 +89,6 @@ struct MessageComponentDescriptor {
     }
 };
 
-struct MessageWelcome {
-    uint32_t protocol = 0;
-    uint32_t peer_id = 0;
-    uint64_t controlled_entity = 0;
-    uint64_t tick = 0;
-    uint16_t tickrate = 0;
-    std::vector<MessageComponentDescriptor> components;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a & protocol;
-        a & peer_id;
-        a & controlled_entity;
-        a & tick;
-        a & tickrate;
-        a.template vector<uint16_t>(components);
-    }
-};
-
 struct MessageComponentData {
     uint16_t server_id = 0;
     std::vector<uint8_t> bytes;
@@ -123,34 +106,6 @@ struct MessageEntity {
     void serialize(Archive& a) {
         a & network_id;
         a.template vector<uint8_t>(components);
-    }
-};
-
-struct MessageSnapshot {
-    uint64_t tick = 0;
-    uint64_t acknowledged_tick = 0;
-    uint32_t input_buffer = 0;
-    double send_time = 0;
-    std::vector<MessageEntity> deltas;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a & tick;
-        a & acknowledged_tick;
-        a & input_buffer;
-        a & send_time;
-        a.template vector<uint16_t>(deltas);
-    }
-};
-
-struct MessageStructural {
-    uint64_t tick = 0;
-    std::vector<MessageEntity> spawns;
-    std::vector<uint64_t> despawns;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a & tick;
-        a.template vector<uint16_t>(spawns);
-        a.template vector<uint16_t>(despawns);
     }
 };
 
@@ -174,26 +129,6 @@ struct MessageInputCommand {
     }
 };
 
-struct MessageInput {
-    uint64_t newest_tick = 0;
-    double send_time = 0;
-    std::vector<MessageInputCommand> commands;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a & newest_tick;
-        a & send_time;
-        a.template vector<uint8_t>(commands);
-    }
-};
-
-struct MessageAcknowledge {
-    uint64_t tick = 0;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a & tick;
-    }
-};
-
 struct MessageHitClaim {
     uint32_t prediction = 0;
     uint64_t target = 0;
@@ -201,46 +136,6 @@ struct MessageHitClaim {
     void serialize(Archive& a) {
         a & prediction;
         a & target;
-    }
-};
-
-struct MessageHit {
-    std::vector<MessageHitClaim> claims;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a.template vector<uint8_t>(claims);
-    }
-};
-
-struct MessageHello {
-    std::string username;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a.text(username);
-    }
-};
-
-struct MessageChat {
-    std::string text;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a.text(text);
-    }
-};
-
-struct MessageKick {
-    std::string reason;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a.text(reason);
-    }
-};
-
-struct MessagePing {
-    uint64_t token = 0;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a & token;
     }
 };
 
@@ -269,14 +164,6 @@ struct MessageCommandInfo {
         a.text(description);
         a.template vector<uint8_t>(arguments);
         a.template vector<uint8_t>(subcommands);
-    }
-};
-
-struct MessageCommandList {
-    std::vector<MessageCommandInfo> commands;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a.template vector<uint16_t>(commands);
     }
 };
 
@@ -320,6 +207,160 @@ struct MessageViewWidget {
     }
 };
 
+struct MessageViewValue {
+    std::string key;
+    std::string value;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.text(key);
+        a.text(value);
+    }
+};
+
+struct MessagePing {
+    uint64_t token = 0;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & token;
+    }
+};
+
+struct MessagePong {
+    uint32_t protocol = 0;
+    uint64_t token = 0;
+    uint16_t players = 0;
+    uint16_t max_players = 0;
+    uint16_t tickrate = 0;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & protocol;
+        a & token;
+        a & players;
+        a & max_players;
+        a & tickrate;
+    }
+};
+
+struct MessageAcknowledge {
+    uint64_t tick = 0;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & tick;
+    }
+};
+
+struct MessageHello {
+    std::string username;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.text(username);
+    }
+};
+
+struct MessageWelcome {
+    uint32_t protocol = 0;
+    uint32_t peer_id = 0;
+    uint64_t controlled_entity = 0;
+    uint64_t tick = 0;
+    uint16_t tickrate = 0;
+    uint16_t registry_version = 0;
+    std::vector<MessageComponentDescriptor> components;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & protocol;
+        a & peer_id;
+        a & controlled_entity;
+        a & tick;
+        a & tickrate;
+        a & registry_version;
+        a.template vector<uint16_t>(components);
+    }
+};
+
+struct MessageRegistry {
+    uint16_t registry_version = 0;
+    std::vector<MessageComponentDescriptor> components;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & registry_version;
+        a.template vector<uint16_t>(components);
+    }
+};
+
+struct MessageCommandList {
+    std::vector<MessageCommandInfo> commands;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.template vector<uint16_t>(commands);
+    }
+};
+
+struct MessageKick {
+    std::string reason;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.text(reason);
+    }
+};
+
+struct MessageChat {
+    std::string text;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.text(text);
+    }
+};
+
+struct MessageHit {
+    std::vector<MessageHitClaim> claims;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.template vector<uint8_t>(claims);
+    }
+};
+
+struct MessageInput {
+    uint64_t newest_tick = 0;
+    double send_time = 0;
+    std::vector<MessageInputCommand> commands;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & newest_tick;
+        a & send_time;
+        a.template vector<uint8_t>(commands);
+    }
+};
+
+struct MessageSnapshot {
+    uint64_t tick = 0;
+    uint64_t acknowledged_tick = 0;
+    uint32_t input_buffer = 0;
+    double send_time = 0;
+    uint16_t registry_version = 0;
+    std::vector<MessageEntity> deltas;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & tick;
+        a & acknowledged_tick;
+        a & input_buffer;
+        a & send_time;
+        a & registry_version;
+        a.template vector<uint16_t>(deltas);
+    }
+};
+
+struct MessageStructural {
+    uint64_t tick = 0;
+    std::vector<MessageEntity> spawns;
+    std::vector<uint64_t> despawns;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & tick;
+        a.template vector<uint16_t>(spawns);
+        a.template vector<uint16_t>(despawns);
+    }
+};
+
 struct MessageViewOpen {
     std::string id;
     uint8_t placement = 0;
@@ -340,16 +381,6 @@ struct MessageViewClose {
     }
 };
 
-struct MessageViewValue {
-    std::string key;
-    std::string value;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a.text(key);
-        a.text(value);
-    }
-};
-
 struct MessageViewEvent {
     uint32_t handler = 0;
     std::vector<MessageViewValue> values;
@@ -357,21 +388,5 @@ struct MessageViewEvent {
     void serialize(Archive& a) {
         a & handler;
         a.template vector<uint8_t>(values);
-    }
-};
-
-struct MessagePong {
-    uint32_t protocol = 0;
-    uint64_t token = 0;
-    uint16_t players = 0;
-    uint16_t max_players = 0;
-    uint16_t tickrate = 0;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a & protocol;
-        a & token;
-        a & players;
-        a & max_players;
-        a & tickrate;
     }
 };

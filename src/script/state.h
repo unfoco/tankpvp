@@ -55,6 +55,7 @@ struct ScriptTimer {
 struct WireField {
     std::string name;
     std::string type;
+    auto operator==(const WireField&) const -> bool = default;
 };
 
 struct ComponentDef {
@@ -62,6 +63,7 @@ struct ComponentDef {
     std::vector<WireField> fields;
     bool replicated = true;
     bool is_tag = false;
+    auto operator==(const ComponentDef&) const -> bool = default;
 };
 
 struct ScriptState {
@@ -76,6 +78,8 @@ struct ScriptState {
     std::unordered_map<std::string, std::vector<CommandArgument>> inferred;
     std::unordered_map<std::string, flecs::entity_t> components;
     std::unordered_set<std::string> author_components;
+    std::map<std::string, ComponentDef> component_defs;
+    std::unordered_set<std::string> declared_this_load;
     std::unordered_map<std::string, std::vector<LuaRef>> component_handlers;
     std::unordered_map<std::string, std::vector<LuaRef>> component_add_handlers;
     std::unordered_map<std::string, std::vector<LuaRef>> component_remove_handlers;
@@ -88,6 +92,7 @@ struct ScriptState {
     std::unordered_map<uint64_t, LuaRef> query_callbacks;
     std::unordered_map<std::string, LuaRef> modules;
     int timer_next = 0;
+    bool reload_pending = false;
     std::map<std::string, std::vector<std::string>> api_decls;
     std::map<std::string, std::vector<std::string>> api_types;
     std::vector<ScriptTimer> timers;
@@ -119,6 +124,8 @@ struct ScriptState {
         inferred.swap(other.inferred);
         components.swap(other.components);
         author_components.swap(other.author_components);
+        component_defs.swap(other.component_defs);
+        declared_this_load.swap(other.declared_this_load);
         component_handlers.swap(other.component_handlers);
         component_add_handlers.swap(other.component_add_handlers);
         component_remove_handlers.swap(other.component_remove_handlers);

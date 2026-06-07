@@ -304,10 +304,24 @@ void NetworkRegistry::adopt(flecs::world& world, const std::vector<MessageCompon
 
         auto it = ids.find(d.name);
         if (it != ids.end()) {
-            const Component* c = find(it->second);
-            if ((c != nullptr) && c->wire == d.wire_size) {
-                remap[d.id] = it->second;
+            Component& existing = components[it->second - 1];
+            if (existing.wire != d.wire_size || existing.tag != (d.tag != 0)) {
+                if (!existing.tag && existing.entity != 0) {
+                    world.entity(existing.entity).destruct();
+                }
+                existing.fields = std::move(fields);
+                existing.wire = d.wire_size;
+                existing.tag = d.tag != 0;
+                if (existing.tag) {
+                    existing.entity = world.entity(d.name.c_str()).id();
+                    existing.size = 0;
+                } else {
+                    uint32_t size = 0;
+                    existing.entity = register_runtime(world, d.name, existing.fields, size);
+                    existing.size = size;
+                }
             }
+            remap[d.id] = it->second;
             continue;
         }
 

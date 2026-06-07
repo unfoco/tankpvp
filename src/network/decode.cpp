@@ -150,9 +150,12 @@ static void apply_welcome(flecs::world& world, NetworkConnection& conn, serializ
     }
     conn.peer_id = msg.peer_id;
     conn.self = msg.controlled_entity;
+    conn.registry_version = msg.registry_version;
     uint64_t tick = msg.tick;
 
-    world.get_mut<NetworkRegistry>().adopt(world, msg.components, conn.remap);
+    auto& registry = world.get_mut<NetworkRegistry>();
+    registry.version = msg.registry_version;
+    registry.adopt(world, msg.components, conn.remap);
 
     conn.welcomed = true;
     conn.newest = tick;
@@ -189,6 +192,9 @@ static void apply_snapshot(flecs::world& world, NetworkConnection& conn, seriali
     const auto& reg = world.get<NetworkRegistry>();
     auto snap = serialize::decode<MessageSnapshot>(r);
     if (!r.valid()) {
+        return;
+    }
+    if (snap.registry_version != conn.registry_version) {
         return;
     }
     uint64_t tick = snap.tick;
@@ -268,6 +274,18 @@ static void apply_structural(flecs::world& world, NetworkConnection& conn, seria
     }
 }
 
+static void apply_registry(flecs::world& world, NetworkConnection& conn, serialize::Reader& r) {
+    auto msg = serialize::decode<MessageRegistry>(r);
+    if (!r.valid()) {
+        return;
+    }
+    auto& registry = world.get_mut<NetworkRegistry>();
+    registry.version = msg.registry_version;
+    registry.adopt(world, msg.components, conn.remap);
+    conn.registry_version = msg.registry_version;
+    SDL_Log("network: adopted registry update v%u (%zu components)", msg.registry_version, msg.components.size());
+}
+
 void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* packet) {
     serialize::Reader r(packet->data, packet->dataLength);
     switch (static_cast<Message>(r.get<uint8_t>())) {
@@ -282,6 +300,11 @@ void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* pack
         case Message::Structural:
             if (conn.welcomed) {
                 apply_structural(world, conn, r);
+            }
+            break;
+        case Message::Registry:
+            if (conn.welcomed) {
+                apply_registry(world, conn, r);
             }
             break;
         case Message::Chat: {
