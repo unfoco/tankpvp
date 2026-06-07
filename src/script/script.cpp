@@ -20,17 +20,17 @@
 #include <utility>
 #include <vector>
 
+#include "component/asset.h"
+#include "component/audio.h"
 #include "component/network.h"
 #include "component/object.h"
 #include "component/physics.h"
 #include "component/script.h"
-#include "state.h"
-#include "reflect.h"
-#include "mods.h"
+
 #include "command.h"
-
-
-
+#include "mods.h"
+#include "reflect.h"
+#include "state.h"
 
 static void emit(ScriptState& state, const char* name, const std::function<void(lua_State*)>& push_event) {
     auto it = state.handlers.find(name);
@@ -352,8 +352,7 @@ static void wire_component_observers(flecs::world world) {
     wire(state.component_remove_handlers, flecs::OnRemove, "remove");
 }
 
-static void reload_scripts(flecs::world world) {
-    ScriptState& state = ScriptState::of(world);
+static void clear_loaded(ScriptState& state) {
     state.handlers.clear();
     state.component_handlers.clear();
     state.component_add_handlers.clear();
@@ -370,6 +369,17 @@ static void reload_scripts(flecs::world world) {
     state.enum_aliases.clear();
     state.modules.clear();
     state.declared_this_load.clear();
+}
+
+static void unload_scripts(flecs::world world) {
+    clear_loaded(ScriptState::of(world));
+    world.remove<CommandBook>();
+    SDL_Log("[script] unloaded mods");
+}
+
+static void reload_scripts(flecs::world world) {
+    ScriptState& state = ScriptState::of(world);
+    clear_loaded(state);
     Mods::load(world);
     std::vector<std::string> removed;
     for (const std::string& name : state.author_components) {
@@ -558,6 +568,21 @@ static void setup_api(flecs::world world, lua_State* lua) {
     });
     vecns.endNamespace();
 
+    auto audions = luabridge::getGlobalNamespace(lua).beginNamespace("audio");
+    api_fn(audions, state, "audio", "play", "(string, { at: Vec?, volume: number? }?) -> ()", [world](const std::string& name, const LuaRef& opts) -> void {
+        RequestSound sound{.asset = name};
+        if (opts.isTable()) {
+            LuaRef at = opts["at"];
+            if (at.isTable()) {
+                sound.x = static_cast<float>(Lua::ref_number(at, "x", 0.0));
+                sound.y = static_cast<float>(Lua::ref_number(at, "y", 0.0));
+            }
+            sound.volume = static_cast<float>(Lua::ref_number(opts, "volume", 1.0));
+        }
+        world.entity().set(sound);
+    });
+    audions.endNamespace();
+
     auto schedulens = luabridge::getGlobalNamespace(lua).beginNamespace("schedule");
     api_fn(schedulens, state, "schedule", "after", "(number, () -> ()) -> Sub", [world](double seconds, const LuaRef& fn, lua_State* s) -> LuaRef { return LuaRef(s, ScriptSub{.kind = 2, .slot = add_timer(world, seconds, fn, false)}); });
     api_fn(schedulens, state, "schedule", "every", "(number, () -> ()) -> Sub", [world](double seconds, const LuaRef& fn, lua_State* s) -> LuaRef { return LuaRef(s, ScriptSub{.kind = 2, .slot = add_timer(world, seconds, fn, true)}); });
@@ -720,6 +745,16 @@ static void setup_api(flecs::world world, lua_State* lua) {
             self->entity.child_of(parent->entity);
         }
     });
+    api_method(entity, state, "Entity", "sprite", "(self: Entity, string) -> ()", [](const ScriptEntity* self, const std::string& name) -> void {
+        flecs::world world = self->entity.world();
+        const auto* catalog = world.try_get<AssetCatalog>();
+        if (catalog != nullptr) {
+            uint64_t hash = catalog->hash_of(name);
+            if (hash != 0) {
+                self->entity.set<Sprite>({.hash = hash});
+            }
+        }
+    });
     api_method(entity, state, "Entity", "apply", "(self: Entity, any) -> ()", [](const ScriptEntity* self, const LuaRef& def) -> void {
         if (!def.isTable()) {
             return;
@@ -859,11 +894,6 @@ Script::Script(flecs::world& world) {
     setup_api(world, state.lua);
     Reflect::refresh_components(world);
     Reflect::register_component(world, "Replicated", world.component<Replicated>().id());
-    Mods::load(world);
-    Reflect::refresh_components(world);
-    generate_types(world);
-
-    wire_component_observers(world);
 
     world.observer().with<Dying>().event(flecs::OnAdd).each([](flecs::entity e) -> void {
         flecs::world w = e.world();
@@ -954,10 +984,7 @@ Script::Script(flecs::world& world) {
             ScriptState& state = world.get_mut<ScriptState>();
             if (state.reload_pending) {
                 state.reload_pending = false;
-                const auto* cfg = world.try_get<NetworkConfig>();
-                if (cfg == nullptr || cfg->role != NetworkRole::Client) {
-                    reload_scripts(world);
-                }
+                reload_scripts(world);
                 continue;
             }
             emit(state, "tick", [&](lua_State* lua) -> void {
@@ -1013,6 +1040,12 @@ Script::Script(flecs::world& world) {
     });
     world.observer().with<RequestHost>().event(flecs::OnSet).each([](flecs::entity e) -> void {
         flecs::world world = e.world();
+        Mods::load(world);
+        Reflect::refresh_components(world);
+        generate_types(world);
+        wire_component_observers(world);
         world.set<CommandBook>({.commands = Command::command_list(world)});
+        world.entity().add<RequestReload>();
     });
+    world.observer().with<RequestQuit>().event(flecs::OnAdd).each([](flecs::entity e) -> void { unload_scripts(e.world()); });
 }

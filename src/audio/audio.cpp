@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "component/asset.h"
+#include "component/audio.h"
 #include "component/interface.h"
 #include "component/network.h"
 #include "component/settings.h"
@@ -87,6 +89,16 @@ Audio::Audio(flecs::world& world) {
     world.system<AudioState>("audio::music").kind(flecs::OnStore).each(Audio::music);
     world.system<AudioState, const Position>("audio::shoot").with<Bullet>().without<Latent>().without<Sounded>().kind(flecs::OnStore).each(Audio::shoot);
     world.observer("audio::puff").with<Bullet>().event(flecs::OnRemove).each(Audio::puff);
+    world.observer<const RequestSound>("audio::custom").event(flecs::OnSet).each([](flecs::entity e, const RequestSound& s) -> void {
+        flecs::world world = e.world();
+        AudioState& audio = world.get_mut<AudioState>();
+        const auto* store = world.try_get<AssetStore>();
+        std::string path = store != nullptr ? store->path_for(s.asset) : std::string();
+        if (!path.empty()) {
+            float volume = world.has<Settings>() ? world.get<Settings>().volume : 1.0F;
+            emit(audio, path.c_str(), {s.x, s.y}, volume * s.volume);
+        }
+    });
 }
 
 void Audio::init(flecs::iter&, size_t, AudioState& audio) {

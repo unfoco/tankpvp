@@ -14,7 +14,7 @@ Input::Input(flecs::world& world) {
         .bit("Shoot", InputFlags::Shoot);
 
     world.system<InputFlags>("input::tank").kind(flecs::PreUpdate).with<Local>().each(Input::tank);
-    world.system<InterfacePrevious, InterfacePage, WindowEvents>("input::screen").kind(flecs::PreUpdate).each(Input::screen);
+    world.system<InterfacePrevious, InterfacePage, WindowEvents>("input::screen").kind(flecs::PostUpdate).each(Input::screen);
 }
 
 void Input::tank(flecs::iter& it, size_t i, InputFlags& flags) {

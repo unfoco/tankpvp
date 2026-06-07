@@ -192,6 +192,7 @@ void NetworkRegistry::build(flecs::world& world) {
                 if (!primitive_info(p->kind, f.size, f.real)) {
                     continue;
                 }
+                f.name = m->name != nullptr ? m->name : "";
                 f.kind = kind_from_primitive(p->kind);
                 f.offset = static_cast<uint32_t>(m->offset);
                 f.count = (m->count != 0) ? static_cast<uint32_t>(m->count) : 1;
@@ -280,7 +281,7 @@ auto NetworkRegistry::describe() const -> std::vector<MessageComponentDescriptor
         d.tag = c.tag ? 1 : 0;
         d.fields.reserve(c.fields.size());
         for (const auto& f : c.fields) {
-            d.fields.push_back({.kind = static_cast<uint8_t>(f.kind), .count = static_cast<uint16_t>(f.count), .quantum = f.quantum, .bytes = f.bytes});
+            d.fields.push_back({.name = f.name, .kind = static_cast<uint8_t>(f.kind), .count = static_cast<uint16_t>(f.count), .quantum = f.quantum, .bytes = f.bytes});
         }
         out.push_back(std::move(d));
     }
@@ -294,6 +295,7 @@ void NetworkRegistry::adopt(flecs::world& world, const std::vector<MessageCompon
         fields.reserve(d.fields.size());
         for (const auto& fd : d.fields) {
             Field f;
+            f.name = fd.name;
             f.kind = static_cast<FieldKind>(fd.kind);
             f.count = fd.count;
             f.quantum = fd.quantum;
@@ -357,7 +359,7 @@ auto NetworkRegistry::register_runtime(flecs::world& world, const std::string& n
     sd.entity = comp;
     std::vector<std::string> mnames(fields.size());
     for (size_t i = 0; i < fields.size(); ++i) {
-        mnames[i] = "f" + std::to_string(i);
+        mnames[i] = !fields[i].name.empty() ? fields[i].name : ("f" + std::to_string(i));
         sd.members[i].name = mnames[i].c_str();
         sd.members[i].type = kind_primitive(fields[i].kind);
         sd.members[i].count = fields[i].count > 1 ? static_cast<int32_t>(fields[i].count) : 0;

@@ -1,8 +1,30 @@
 #include "render.h"
 
-void Render::tank(flecs::iter& it, size_t i, const RenderState& render, const Color& col, const Position& pos, const Rotation& rot) {
+#include <SDL3_image/SDL_image.h>
+
+#include "component/asset.h"
+
+void Render::tank(flecs::iter& it, size_t i, const RenderState& render, const Color& col, const Position& pos, const Rotation& rot, const Sprite* sprite) {
     SDL_Texture* baseTex = render.tankBaseTexture;
     SDL_Texture* turretTex = render.tankTurretTexture;
+
+    if ((sprite != nullptr) && sprite->hash != 0) {
+        flecs::world world = it.world();
+        auto& cache = world.get_mut<SpriteCache>();
+        auto cit = cache.textures.find(sprite->hash);
+        if (cit != cache.textures.end()) {
+            baseTex = cit->second;
+        } else if (const auto* store = world.try_get<AssetStore>()) {
+            auto rit = store->ready.find(sprite->hash);
+            if (rit != store->ready.end()) {
+                SDL_Texture* tex = IMG_LoadTexture(render.target, rit->second.c_str());
+                if (tex != nullptr) {
+                    cache.textures[sprite->hash] = tex;
+                    baseTex = tex;
+                }
+            }
+        }
+    }
 
     int windowW;
     int windowH;

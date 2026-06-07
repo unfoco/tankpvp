@@ -167,7 +167,8 @@ auto Interface::chat(flecs::iter& it, InterfaceState& state, InterfacePage& page
     const std::vector<const CommandInfo*>& matches = comp.matches;
     const std::vector<const std::string*>& valueMatches = comp.valueMatches;
 
-    if (slash) {
+    bool suggesting = slash && chatInput.history_index == -1;
+    if (suggesting) {
         int n = selectingName ? static_cast<int>(matches.size()) : static_cast<int>(valueMatches.size());
         if (n > 0) {
             if (histUp) {
@@ -269,8 +270,8 @@ auto Interface::chat(flecs::iter& it, InterfaceState& state, InterfacePage& page
           .backgroundColor = {20, 20, 25, 128}}) {
         CLAY({.id = CLAY_ID("ChatLogView"),
               .layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_GROW()}, .childAlignment = {.y = CLAY_ALIGN_Y_BOTTOM}, .layoutDirection = CLAY_TOP_TO_BOTTOM},
-              .clip = {.vertical = true, .childOffset = {0, slash ? 0.0F : offsetY}}}) {
-            if (slash) {
+              .clip = {.vertical = true, .childOffset = {0, suggesting ? 0.0F : offsetY}}}) {
+            if (suggesting) {
                 if (selectingName) {
                     if (matches.empty()) {
                         CLAY_TEXT(Str("§8no matching command"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
@@ -336,6 +337,7 @@ auto Interface::chat(flecs::iter& it, InterfaceState& state, InterfacePage& page
             .sizing = {.width = CLAY_SIZING_GROW(), .height = CLAY_SIZING_FIT()},
             .padding = {.left = 8, .right = 8, .top = 2, .bottom = 2},
         };
+        std::string draftBefore = chatInput.draft;
         widget::input(state, events, CLAY_ID("ChatPageInput"), chatInput.draft,
                          {
                              .maxLength = 200,
@@ -345,6 +347,10 @@ auto Interface::chat(flecs::iter& it, InterfaceState& state, InterfacePage& page
                              .allowFn = chatFilter,
                          },
                          style);
+        if (chatInput.draft != draftBefore && chatInput.history_index != -1) {
+            chatInput.history_index = -1;
+            chatInput.stash.clear();
+        }
     }
 
     auto cmds = Clay_EndLayout();

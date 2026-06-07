@@ -10,7 +10,6 @@
 
 struct CommandSender {
     flecs::entity peer;
-    flecs::entity tank;
     std::string name;
     bool admin = false;
 };

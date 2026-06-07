@@ -10,6 +10,13 @@ auto Interface::status(flecs::iter& it, InterfaceState& state, InterfacePage& pa
     const char* title = connecting ? "CONNECTING" : "DISCONNECTED";
     const char* reason = (status != nullptr && !status->reason.empty()) ? status->reason.c_str() : nullptr;
 
+    bool leave = false;
+    for (const auto& ev : events) {
+        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_ESCAPE) {
+            leave = true;
+        }
+    }
+
     Clay_BeginLayout();
 
     CLAY({.id = CLAY_ID("StatusContainer"),
@@ -34,10 +41,15 @@ auto Interface::status(flecs::iter& it, InterfaceState& state, InterfacePage& pa
 
         const char* label = connecting ? "Cancel" : "Return";
         if (widget::button(state, CLAY_ID("BtnStatusReturn"), label, menuBtn)) {
-            it.world().entity().add<RequestQuit>();
-            page = InterfacePage::Main;
+            leave = true;
         }
     }
 
-    return Clay_EndLayout();
+    auto commands = Clay_EndLayout();
+
+    if (leave) {
+        it.world().entity().add<RequestQuit>();
+        page = InterfacePage::Main;
+    }
+    return commands;
 }

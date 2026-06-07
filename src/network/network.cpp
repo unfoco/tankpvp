@@ -5,12 +5,16 @@
 #include <cstdlib>
 #include <utility>
 
+#include "component/asset.h"
+#include "component/audio.h"
 #include "client.h"
+#include "component/network.h"
 #include "component/interface.h"
 #include "component/input.h"
 #include "component/object.h"
 #include "component/physics.h"
 #include "component/script.h"
+#include "component/settings.h"
 #include "protocol.h"
 #include "registry.h"
 #include "server.h"
@@ -29,7 +33,9 @@ Network::Network(flecs::world& world) {
     world.component<MovementStats>().member<float>("speed").member<float>("turn");
     world.component<WeaponStats>().member<uint32_t>("cooldown").member<float>("speed").member<float>("muzzle").member<float>("life");
     world.component<Bullet>().member<float>("speed");
+    world.component<Sprite>().member<uint64_t>("hash");
 
+    world.component<Sprite>().add<Networked>();
     world.component<Position>().add<Networked>().set<Quantize>({.precision = 1.0F / 8192.0F, .bytes = 4});
     world.component<Rotation>().add<Networked>().set<Quantize>({.precision = 0.0001F, .bytes = 2});
     world.component<Color>().add<Networked>();
@@ -54,6 +60,8 @@ Network::Network(flecs::world& world) {
     world.observer<const RequestJoin>("network::join").event(flecs::OnSet).each(Network::join);
     world.observer().with<RequestQuit>().event(flecs::OnAdd).each([](flecs::entity e) -> void { Network::quit(e, RequestQuit{}); });
 
+    world.system<const RequestSound>("network::sounds").kind(flecs::OnStore).each([](flecs::entity e, const RequestSound&) -> void { e.destruct(); });
+
     world.import<NetworkServer>();
     world.import<NetworkClient>();
 }
@@ -67,13 +75,35 @@ static void rebuild_registry(flecs::world world) {
     world.set<NetworkRegistry>(std::move(rebuilt));
 }
 
+static void leave_session(flecs::world world) {
+    if (const auto* h = world.try_get<NetworkHost>(); (h != nullptr) && (h->host != nullptr)) {
+        ENetHost* host = h->host;
+        NetworkServer::teardown(world);
+        enet_host_destroy(host);
+        world.remove<NetworkHost>();
+        world.get_mut<ServerClock>().running = false;
+        SDL_Log("network: stopped hosting");
+    }
+    if (const auto* c = world.try_get<NetworkConnection>(); (c != nullptr) && (c->host != nullptr)) {
+        ENetHost* client = c->host;
+        ENetPeer* server = c->server;
+        NetworkClient::teardown(world);
+        if (server != nullptr) {
+            enet_peer_disconnect_now(server, 0);
+        }
+        enet_host_destroy(client);
+        world.remove<NetworkConnection>();
+        SDL_Log("network: disconnected");
+    }
+}
+
 void Network::host(flecs::entity e, const RequestHost& req) {
     flecs::world world = e.world();
-    if ((world.try_get<NetworkHost>() != nullptr) || (world.try_get<NetworkConnection>() != nullptr)) {
+    if (world.try_get<NetworkHost>() != nullptr) {
         e.destruct();
         return;
     }
-    rebuild_registry(world);
+    leave_session(world);
 
     ENetAddress address{};
     address.host = ENET_HOST_ANY;
@@ -108,7 +138,7 @@ void Network::host(flecs::entity e, const RequestHost& req) {
     }
 
     if (!dedicated) {
-        world.entity()
+        flecs::entity tank = world.entity()
             .set(Color{.value = {255.0F, 50.0F, 50.0F}})
             .set(Position{.value = {640.0F, 400.0F}})
             .set(Rotation{.angle = 0})
@@ -124,6 +154,11 @@ void Network::host(flecs::entity e, const RequestHost& req) {
             .add<History>()
             .add<ViewLag>()
             .add<Replicated>();
+
+        flecs::entity host_peer = world.entity().set<Peer>({.peer = nullptr, .id = 0, .welcomed = true}).add<Controls>(tank);
+
+        std::string uname = world.has<Settings>() ? world.get<Settings>().username : std::string();
+        world.entity().set(RequestPlayerJoin{.peer = host_peer, .username = uname.empty() ? "host" : uname});
     }
 
     e.destruct();
@@ -131,10 +166,11 @@ void Network::host(flecs::entity e, const RequestHost& req) {
 
 void Network::join(flecs::entity e, const RequestJoin& req) {
     flecs::world world = e.world();
-    if ((world.try_get<NetworkConnection>() != nullptr) || (world.try_get<NetworkHost>() != nullptr)) {
+    if (world.try_get<NetworkHost>() != nullptr) {
         e.destruct();
         return;
     }
+    leave_session(world);
     rebuild_registry(world);
 
     ENetHost* client = enet_host_create(nullptr, 1, CHANNEL_COUNT, 0, 0);
@@ -164,26 +200,7 @@ void Network::join(flecs::entity e, const RequestJoin& req) {
 void Network::quit(flecs::entity e, const RequestQuit&) {
     flecs::world world = e.world();
 
-    if (const auto* h = world.try_get<NetworkHost>(); (h != nullptr) && (h->host != nullptr)) {
-        ENetHost* host = h->host;
-        NetworkServer::teardown(world);
-        enet_host_destroy(host);
-        world.remove<NetworkHost>();
-        world.get_mut<ServerClock>().running = false;
-        SDL_Log("network: stopped hosting");
-    }
-
-    if (const auto* c = world.try_get<NetworkConnection>(); (c != nullptr) && (c->host != nullptr)) {
-        ENetHost* client = c->host;
-        ENetPeer* server = c->server;
-        NetworkClient::teardown(world);
-        if (server != nullptr) {
-            enet_peer_disconnect_now(server, 0);
-        }
-        enet_host_destroy(client);
-        world.remove<NetworkConnection>();
-        SDL_Log("network: disconnected");
-    }
+    leave_session(world);
 
     if (auto* log = world.try_get_mut<ChatLog>()) {
         *log = {};

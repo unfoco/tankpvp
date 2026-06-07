@@ -4,6 +4,7 @@
 #include <flecs.h>
 
 #include <cstdint>
+#include <deque>
 #include <glm/glm.hpp>
 #include <map>
 #include <string>
@@ -40,6 +41,9 @@ struct Peer {
     std::map<uint64_t, PendingInput> inputs;
 
     std::unordered_map<uint32_t, uint64_t> claims;
+
+    std::deque<uint64_t> asset_queue;
+    uint32_t asset_offset = 0;
 };
 
 struct Interest {
@@ -106,4 +110,3 @@ struct NetworkServer {
     static void hits(flecs::iter& it);
     static void replicate(flecs::iter& it);
 };
-

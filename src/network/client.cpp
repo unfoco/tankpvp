@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <utility>
 
+#include "component/asset.h"
 #include "component/input.h"
 #include "component/interface.h"
 #include "component/network.h"
@@ -209,6 +210,16 @@ void prediction_hit(const ClientQueries& q, NetworkConnection& conn, glm::vec2 s
 
 }
 
+static auto host_peer(flecs::world world) -> flecs::entity {
+    flecs::entity tank;
+    world.query_builder().with<Local>().with<Tank>().build().each([&](flecs::entity t) -> void { tank = t; });
+    flecs::entity peer;
+    if (tank.is_alive()) {
+        world.query_builder().with<Controls>(tank).build().each([&](flecs::entity p) -> void { peer = p; });
+    }
+    return peer;
+}
+
 NetworkClient::NetworkClient(flecs::world& world) {
     world.system("network::client::pump").kind(flecs::OnLoad).immediate().run(NetworkClient::pump);
     world.system("network::client::interpolate").kind(flecs::OnUpdate).immediate().run(NetworkClient::interpolate);
@@ -217,7 +228,21 @@ NetworkClient::NetworkClient(flecs::world& world) {
 
     world.observer<const RequestChat>("network::client::chat").event(flecs::OnSet).each(NetworkClient::chat);
 
-    world.observer<const RequestViewClick>("network::client::view_event").event(flecs::OnSet).each([](flecs::entity e, const RequestViewClick& click) -> void {
+    world.observer<const ResponseAssetAdopt>("network::client::asset").event(flecs::OnSet).each([](flecs::entity e, const ResponseAssetAdopt& r) -> void {
+        flecs::world world = e.world();
+        if (!r.hashes.empty()) {
+            if (auto* conn = world.try_get_mut<NetworkConnection>(); conn != nullptr && (conn->server != nullptr)) {
+                MessageAssetRequest req{.hashes = r.hashes};
+                serialize::Writer w = wire::message(Message::AssetRequest);
+                serialize::encode(w, req);
+                wire::send(conn->server, w, CHANNEL_RELIABLE, true);
+                SDL_Log("asset: requesting %zu asset(s) from server", r.hashes.size());
+            }
+        }
+        e.destruct();
+    });
+
+    world.observer<const RequestViewClick>("network::client::view").event(flecs::OnSet).each([](flecs::entity e, const RequestViewClick& click) -> void {
         flecs::world world = e.world();
         if (auto* conn = world.try_get_mut<NetworkConnection>(); conn != nullptr && conn->connected && conn->server != nullptr) {
             MessageViewEvent ev;
@@ -229,9 +254,7 @@ NetworkClient::NetworkClient(flecs::world& world) {
             serialize::encode(w, ev);
             wire::send(conn->server, w, CHANNEL_RELIABLE, true);
         } else if (world.try_get<NetworkHost>() != nullptr) {
-            flecs::entity tank;
-            world.query_builder().with<Local>().with<Tank>().build().each([&](flecs::entity t) -> void { tank = t; });
-            world.entity().set(RequestViewInteraction{.sender = {.peer = {}, .tank = tank, .name = "host", .admin = true}, .handler = click.handler, .values = click.values});
+            world.entity().set(RequestViewInteraction{.sender = {.peer = host_peer(world), .name = "host", .admin = true}, .handler = click.handler, .values = click.values});
         }
         e.destruct();
     });
@@ -262,9 +285,7 @@ void NetworkClient::chat(flecs::entity e, const RequestChat& req) {
             name = s->username;
         }
         if (!text.empty() && text[0] == '/') {
-            flecs::entity tank;
-            world.query_builder().with<Local>().with<Tank>().build().each([&](flecs::entity found) -> void { tank = found; });
-            world.entity().set(RequestCommand{.sender = {.peer = {}, .tank = tank, .name = name.empty() ? "host" : name, .admin = true}, .text = text});
+            world.entity().set(RequestCommand{.sender = {.peer = host_peer(world), .name = name.empty() ? "host" : name, .admin = true}, .text = text});
         } else {
             world.entity().set(RequestBroadcast{.line = "<" + (name.empty() ? "host" : name) + "> " + text});
         }

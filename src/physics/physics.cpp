@@ -77,7 +77,7 @@ Physics::Physics(flecs::world& world) {
     auto PO = world.entity("physics::Post").add(flecs::Phase).depends_on(PS);
 
     world.system<const Position, const Rotation>("physics::init").without<B2Body>().with<Dynamic>().or_().with<Static>().or_().with<Kinematic>().kind(PI).each(Physics::init);
-    world.system<const B2Body, const Position, const Rotation>("physics::teleport").with<Teleport>().kind(PP).each(Physics::teleport);
+    world.observer<const B2Body, const Position, const Rotation>("physics::teleport").with<Teleport>().event(flecs::OnAdd).each(Physics::teleport);
     world.system<const B2Body, const VelocityLinear, const VelocityAngular>("physics::sync").kind(PP).each(Physics::sync);
     world.system<const B2Body, const ExternalForce>("physics::force").kind(PP).each(Physics::force);
     world.system<const B2Body, ExternalImpulse>("physics::impulse").kind(PP).each(Physics::impulse);
@@ -134,6 +134,7 @@ void Physics::init(flecs::iter& it, size_t i, const Position& pos, const Rotatio
 
 void Physics::teleport(flecs::entity e, const B2Body& b, const Position& pos, const Rotation& rot) {
     b2Body_SetTransform(b.id, {.x = pos.value.x, .y = pos.value.y}, b2MakeRot(rot.angle));
+    b2Body_SetLinearVelocity(b.id, {.x = 0, .y = 0});
     e.remove<Teleport>();
 }
 

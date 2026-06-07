@@ -15,7 +15,8 @@ constexpr uint16_t MAX_PLAYERS = 32;
 
 constexpr uint8_t CHANNEL_RELIABLE = 0;
 constexpr uint8_t CHANNEL_UNRELIABLE = 1;
-constexpr uint8_t CHANNEL_COUNT = 2;
+constexpr uint8_t CHANNEL_ASSET = 2;
+constexpr uint8_t CHANNEL_COUNT = 3;
 
 constexpr uint32_t VIEW_MAX = 60;
 
@@ -33,8 +34,12 @@ enum class Message : uint8_t {
     Welcome,
     Registry,
     CommandList,
+    Manifest,
+    AssetRequest,
+    AssetChunk,
     Kick,
     Chat,
+    Sound,
     Hit,
     Input,
     Snapshot,
@@ -60,12 +65,14 @@ inline void send(ENetPeer* peer, const serialize::Writer& w, uint8_t channel, bo
 }
 
 struct MessageFieldDescriptor {
+    std::string name;
     uint8_t kind = 0;
     uint16_t count = 1;
     float quantum = 0;
     uint8_t bytes = 4;
     template <class Archive>
     void serialize(Archive& a) {
+        a.text(name);
         a & kind;
         a & count;
         a & quantum;
@@ -217,6 +224,20 @@ struct MessageViewValue {
     }
 };
 
+struct MessageAssetEntry {
+    std::string name;
+    uint64_t hash = 0;
+    uint8_t kind = 0;
+    uint32_t size = 0;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.text(name);
+        a & hash;
+        a & kind;
+        a & size;
+    }
+};
+
 struct MessagePing {
     uint64_t token = 0;
     template <class Archive>
@@ -295,6 +316,38 @@ struct MessageCommandList {
     }
 };
 
+struct MessageManifest {
+    uint16_t version = 0;
+    std::vector<MessageAssetEntry> entries;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & version;
+        a.template vector<uint16_t>(entries);
+    }
+};
+
+struct MessageAssetRequest {
+    std::vector<uint64_t> hashes;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.template vector<uint16_t>(hashes);
+    }
+};
+
+struct MessageAssetChunk {
+    uint64_t hash = 0;
+    uint32_t offset = 0;
+    uint32_t total = 0;
+    std::vector<uint8_t> bytes;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & hash;
+        a & offset;
+        a & total;
+        a.template blob<uint16_t>(bytes);
+    }
+};
+
 struct MessageKick {
     std::string reason;
     template <class Archive>
@@ -308,6 +361,20 @@ struct MessageChat {
     template <class Archive>
     void serialize(Archive& a) {
         a.text(text);
+    }
+};
+
+struct MessageSound {
+    std::string asset;
+    float x = 0;
+    float y = 0;
+    float volume = 1.0F;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.text(asset);
+        a & x;
+        a & y;
+        a & volume;
     }
 };
 

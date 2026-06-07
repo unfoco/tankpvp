@@ -16,7 +16,9 @@
 #include "component/object.h"
 #include "component/physics.h"
 #include "component/script.h"
+#include "component/audio.h"
 #include "util/math.h"
+#include "component/asset.h"
 #include "network.h"
 #include "protocol.h"
 #include "registry.h"
@@ -36,6 +38,53 @@ static void kick(ENetPeer* peer, const std::string& reason) {
 }
 
 static void broadcast_reload(flecs::world& world);
+
+static auto manifest_message(const AssetManifest& manifest) -> MessageManifest {
+    MessageManifest mm;
+    mm.version = manifest.version;
+    mm.entries.reserve(manifest.entries.size());
+    for (const auto& e : manifest.entries) {
+        mm.entries.push_back({.name = e.name, .hash = e.hash, .kind = static_cast<uint8_t>(e.kind), .size = static_cast<uint32_t>(e.bytes.size())});
+    }
+    return mm;
+}
+
+static void pump_assets(flecs::world& world) {
+    const auto* manifest = world.try_get<AssetManifest>();
+    if (manifest == nullptr) {
+        return;
+    }
+    world.query_builder<Peer>().build().each([&](Peer& p) -> void {
+        if (!p.welcomed || (p.peer == nullptr) || p.asset_queue.empty()) {
+            return;
+        }
+        uint32_t budget = ASSET_SEND_BUDGET;
+        while (budget > 0 && !p.asset_queue.empty()) {
+            const AssetManifest::Entry* entry = manifest->find(p.asset_queue.front());
+            if (entry == nullptr) {
+                p.asset_queue.pop_front();
+                p.asset_offset = 0;
+                continue;
+            }
+            auto total = static_cast<uint32_t>(entry->bytes.size());
+            uint32_t n = std::min({total - p.asset_offset, ASSET_CHUNK_BYTES, budget});
+            MessageAssetChunk chunk;
+            chunk.hash = entry->hash;
+            chunk.offset = p.asset_offset;
+            chunk.total = total;
+            chunk.bytes.assign(entry->bytes.begin() + p.asset_offset, entry->bytes.begin() + p.asset_offset + n);
+            serialize::Writer w = wire::message(Message::AssetChunk);
+            serialize::encode(w, chunk);
+            wire::send(p.peer, w, CHANNEL_ASSET, true);
+            p.asset_offset += n;
+            budget -= n;
+            if (p.asset_offset >= total) {
+                p.asset_queue.pop_front();
+                p.asset_offset = 0;
+            }
+        }
+    });
+}
 
 static void broadcast_chat(flecs::world& world, const std::string& line) {
     serialize::Writer w = wire::message(Message::Chat);
@@ -145,6 +194,10 @@ NetworkServer::NetworkServer(flecs::world& world) {
     flecs::entity hits_phase = world.entity("network::Hits").add(flecs::Phase).depends_on(post_physics ? post_physics : world.entity(flecs::PostUpdate));
     world.system("network::server::hits").kind(hits_phase).immediate().run(NetworkServer::hits);
     world.system("network::server::replicate").kind(flecs::OnStore).immediate().run(NetworkServer::replicate);
+    world.system("network::server::assets").kind(flecs::OnStore).immediate().run([](flecs::iter& it) -> void {
+        flecs::world w = it.world();
+        pump_assets(w);
+    });
 
     world.set<ServerClock>({});
 
@@ -157,6 +210,31 @@ NetworkServer::NetworkServer(flecs::world& world) {
         flecs::world world = e.world();
         broadcast_reload(world);
         e.destruct();
+    });
+    world.observer().with<ResponseAssetScan>().event(flecs::OnAdd).each([](flecs::entity e) -> void {
+        flecs::world world = e.world();
+        if (const auto* manifest = world.try_get<AssetManifest>()) {
+            MessageManifest mm = manifest_message(*manifest);
+            serialize::Writer mw = wire::message(Message::Manifest);
+            serialize::encode(mw, mm);
+            world.query_builder<Peer>().build().each([&](const Peer& p) -> void {
+                if (p.welcomed && (p.peer != nullptr)) {
+                    wire::send(p.peer, mw, CHANNEL_RELIABLE, true);
+                }
+            });
+        }
+        e.destruct();
+    });
+    world.observer<const RequestSound>("network::server::sound").event(flecs::OnSet).each([](flecs::entity e, const RequestSound& s) -> void {
+        flecs::world world = e.world();
+        MessageSound msg{.asset = s.asset, .x = s.x, .y = s.y, .volume = s.volume};
+        serialize::Writer w = wire::message(Message::Sound);
+        serialize::encode(w, msg);
+        world.query_builder<Peer>().build().each([&](const Peer& p) -> void {
+            if (p.welcomed && (p.peer != nullptr)) {
+                wire::send(p.peer, w, CHANNEL_UNRELIABLE, false);
+            }
+        });
     });
     world.observer<const RequestReply>("network::server::chat_reply").event(flecs::OnSet).each([](flecs::entity e, const RequestReply& c) -> void {
         flecs::world world = e.world();
@@ -227,6 +305,13 @@ static void send_welcome(flecs::world& world, NetworkHost& host, ENetPeer* peer,
     serialize::Writer cw = wire::message(Message::CommandList);
     serialize::encode(cw, list);
     wire::send(peer, cw, CHANNEL_RELIABLE, true);
+
+    if (const auto* manifest = world.try_get<AssetManifest>()) {
+        MessageManifest mm = manifest_message(*manifest);
+        serialize::Writer mw = wire::message(Message::Manifest);
+        serialize::encode(mw, mm);
+        wire::send(peer, mw, CHANNEL_RELIABLE, true);
+    }
 }
 
 static void broadcast_reload(flecs::world& world) {
@@ -260,6 +345,8 @@ static void broadcast_reload(flecs::world& world) {
         }
     });
     SDL_Log("network: hot-reload synced registry v%u + commands to %d client(s)", reg.version, peers);
+
+    world.entity().add<RequestAssetScan>();
 }
 
 static void on_hello(flecs::world& world, NetworkHost& host, ENetPeer* epeer, const std::string& username) {
@@ -386,6 +473,20 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
             }
             break;
         }
+        case Message::AssetRequest: {
+            Peer& p = pe.get_mut<Peer>();
+            auto req = serialize::decode<MessageAssetRequest>(r);
+            if (!r.valid()) {
+                break;
+            }
+            const auto* manifest = world.try_get<AssetManifest>();
+            for (uint64_t h : req.hashes) {
+                if (manifest != nullptr && (manifest->find(h) != nullptr)) {
+                    p.asset_queue.push_back(h);
+                }
+            }
+            break;
+        }
         case Message::Ack: {
             auto ackMsg = serialize::decode<MessageAcknowledge>(r);
             if (!r.valid()) {
@@ -445,7 +546,7 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
             raw = raw.substr(start, raw.find_last_not_of(' ') - start + 1);
             std::string name = p.username.empty() ? ("player" + std::to_string(p.id)) : p.username;
             if (raw[0] == '/') {
-                world.entity().set(RequestCommand{.sender = {.peer = pe, .tank = pe.target<Controls>(), .name = name, .admin = false}, .text = raw});
+                world.entity().set(RequestCommand{.sender = {.peer = pe, .name = name, .admin = false}, .text = raw});
                 break;
             }
             broadcast_chat(world, "<" + name + "> " + raw);
@@ -462,7 +563,7 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
             for (auto& v : ev.values) {
                 values.emplace_back(std::move(v.key), std::move(v.value));
             }
-            world.entity().set(RequestViewInteraction{.sender = {.peer = pe, .tank = pe.target<Controls>(), .name = name, .admin = false}, .handler = ev.handler, .values = std::move(values)});
+            world.entity().set(RequestViewInteraction{.sender = {.peer = pe, .name = name, .admin = false}, .handler = ev.handler, .values = std::move(values)});
             break;
         }
         default:
@@ -500,6 +601,9 @@ void NetworkServer::pump(flecs::iter& it) {
         }
 
         world.get<ServerQueries>().inputs.each([&](flecs::entity pe, Peer& p) -> void {
+            if (p.peer == nullptr) {
+                return;
+            }
             flecs::entity tank = pe.target<Controls>();
             if (tank && tank.is_alive()) {
                 auto hit = p.inputs.find(host.tick);

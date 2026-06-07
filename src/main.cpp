@@ -14,6 +14,7 @@
 #include "component/physics.h"
 #include "component/settings.h"
 
+#include "asset/asset.h"
 #include "audio/audio.h"
 #include "input/input.h"
 #include "interface/interface.h"
@@ -85,6 +86,7 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
     world.set<NetworkConfig>(cfg);
     world.set<SimulationClock>({});
 
+    world.import<Asset>();
     world.import<Physics>();
     world.import<Network>();
     world.import<Logic>();

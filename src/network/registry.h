@@ -26,6 +26,7 @@ struct NetworkRegistry {
     };
 
     struct Field {
+        std::string name;
         FieldKind kind = FieldKind::F32;
         uint32_t offset = 0;
         uint32_t count = 1;

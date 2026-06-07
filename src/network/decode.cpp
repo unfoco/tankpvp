@@ -13,8 +13,10 @@
 #include "component/object.h"
 #include "component/physics.h"
 #include "component/script.h"
+#include "component/audio.h"
 #include "util/math.h"
 #include "util/time.h"
+#include "component/asset.h"
 #include "network.h"
 #include "protocol.h"
 #include "registry.h"
@@ -286,6 +288,20 @@ static void apply_registry(flecs::world& world, NetworkConnection& conn, seriali
     SDL_Log("network: adopted registry update v%u (%zu components)", msg.registry_version, msg.components.size());
 }
 
+static void apply_manifest(flecs::world& world, serialize::Reader& r) {
+    auto msg = serialize::decode<MessageManifest>(r);
+    if (!r.valid()) {
+        return;
+    }
+    RequestAssetAdopt req;
+    req.version = msg.version;
+    req.entries.reserve(msg.entries.size());
+    for (const auto& e : msg.entries) {
+        req.entries.push_back({.name = e.name, .hash = e.hash, .kind = static_cast<AssetKind>(e.kind), .size = e.size});
+    }
+    world.entity().set(std::move(req));
+}
+
 void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* packet) {
     serialize::Reader r(packet->data, packet->dataLength);
     switch (static_cast<Message>(r.get<uint8_t>())) {
@@ -307,6 +323,26 @@ void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* pack
                 apply_registry(world, conn, r);
             }
             break;
+        case Message::Manifest:
+            if (conn.welcomed) {
+                apply_manifest(world, r);
+            }
+            break;
+        case Message::AssetChunk:
+            if (conn.welcomed) {
+                auto msg = serialize::decode<MessageAssetChunk>(r);
+                if (r.valid()) {
+                    world.entity().set(RequestAssetStore{.hash = msg.hash, .offset = msg.offset, .total = msg.total, .bytes = std::move(msg.bytes)});
+                }
+            }
+            break;
+        case Message::Sound: {
+            auto msg = serialize::decode<MessageSound>(r);
+            if (r.valid()) {
+                world.entity().set<RequestSound>({.asset = msg.asset, .x = msg.x, .y = msg.y, .volume = msg.volume});
+            }
+            break;
+        }
         case Message::Chat: {
             auto msg = serialize::decode<MessageChat>(r);
             if (r.valid()) {

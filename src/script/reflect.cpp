@@ -302,7 +302,7 @@ static auto is_internal_component(const std::string& name) -> bool {
         "B2Body", "ClientQueries", "ServerQueries", "ConnectionStatus", "History", "Interest",
         "Interpolation", "Local", "NetworkConfig", "NetworkId", "NetworkRegistry", "NetworkTarget", "Networked",
         "Peer", "PhysicsConfig", "PhysicsEngine", "PhysicsEvents", "Predicted", "Quantize", "Remote", "Replication",
-        "ScriptState", "ServerClock", "Settings", "SimulationClock",
+        "ScriptState", "ServerClock", "Settings", "SimulationClock", "Sprite",
     };
     return internal.contains(name);
 }

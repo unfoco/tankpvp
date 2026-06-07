@@ -7,6 +7,10 @@
 
 #include <glm/glm.hpp>
 
+#include <cstdint>
+#include <unordered_map>
+
+#include "component/asset.h"
 #include "component/interface.h"
 #include "component/object.h"
 
@@ -51,6 +55,10 @@ struct RenderPipeline {
     flecs::entity_t value = 0;
 };
 
+struct SpriteCache {
+    std::unordered_map<uint64_t, SDL_Texture*> textures;
+};
+
 struct Render {
     Render(flecs::world& world);
 
@@ -64,5 +72,5 @@ struct Render {
     static void camera(flecs::iter& it, size_t i, RenderState& render, const Position& pos);
 
     static void bullet(flecs::iter& it, size_t i, RenderState& render, const Position& pos);
-    static void tank(flecs::iter& it, size_t i, const RenderState& render, const Color& col, const Position& pos, const Rotation& rot);
+    static void tank(flecs::iter& it, size_t i, const RenderState& render, const Color& col, const Position& pos, const Rotation& rot, const Sprite* sprite);
 };

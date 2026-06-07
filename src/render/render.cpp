@@ -27,7 +27,7 @@ Render::Render(flecs::world& world) {
 
     world.system<RenderState>("render::start").kind(begin).each(Render::start);
     world.system<RenderState, Position>("render::camera").kind(camera).with<Local>().each(Render::camera);
-    world.system<RenderState, Color, Position, Rotation>("render::tank").kind(tanks).with<Tank>().without<Dying>().each(Render::tank);
+    world.system<RenderState, Color, Position, Rotation, const Sprite*>("render::tank").kind(tanks).with<Tank>().without<Dying>().each(Render::tank);
     world.system<RenderState, Position>("render::bullet").kind(bullets).with<Bullet>().without<Latent>().each(Render::bullet);
     world.system<RenderState, InterfaceCommands>("render::interface").kind(view).each(Render::interface);
     world.system<RenderState>("render::finish").kind(present).each(Render::finish);
@@ -131,6 +131,7 @@ void Render::init(flecs::iter& it, size_t) {
         .tankTurretTexture = tankTurretTexture,
         .weaponBulletTexture = weaponBulletTexture,
     });
+    it.world().set<SpriteCache>({});
 }
 
 static void ensure_targets(RenderState& r) {
