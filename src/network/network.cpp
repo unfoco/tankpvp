@@ -124,7 +124,7 @@ void Network::host(flecs::entity e, const RequestHost& req) {
     }
 
     const auto* cfg = world.try_get<NetworkConfig>();
-    bool dedicated = false;
+    bool dedicated = (cfg != nullptr) && cfg->role == NetworkRole::Server;
     world.set<NetworkHost>({.host = host, .tickrate = static_cast<uint16_t>((cfg != nullptr) ? cfg->tickrate : 60)});
     SDL_Log("network: hosting on port %u", req.port);
 

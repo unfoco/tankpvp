@@ -3,7 +3,6 @@
 todo:
   - raw udp server list pinging protocol
   - chunked tile based world system
-  - turret customization
   - labyrinth generator
   - reproduce network player freezes
   - prevent internal dependency leak for modules
