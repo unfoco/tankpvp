@@ -128,7 +128,7 @@ void Network::host(flecs::entity e, const RequestHost& req) {
     world.set<NetworkHost>({.host = host, .tickrate = static_cast<uint16_t>((cfg != nullptr) ? cfg->tickrate : 60)});
     SDL_Log("network: hosting on port %u", req.port);
 
-    for (int i = 0; i < 500; i++) {
+    for (int i = 0; i < 50; i++) {
         world.entity()
             .set(Color{.value = {static_cast<float>(rand() % 255), static_cast<float>(rand() % 255), static_cast<float>(rand() % 255)}})
             .set(Position{.value = {200.0F + static_cast<float>(rand() % 2000), 200.0F + static_cast<float>(rand() % 2000)}})

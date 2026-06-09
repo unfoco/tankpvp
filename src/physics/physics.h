@@ -12,6 +12,7 @@ struct Physics {
 
    private:
     static void init(flecs::iter& it, size_t i, const Position& pos, const Rotation& rot);
+    static void mesh(flecs::entity e, const CollisionMesh& m);
     static void teleport(flecs::entity e, const B2Body& body, const Position& pos, const Rotation& rot);
     static void sync(const B2Body& b, const VelocityLinear& lv, const VelocityAngular& av);
     static void force(const B2Body& body, const ExternalForce& f);

@@ -44,6 +44,8 @@ struct Peer {
 
     std::deque<uint64_t> asset_queue;
     uint32_t asset_offset = 0;
+
+    std::unordered_set<int64_t> known_chunks;
 };
 
 struct Interest {

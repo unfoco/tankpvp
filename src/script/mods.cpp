@@ -185,6 +185,21 @@ struct ModVisitor : Luau::AstVisitor {
         }
         return true;
     }
+
+    auto visit(Luau::AstStatLocal* node) -> bool override {
+        size_t n = node->vars.size < node->values.size ? node->vars.size : node->values.size;
+        for (size_t i = 0; i < n; ++i) {
+            auto* call = node->values.data[i]->as<Luau::AstExprCall>();
+            if (call == nullptr) {
+                continue;
+            }
+            auto* global = call->func->as<Luau::AstExprGlobal>();
+            if (global != nullptr && std::strcmp(global->name.value, "Tile") == 0) {
+                state.tile_names.emplace_back(node->vars.data[i]->name.value);
+            }
+        }
+        return true;
+    }
 };
 
 static void analyze_source(flecs::world world, const std::string& source) {

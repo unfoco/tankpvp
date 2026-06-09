@@ -77,6 +77,7 @@ Physics::Physics(flecs::world& world) {
     auto PO = world.entity("physics::Post").add(flecs::Phase).depends_on(PS);
 
     world.system<const Position, const Rotation>("physics::init").without<B2Body>().with<Dynamic>().or_().with<Static>().or_().with<Kinematic>().kind(PI).each(Physics::init);
+    world.observer<const CollisionMesh>("physics::mesh").event(flecs::OnSet).each(Physics::mesh);
     world.observer<const B2Body, const Position, const Rotation>("physics::teleport").with<Teleport>().event(flecs::OnAdd).each(Physics::teleport);
     world.system<const B2Body, const VelocityLinear, const VelocityAngular>("physics::sync").kind(PP).each(Physics::sync);
     world.system<const B2Body, const ExternalForce>("physics::force").kind(PP).each(Physics::force);
@@ -128,6 +129,32 @@ void Physics::init(flecs::iter& it, size_t i, const Position& pos, const Rotatio
     }
     if (const auto* v = e.try_get<VelocityAngular>()) {
         b2Body_SetAngularVelocity(body, v->value);
+    }
+    e.set(B2Body{.id = body});
+}
+
+void Physics::mesh(flecs::entity e, const CollisionMesh& m) {
+    auto& eng = e.world().get_mut<PhysicsEngine>();
+    if (const auto* old = e.try_get<B2Body>()) {
+        b2DestroyBody(old->id);
+    }
+
+    b2BodyDef def = b2DefaultBodyDef();
+    def.type = b2_staticBody;
+    def.userData = reinterpret_cast<void*>(static_cast<uintptr_t>(e.id()));
+    b2BodyId body = b2CreateBody(eng.world_id, &def);
+
+    const auto* layers = e.try_get<CollisionLayers>();
+    for (const CollisionMesh::Box& box : m.boxes) {
+        b2ShapeDef sd = b2DefaultShapeDef();
+        if (layers != nullptr) {
+            sd.filter.categoryBits = layers->memberships;
+            sd.filter.maskBits = layers->filter;
+        }
+        sd.material.friction = box.friction;
+        sd.material.restitution = box.restitution;
+        b2Polygon poly = b2MakeOffsetBox(box.half.x, box.half.y, {.x = box.center.x, .y = box.center.y}, b2MakeRot(0.0F));
+        b2CreatePolygonShape(body, &sd, &poly);
     }
     e.set(B2Body{.id = body});
 }
@@ -186,9 +213,16 @@ void Physics::event(flecs::iter& it) {
         b2ContactEvents contacts = b2World_GetContactEvents(eng.world_id);
         for (int j = 0; j < contacts.beginCount; j++) {
             auto& c = contacts.beginEvents[j];
+            glm::vec2 point{0};
+            glm::vec2 normal{c.manifold.normal.x, c.manifold.normal.y};
+            if (c.manifold.pointCount > 0) {
+                point = {c.manifold.points[0].point.x, c.manifold.points[0].point.y};
+            }
             ev.contactBegin.push({
                 .entity_a = entity_from_body(w, b2Shape_GetBody(c.shapeIdA)),
                 .entity_b = entity_from_body(w, b2Shape_GetBody(c.shapeIdB)),
+                .point = point,
+                .normal = normal,
             });
         }
         for (int j = 0; j < contacts.endCount; j++) {

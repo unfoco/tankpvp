@@ -17,6 +17,7 @@
 #include "util/math.h"
 #include "util/time.h"
 #include "component/asset.h"
+#include "component/world.h"
 #include "network.h"
 #include "protocol.h"
 #include "registry.h"
@@ -333,6 +334,43 @@ void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* pack
                 auto msg = serialize::decode<MessageAssetChunk>(r);
                 if (r.valid()) {
                     world.entity().set(RequestAssetStore{.hash = msg.hash, .offset = msg.offset, .total = msg.total, .bytes = std::move(msg.bytes)});
+                }
+            }
+            break;
+        case Message::Tileset:
+            if (conn.welcomed) {
+                auto msg = serialize::decode<MessageTileset>(r);
+                if (r.valid()) {
+                    std::vector<TileType> types;
+                    types.reserve(msg.types.size());
+                    for (const MessageTileType& t : msg.types) {
+                        types.push_back({.texture = t.texture, .solid = t.solid != 0, .restitution = t.restitution, .friction = t.friction, .drag = t.drag, .hp = t.hp});
+                    }
+                    world.entity().set(RequestLoadTileset{.types = std::move(types)});
+                }
+            }
+            break;
+        case Message::TileChunk:
+            if (conn.welcomed) {
+                auto msg = serialize::decode<MessageTileChunk>(r);
+                if (r.valid()) {
+                    world.entity().set(RequestLoadChunk{.cx = msg.cx, .cy = msg.cy, .tiles = std::move(msg.tiles)});
+                }
+            }
+            break;
+        case Message::TileSet:
+            if (conn.welcomed) {
+                auto msg = serialize::decode<MessageTileSet>(r);
+                if (r.valid()) {
+                    world.entity().set(RequestSetTile{.tx = msg.tx, .ty = msg.ty, .id = msg.id});
+                }
+            }
+            break;
+        case Message::TileUnload:
+            if (conn.welcomed) {
+                auto msg = serialize::decode<MessageTileUnload>(r);
+                if (r.valid()) {
+                    world.entity().set(RequestUnloadChunk{.cx = msg.cx, .cy = msg.cy});
                 }
             }
             break;

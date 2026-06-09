@@ -25,6 +25,7 @@
 #include "physics/physics.h"
 #include "render/render.h"
 #include "script/script.h"
+#include "world/world.h"
 
 struct State {
     flecs::world world;
@@ -88,6 +89,7 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
 
     world.import<Asset>();
     world.import<Physics>();
+    world.import<World>();
     world.import<Network>();
     world.import<Logic>();
     world.import<Script>();

@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "component/asset.h"
+#include "component/world.h"
 #include "component/audio.h"
 #include "component/network.h"
 #include "component/object.h"
@@ -231,6 +232,9 @@ static void generate_types(flecs::world world) {
     out << "export type Vec = { x: number, y: number }\n";
     out << "export type RaycastHit = { entity: Entity, point: Vec, normal: Vec, fraction: number }\n";
     out << "export type AreaHit = { entity: Entity, distance: number }\n";
+    out << "export type Tile = { read id: number }\n";
+    out << "export type TileDef = { texture: string?, solid: boolean?, hp: number?, restitution: number?, friction: number?, drag: number? }\n";
+    out << "declare function Tile(def: TileDef): Tile\n";
     out << "export type Sub = { cancel: (self: Sub) -> () }\n";
     out << "export type Signal<T> = { on: (self: Signal<T>, (T) -> ()) -> Sub, emit: (self: Signal<T>, T) -> () }\n";
     out << "export type Prototype<Def> = { define: (self: Prototype<Def>, string, Def) -> (), get: (self: Prototype<Def>, string) -> Def?, list: (self: Prototype<Def>) -> { string } }\n";
@@ -360,6 +364,10 @@ static void clear_loaded(ScriptState& state) {
     state.commands.clear();
     state.prototypes.clear();
     state.proto_defs.clear();
+    state.tile_id_next = 1;
+    state.tile_rules.clear();
+    state.tile_names.clear();
+    state.generator.reset();
     state.view_owner.clear();
     state.timers.clear();
     state.inferred.clear();
@@ -447,11 +455,38 @@ static void setup_api(flecs::world world, lua_State* lua) {
     api_fn(events, state, "events", "on_set", "(any, (Entity) -> ()) -> Sub", [world, on_component](const LuaRef& component, const LuaRef& handler, lua_State* s) -> LuaRef { return on_component(world, ScriptState::of(world).component_handlers, 3, component, handler, s); });
     api_fn(events, state, "events", "on_add", "(any, (Entity) -> ()) -> Sub", [world, on_component](const LuaRef& component, const LuaRef& handler, lua_State* s) -> LuaRef { return on_component(world, ScriptState::of(world).component_add_handlers, 4, component, handler, s); });
     api_fn(events, state, "events", "on_remove", "(any, (Entity) -> ()) -> Sub", [world, on_component](const LuaRef& component, const LuaRef& handler, lua_State* s) -> LuaRef { return on_component(world, ScriptState::of(world).component_remove_handlers, 5, component, handler, s); });
+    api_fn(events, state, "events", "on_tile", "(Tile, (number, number) -> ()) -> ()", [world](const ScriptTile& tile, const LuaRef& fn) -> void {
+        if (fn.isFunction()) {
+            ScriptState::of(world).tile_rules.insert_or_assign(tile.id, fn);
+        }
+    });
     events.endNamespace();
 
     auto worldns = luabridge::getGlobalNamespace(lua).beginNamespace("world");
     api_fn(worldns, state, "world", "broadcast", "(string) -> ()", [world](const std::string& message) -> void { world.entity().set(RequestBroadcast{.line = message}); });
     api_fn(worldns, state, "world", "reload", "() -> ()", [world]() -> void { ScriptState::of(world).reload_pending = true; });
+    api_fn(worldns, state, "world", "generator", "((number, number) -> ()) -> ()", [world](const LuaRef& fn) -> void {
+        if (fn.isFunction()) {
+            ScriptState::of(world).generator = fn;
+        }
+    });
+    api_fn(worldns, state, "world", "set_tile", "(number, number, Tile) -> ()", [world](double x, double y, const ScriptTile& tile) -> void {
+        world.entity().set(RequestSetTile{.tx = static_cast<int32_t>(std::floor(x)), .ty = static_cast<int32_t>(std::floor(y)), .id = tile.id});
+    });
+    api_fn(worldns, state, "world", "clear_tile", "(number, number) -> ()", [world](double x, double y) -> void {
+        world.entity().set(RequestSetTile{.tx = static_cast<int32_t>(std::floor(x)), .ty = static_cast<int32_t>(std::floor(y)), .id = TILE_EMPTY});
+    });
+    api_fn(worldns, state, "world", "get_tile", "(number, number) -> number", [world](double x, double y) -> double {
+        const auto* grid = world.try_get<WorldGrid>();
+        if (grid == nullptr) {
+            return 0.0;
+        }
+        int tx = static_cast<int>(std::floor(x));
+        int ty = static_cast<int>(std::floor(y));
+        auto [cx, cy] = WorldGrid::chunk_coord(tx, ty);
+        auto it = grid->data.find(WorldGrid::key(cx, cy));
+        return it == grid->data.end() ? 0.0 : static_cast<double>(it->second.tiles[WorldGrid::local_index(tx, ty)]);
+    });
     api_fn(worldns, state, "world", "each", "(any, (Entity) -> ()) -> ()", [world](const LuaRef& names, const LuaRef& fn) -> void { query_each(world, names, fn); });
     api_fn(worldns, state, "world", "spawn", "(any) -> Entity", [world](const LuaRef& def, lua_State* s) -> LuaRef {
         flecs::entity e = world.entity();
@@ -635,6 +670,36 @@ static void setup_api(flecs::world world, lua_State* lua) {
             return out;
         })
         .endClass();
+
+    luabridge::getGlobalNamespace(lua).beginClass<ScriptTile>("TileHandle").addProperty("id", +[](const ScriptTile* self) -> double { return static_cast<double>(self->id); }).endClass();
+    luabridge::getGlobalNamespace(lua).addFunction("Tile", [world](const LuaRef& def) -> ScriptTile {
+        TileType type;
+        std::string texture;
+        if (def.isTable()) {
+            if (LuaRef t = def["texture"]; t.isString()) {
+                texture = t.unsafe_cast<std::string>();
+            }
+            if (LuaRef v = def["solid"]; v.isBool()) { type.solid = v.unsafe_cast<bool>(); }
+            if (LuaRef v = def["restitution"]; v.isNumber()) { type.restitution = static_cast<float>(v.unsafe_cast<double>()); }
+            if (LuaRef v = def["friction"]; v.isNumber()) { type.friction = static_cast<float>(v.unsafe_cast<double>()); }
+            if (LuaRef v = def["drag"]; v.isNumber()) { type.drag = static_cast<float>(v.unsafe_cast<double>()); }
+            if (LuaRef v = def["hp"]; v.isNumber()) { type.hp = static_cast<int32_t>(v.unsafe_cast<double>()); }
+            for (auto&& entry : luabridge::pairs(def)) {
+                if (!entry.first.isString()) {
+                    continue;
+                }
+                std::string key = entry.first.unsafe_cast<std::string>();
+                if (key != "texture" && key != "solid" && key != "restitution" && key != "friction" && key != "drag" && key != "hp") {
+                    SDL_Log("[lua] Tile: unknown field '%s'", key.c_str());
+                }
+            }
+        }
+        auto& st = ScriptState::of(world);
+        uint16_t id = st.tile_id_next++;
+        std::string name = (id >= 1 && static_cast<size_t>(id - 1) < st.tile_names.size()) ? st.tile_names[id - 1] : std::string{};
+        world.entity().set(RequestDefineTile{.id = id, .type = type, .texture = texture, .name = name});
+        return ScriptTile{.id = id};
+    });
 
     auto viewns = luabridge::getGlobalNamespace(lua).beginNamespace("view");
     api_fn(viewns, state, "view", "label", "(any) -> Widget", [](const LuaRef& value, lua_State* s) -> LuaRef {
@@ -1096,4 +1161,48 @@ Script::Script(flecs::world& world) {
         world.entity().add<RequestReload>();
     });
     world.observer().with<RequestQuit>().event(flecs::OnAdd).each([](flecs::entity e) -> void { unload_scripts(e.world()); });
+
+    world.observer<const RequestTileUpdate>("script::tile_update").event(flecs::OnSet).each([](flecs::entity e, const RequestTileUpdate& req) -> void {
+        ScriptState& state = ScriptState::of(e.world());
+        lua_State* lua = state.lua;
+        for (const TileUpdateEntry& entry : req.entries) {
+            auto it = state.tile_rules.find(entry.id);
+            if (it == state.tile_rules.end() || !it->second.isFunction()) {
+                continue;
+            }
+            it->second.push(lua);
+            lua_pushnumber(lua, entry.tx);
+            lua_pushnumber(lua, entry.ty);
+            int status = 0;
+            {
+                BudgetGuard guard(lua);
+                status = lua_pcall(lua, 2, 0, 0);
+            }
+            if (status != 0) {
+                SDL_Log("[lua] tile_update error: %s", lua_tostring(lua, -1));
+                lua_pop(lua, 1);
+            }
+        }
+        e.destruct();
+    });
+
+    world.observer<const RequestGenerateChunk>("script::generate").event(flecs::OnSet).each([](flecs::entity e, const RequestGenerateChunk& req) -> void {
+        ScriptState& state = ScriptState::of(e.world());
+        if (state.generator && state.generator->isFunction()) {
+            lua_State* lua = state.lua;
+            state.generator->push(lua);
+            lua_pushnumber(lua, req.cx);
+            lua_pushnumber(lua, req.cy);
+            int status = 0;
+            {
+                BudgetGuard guard(lua);
+                status = lua_pcall(lua, 2, 0, 0);
+            }
+            if (status != 0) {
+                SDL_Log("[lua] generator error: %s", lua_tostring(lua, -1));
+                lua_pop(lua, 1);
+            }
+        }
+        e.destruct();
+    });
 }

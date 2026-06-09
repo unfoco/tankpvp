@@ -19,6 +19,7 @@
 #include "component/audio.h"
 #include "util/math.h"
 #include "component/asset.h"
+#include "component/world.h"
 #include "network.h"
 #include "protocol.h"
 #include "registry.h"
@@ -206,6 +207,106 @@ NetworkServer::NetworkServer(flecs::world& world) {
         broadcast_chat(world, c.line);
         e.destruct();
     });
+    world.observer<const RequestTileBroadcast>("network::server::tile_edit").event(flecs::OnSet).each([](flecs::entity e, const RequestTileBroadcast& ed) -> void {
+        flecs::world world = e.world();
+        if (world.has<NetworkHost>()) {
+            auto [cx, cy] = WorldGrid::chunk_coord(ed.tx, ed.ty);
+            int64_t key = WorldGrid::key(cx, cy);
+            MessageTileSet sm{.tx = ed.tx, .ty = ed.ty, .id = ed.id};
+            serialize::Writer w = wire::message(Message::TileSet);
+            serialize::encode(w, sm);
+            world.query_builder<Peer>().build().each([&](const Peer& p) -> void {
+                if (p.welcomed && (p.peer != nullptr) && p.known_chunks.contains(key)) {
+                    wire::send(p.peer, w, CHANNEL_RELIABLE, true);
+                }
+            });
+        }
+        e.destruct();
+    });
+
+    world.system("network::server::interest").interval(0.25).kind(flecs::OnUpdate).run([](flecs::iter& it) -> void {
+        flecs::world world = it.world();
+        if (!world.has<NetworkHost>()) {
+            return;
+        }
+        auto* grid = world.try_get_mut<WorldGrid>();
+        if (grid == nullptr) {
+            return;
+        }
+        constexpr float CHUNK_UNITS = CHUNK_SIZE * TILE_SIZE;
+        world.query_builder<Peer>().build().each([&](flecs::entity pe, Peer& p) -> void {
+            if (!p.welcomed || p.peer == nullptr) {
+                return;
+            }
+            flecs::entity tank = pe.target<Controls>();
+            const auto* pos = tank.is_alive() ? tank.try_get<Position>() : nullptr;
+            if (pos == nullptr) {
+                return;
+            }
+            const auto* interest = pe.try_get<Interest>();
+            float radius = (interest != nullptr) ? interest->radius : 1200.0F;
+            int chunks = std::max(1, static_cast<int>(std::ceil(radius / CHUNK_UNITS)));
+            auto [ccx, ccy] = WorldGrid::chunk_coord(static_cast<int>(std::floor(pos->value.x / TILE_SIZE)), static_cast<int>(std::floor(pos->value.y / TILE_SIZE)));
+
+            for (auto kit = p.known_chunks.begin(); kit != p.known_chunks.end();) {
+                int32_t kcx = static_cast<int32_t>(*kit >> 32);
+                int32_t kcy = static_cast<int32_t>(static_cast<uint32_t>(*kit));
+                if (std::abs(kcx - ccx) > chunks + 1 || std::abs(kcy - ccy) > chunks + 1) {
+                    MessageTileUnload um{.cx = kcx, .cy = kcy};
+                    serialize::Writer uw = wire::message(Message::TileUnload);
+                    serialize::encode(uw, um);
+                    wire::send(p.peer, uw, CHANNEL_RELIABLE, true);
+                    kit = p.known_chunks.erase(kit);
+                } else {
+                    ++kit;
+                }
+            }
+            for (int dy = -chunks; dy <= chunks; ++dy) {
+                for (int dx = -chunks; dx <= chunks; ++dx) {
+                    int64_t key = WorldGrid::key(ccx + dx, ccy + dy);
+                    if (p.known_chunks.contains(key)) {
+                        continue;
+                    }
+                    auto dit = grid->data.find(key);
+                    if (dit == grid->data.end()) {
+                        if (grid->generated.insert(key).second) {
+                            world.entity().set(RequestGenerateChunk{.cx = ccx + dx, .cy = ccy + dy});
+                        }
+                        continue;
+                    }
+                    MessageTileChunk cm;
+                    cm.cx = dit->second.cx;
+                    cm.cy = dit->second.cy;
+                    cm.tiles.assign(dit->second.tiles, dit->second.tiles + CHUNK_AREA);
+                    serialize::Writer w = wire::message(Message::TileChunk);
+                    serialize::encode(w, cm);
+                    wire::send(p.peer, w, CHANNEL_RELIABLE, true);
+                    p.known_chunks.insert(key);
+                }
+            }
+        });
+    });
+
+    world.system("network::server::tileset_sync").interval(0.5).kind(flecs::OnUpdate).run([](flecs::iter& it) -> void {
+        flecs::world world = it.world();
+        static uint16_t last = 0xFFFF;
+        const auto* tileset = world.try_get<Tileset>();
+        if (!world.has<NetworkHost>() || tileset == nullptr || tileset->version == last) {
+            return;
+        }
+        last = tileset->version;
+        MessageTileset tm;
+        for (const TileType& t : tileset->types) {
+            tm.types.push_back({.texture = t.texture, .solid = static_cast<uint8_t>(t.solid ? 1 : 0), .restitution = t.restitution, .friction = t.friction, .drag = t.drag, .hp = t.hp});
+        }
+        serialize::Writer tw = wire::message(Message::Tileset);
+        serialize::encode(tw, tm);
+        world.query_builder<Peer>().build().each([&](const Peer& p) -> void {
+            if (p.welcomed && (p.peer != nullptr)) {
+                wire::send(p.peer, tw, CHANNEL_RELIABLE, true);
+            }
+        });
+    });
     world.observer().with<RequestReload>().event(flecs::OnAdd).each([](flecs::entity e) -> void {
         flecs::world world = e.world();
         broadcast_reload(world);
@@ -311,6 +412,16 @@ static void send_welcome(flecs::world& world, NetworkHost& host, ENetPeer* peer,
         serialize::Writer mw = wire::message(Message::Manifest);
         serialize::encode(mw, mm);
         wire::send(peer, mw, CHANNEL_RELIABLE, true);
+    }
+
+    if (const auto* tileset = world.try_get<Tileset>(); tileset != nullptr && tileset->types.size() > 1) {
+        MessageTileset tm;
+        for (const TileType& t : tileset->types) {
+            tm.types.push_back({.texture = t.texture, .solid = static_cast<uint8_t>(t.solid ? 1 : 0), .restitution = t.restitution, .friction = t.friction, .drag = t.drag, .hp = t.hp});
+        }
+        serialize::Writer tw = wire::message(Message::Tileset);
+        serialize::encode(tw, tm);
+        wire::send(peer, tw, CHANNEL_RELIABLE, true);
     }
 }
 
@@ -714,15 +825,13 @@ void NetworkServer::hits(flecs::iter& it) {
             flecs::entity victim;
             float vd2 = 1e30F;
             q.tanks.each([&](flecs::entity tank, const History& h, const CollisionBox& box) -> void {
-                if (tank == firer) {
-                    return;
-                }
+                bool is_self = (tank == firer);
                 const TransformSnapshot* s = h.at(view);
                 if (!s) {
                     return;
                 }
                 bool hit = in_obb(bp.value, s, box);
-                if (!hit && pointblank && fpos) {
+                if (!hit && pointblank && fpos && !is_self) {
                     for (int k = 0; k <= 4 && !hit; ++k) {
                         hit = in_obb(glm::mix(fpos->value, bp.value, static_cast<float>(k) / 4.0F), s, box);
                     }
@@ -755,9 +864,6 @@ void NetworkServer::hits(flecs::iter& it) {
                     continue;
                 }
                 flecs::entity tank = tit->second;
-                if (tank == bit->second.e.parent()) {
-                    continue;
-                }
                 const auto* h = tank.try_get<History>();
                 const auto* box = tank.try_get<CollisionBox>();
                 if (h && box && ratify_claim(bit->second.pos, bit->second.vel, bit->second.lag, tick, *h, *box)) {

@@ -37,6 +37,10 @@ enum class Message : uint8_t {
     Manifest,
     AssetRequest,
     AssetChunk,
+    Tileset,
+    TileChunk,
+    TileUnload,
+    TileSet,
     Kick,
     Chat,
     Sound,
@@ -345,6 +349,66 @@ struct MessageAssetChunk {
         a & offset;
         a & total;
         a.template blob<uint16_t>(bytes);
+    }
+};
+
+struct MessageTileType {
+    uint64_t texture = 0;
+    uint8_t solid = 1;
+    float restitution = 0.0F;
+    float friction = 0.5F;
+    float drag = 0.0F;
+    int32_t hp = 0;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & texture;
+        a & solid;
+        a & restitution;
+        a & friction;
+        a & drag;
+        a & hp;
+    }
+};
+
+struct MessageTileset {
+    std::vector<MessageTileType> types;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a.template vector<uint16_t>(types);
+    }
+};
+
+struct MessageTileChunk {
+    int32_t cx = 0;
+    int32_t cy = 0;
+    std::vector<uint16_t> tiles;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & cx;
+        a & cy;
+        a.template vector<uint16_t>(tiles);
+    }
+};
+
+struct MessageTileUnload {
+    int32_t cx = 0;
+    int32_t cy = 0;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & cx;
+        a & cy;
+    }
+};
+
+struct MessageTileSet {
+    int32_t tx = 0;
+    int32_t ty = 0;
+    uint16_t id = 0;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & tx;
+        a & ty;
+        a & id;
     }
 };
 

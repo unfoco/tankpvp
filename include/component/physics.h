@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include <vector>
+
 #include "util/fixed_buffer.h"
 
 struct Static {};
@@ -39,6 +41,15 @@ struct Friction {
 };
 struct Restitution {
     float value = 0.0F;
+};
+struct CollisionMesh {
+    struct Box {
+        glm::vec2 center{};
+        glm::vec2 half{};
+        float restitution = 0.0F;
+        float friction = 0.5F;
+    };
+    std::vector<Box> boxes;
 };
 struct DampingLinear {
     float value = 0.0F;

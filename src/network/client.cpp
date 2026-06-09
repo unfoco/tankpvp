@@ -15,6 +15,7 @@
 #include "component/physics.h"
 #include "component/script.h"
 #include "component/settings.h"
+#include "component/world.h"
 #include "util/math.h"
 #include "util/movement.h"
 #include "util/prediction.h"
@@ -29,7 +30,7 @@ struct ClientQueries {
     flecs::query<Interpolation, Position, Rotation> interp;
     flecs::query<const Dying> dying;
     flecs::query<InputFlags, Position, Rotation, Interpolation> local_tank;
-    flecs::query<Position, const VelocityLinear, Predicted> ghosts;
+    flecs::query<Predicted> ghosts;
     flecs::query<const NetworkId, const Position, const Rotation, const CollisionBox> enemies;
     flecs::query<const Position, const Predicted> pred_bullets;
     flecs::query<const NetworkId, Position, Rotation> smooth;
@@ -56,6 +57,49 @@ void prediction_sync(flecs::world& world, NetworkConnection& conn, Prediction& p
         tanks.push_back({.id = id.value, .pos = in.position, .angle = in.angle, .box = box, .ldamp = dl ? dl->value : 0.0F, .adamp = da ? da->value : 0.0F, .self = id.value == conn.self});
     });
     pred.sync(tanks);
+
+    if (const auto* grid = world.try_get<WorldGrid>(); grid != nullptr && grid->version != conn.tile_version) {
+        conn.tile_version = grid->version;
+        std::vector<Prediction::StaticBox> boxes;
+        std::vector<Prediction::FieldZone> fields;
+        if (const auto* tileset = world.try_get<Tileset>()) {
+            for (const auto& [key, chunk] : grid->data) {
+                for (int y = 0; y < CHUNK_SIZE; ++y) {
+                    int x = 0;
+                    while (x < CHUNK_SIZE) {
+                        const uint16_t id = chunk.tiles[(y * CHUNK_SIZE) + x];
+                        if (id == TILE_EMPTY) {
+                            ++x;
+                            continue;
+                        }
+                        const TileType& type = tileset->type(id);
+                        const float cxf = ((static_cast<float>(chunk.cx) * CHUNK_SIZE) + static_cast<float>(x) + 0.5F) * TILE_SIZE;
+                        const float cyf = ((static_cast<float>(chunk.cy) * CHUNK_SIZE) + static_cast<float>(y) + 0.5F) * TILE_SIZE;
+                        if (!type.solid) {
+                            if (type.drag > 0.0F) {
+                                fields.push_back({.center = {cxf, cyf}, .half = {TILE_SIZE * 0.5F, TILE_SIZE * 0.5F}, .drag = type.drag});
+                            }
+                            ++x;
+                            continue;
+                        }
+                        int x0 = x;
+                        while (x < CHUNK_SIZE && chunk.tiles[(y * CHUNK_SIZE) + x] == id) {
+                            ++x;
+                        }
+                        const float len = static_cast<float>(x - x0);
+                        boxes.push_back({
+                            .center = {((static_cast<float>(chunk.cx) * CHUNK_SIZE) + static_cast<float>(x0) + (len * 0.5F)) * TILE_SIZE, ((static_cast<float>(chunk.cy) * CHUNK_SIZE) + static_cast<float>(y) + 0.5F) * TILE_SIZE},
+                            .half = {len * TILE_SIZE * 0.5F, TILE_SIZE * 0.5F},
+                            .restitution = type.restitution,
+                            .friction = type.friction,
+                        });
+                    }
+                }
+            }
+        }
+        pred.boxes(boxes);
+        pred.zones(fields);
+    }
 }
 
 struct Smooth {
@@ -130,12 +174,17 @@ void ghosts_advance(flecs::world& world, const ClientQueries& q, const std::vect
             .set(Position{.value = s.muzzle})
             .set(Rotation{.angle = s.angle})
             .set(VelocityLinear{.value = fwd * s.speed})
+            .set(VelocityAngular{})
+            .set(CollisionRing{.radius = 3})
+            .add<CollisionContinuous>()
+            .add<Dynamic>()
+            .set(Friction{.value = 0.0F})
+            .set(CollisionLayers{.memberships = 0x0004, .filter = 0x0002})
             .set(Predicted{.life = s.life, .id = s.prediction})
             .set(Bullet{.speed = s.speed});
     }
     std::vector<flecs::entity> expired;
-    q.ghosts.each([&](flecs::entity e, Position& pos, const VelocityLinear& vel, Predicted& pred) -> void {
-        pos.value += vel.value * dt;
+    q.ghosts.each([&](flecs::entity e, Predicted& pred) -> void {
         pred.life -= dt;
         if (pred.life <= 0) {
             expired.push_back(e);
@@ -173,7 +222,7 @@ void prediction_hit(const ClientQueries& q, NetworkConnection& conn, glm::vec2 s
         float bestd2 = 1e30F;
         for (const auto& e : enemies) {
             bool hit = math::point_in_box(p.value, e.pos, e.angle, e.hw, e.hh);
-            if (!hit && pointblank) {
+            if (!hit && pointblank && e.nid != conn.self) {
                 for (int k = 0; k <= 4 && !hit; ++k) {
                     hit = math::point_in_box(glm::mix(self_pos, p.value, static_cast<float>(k) / 4.0F), e.pos, e.angle, e.hw, e.hh);
                 }
@@ -192,7 +241,9 @@ void prediction_hit(const ClientQueries& q, NetworkConnection& conn, glm::vec2 s
         }
         impacted.push_back(b);
         if (pred.id) {
-            killed.push_back(best->e);
+            if (best->nid != conn.self) {
+                killed.push_back(best->e);
+            }
             conn.hits.push_back({.prediction = pred.id, .target = best->nid, .sends = CLAIM_REDUNDANCY});
         }
     });
@@ -264,8 +315,8 @@ NetworkClient::NetworkClient(flecs::world& world) {
         .interp = world.query_builder<Interpolation, Position, Rotation>().with<Remote>().build(),
         .dying = world.query_builder<const Dying>().build(),
         .local_tank = world.query_builder<InputFlags, Position, Rotation, Interpolation>().with<Local>().build(),
-        .ghosts = world.query_builder<Position, const VelocityLinear, Predicted>().build(),
-        .enemies = world.query_builder<const NetworkId, const Position, const Rotation, const CollisionBox>().with<Tank>().with<Remote>().without<Dying>().build(),
+        .ghosts = world.query_builder<Predicted>().build(),
+        .enemies = world.query_builder<const NetworkId, const Position, const Rotation, const CollisionBox>().with<Tank>().without<Dying>().build(),
         .pred_bullets = world.query_builder<const Position, const Predicted>().with<Bullet>().build(),
         .smooth = world.query_builder<const NetworkId, Position, Rotation>().with<Tank>().with<Remote>().build(),
     });
@@ -395,25 +446,18 @@ void NetworkClient::interpolate(flecs::iter& it) {
             }
             if (e.has<Bullet>() && e.has<VelocityLinear>()) {
                 glm::vec2 vel = e.get<VelocityLinear>().value;
-                const auto* o = e.try_get<Owner>();
-                if (o && o->peer == conn.peer_id) {
-                    pos.value += vel * static_cast<float>(TICK_DT);
-                } else {
-                    const Sample& anchor = in.at(0);
-                    double age = render - static_cast<double>(anchor.tick);
-                    if (e.has<Latent>()) {
-                        if (age >= -2.0) {
-                            {
-                                e.remove<Latent>();
-                            }
-                        } else {
-                            pos.value = anchor.position;
-                            rot.angle = in.angle;
-                            return;
-                        }
+                const Sample& anchor = in.at(0);
+                double age = render - static_cast<double>(anchor.tick);
+                if (e.has<Latent>()) {
+                    if (age >= -2.0) {
+                        e.remove<Latent>();
+                    } else {
+                        pos.value = anchor.position;
+                        rot.angle = in.angle;
+                        return;
                     }
-                    pos.value = anchor.position + vel * static_cast<float>(std::max(age, 0.0) * TICK_DT);
                 }
+                pos.value = anchor.position + vel * static_cast<float>(std::max(age, 0.0) * TICK_DT);
                 rot.angle = in.angle;
                 return;
             }

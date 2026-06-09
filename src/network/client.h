@@ -71,6 +71,7 @@ struct NetworkConnection {
     std::unordered_map<uint64_t, flecs::entity_t> entities;
     std::unordered_map<uint16_t, uint16_t> remap;
     uint16_t registry_version = 0;
+    uint32_t tile_version = UINT32_MAX;
 
     std::vector<std::pair<uint64_t, uint64_t>> despawn_queue;
 

@@ -20,13 +20,15 @@ Render::Render(flecs::world& world) {
 
     auto begin = world.entity("render::begin").add<Rendering>();
     auto camera = world.entity("render::camera_phase").add<Rendering>().depends_on(begin);
-    auto tanks = world.entity("render::tanks").add<Rendering>().depends_on(camera);
+    auto tiles = world.entity("render::tiles_phase").add<Rendering>().depends_on(camera);
+    auto tanks = world.entity("render::tanks").add<Rendering>().depends_on(tiles);
     auto bullets = world.entity("render::bullets").add<Rendering>().depends_on(tanks);
     auto view = world.entity("render::view").add<Rendering>().depends_on(bullets);
     auto present = world.entity("render::present").add<Rendering>().depends_on(view);
 
     world.system<RenderState>("render::start").kind(begin).each(Render::start);
     world.system<RenderState, Position>("render::camera").kind(camera).with<Local>().each(Render::camera);
+    world.system<RenderState, const TileChunk>("render::tiles").kind(tiles).each(Render::tiles);
     world.system<RenderState, const Position, const Rotation, const Sprite, const Color*>("render::sprite").kind(tanks).without<Dying>().each(Render::sprite);
     world.system<RenderState, Position>("render::bullet").kind(bullets).with<Bullet>().without<Latent>().each(Render::bullet);
     world.system<RenderState, InterfaceCommands>("render::interface").kind(view).each(Render::interface);

@@ -19,6 +19,8 @@ struct Prediction::Impl {
     b2BodyId self{};
     std::unordered_map<uint64_t, Body> others;
     std::unordered_map<uint64_t, Pose> shoved;
+    std::vector<b2BodyId> statics;
+    std::vector<FieldZone> fields;
 
     ~Impl() {
         if (ready) {
@@ -44,6 +46,32 @@ struct Prediction::Impl {
         has_self = false;
         others.clear();
         shoved.clear();
+        statics.clear();
+        fields.clear();
+    }
+
+    void boxes(std::span<const StaticBox> boxes) {
+        ensure();
+        for (b2BodyId body : statics) {
+            b2DestroyBody(body);
+        }
+        statics.clear();
+        for (const StaticBox& box : boxes) {
+            b2BodyDef bd = b2DefaultBodyDef();
+            bd.type = b2_staticBody;
+            bd.position = {.x = box.center.x, .y = box.center.y};
+            b2BodyId body = b2CreateBody(world, &bd);
+            b2ShapeDef sd = b2DefaultShapeDef();
+            sd.material.restitution = box.restitution;
+            sd.material.friction = box.friction;
+            b2Polygon poly = b2MakeBox(box.half.x, box.half.y);
+            b2CreatePolygonShape(body, &sd, &poly);
+            statics.push_back(body);
+        }
+    }
+
+    void zones(std::span<const FieldZone> zones) {
+        fields.assign(zones.begin(), zones.end());
     }
 
     auto make_body(const CollisionBox& box, glm::vec2 pos, float angle, float ldamp, float adamp) -> b2BodyId {
@@ -103,6 +131,17 @@ struct Prediction::Impl {
         float heading = self_angle;
         for (int s = 0; s < steps; ++s) {
             Velocity v = velocity(s, heading);
+            if (!fields.empty()) {
+                b2Vec2 sp = b2Body_GetPosition(self);
+                for (const FieldZone& z : fields) {
+                    if (std::fabs(sp.x - z.center.x) <= z.half.x && std::fabs(sp.y - z.center.y) <= z.half.y) {
+                        float k = std::exp(-z.drag * dt);
+                        v.linear.x *= k;
+                        v.linear.y *= k;
+                        break;
+                    }
+                }
+            }
             b2Body_SetLinearVelocity(self, {.x = v.linear.x, .y = v.linear.y});
             b2Body_SetAngularVelocity(self, v.angular);
             b2World_Step(world, dt, 4);
@@ -139,6 +178,14 @@ auto Prediction::has_self() const -> bool {
 
 void Prediction::sync(std::span<const Tank> tanks) {
     impl->sync(tanks);
+}
+
+void Prediction::boxes(std::span<const StaticBox> boxes) {
+    impl->boxes(boxes);
+}
+
+void Prediction::zones(std::span<const FieldZone> zones) {
+    impl->zones(zones);
 }
 
 auto Prediction::run(glm::vec2 self_pos, float self_angle, int steps, float dt, const std::function<Velocity(int step, float heading)>& velocity, bool record_contacts) -> Pose {

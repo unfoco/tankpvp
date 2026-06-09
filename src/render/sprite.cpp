@@ -31,7 +31,7 @@ static auto resolve_layer(flecs::world world, const RenderState& render, uint64_
     return nullptr;
 }
 
-void Render::sprite(flecs::iter& it, size_t /*i*/, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col) {
+void Render::sprite(flecs::iter& it, size_t, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col) {
     flecs::world world = it.world();
 
     int windowW;

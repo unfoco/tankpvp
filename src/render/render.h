@@ -13,6 +13,7 @@
 #include "component/asset.h"
 #include "component/interface.h"
 #include "component/object.h"
+#include "component/world.h"
 
 constexpr auto WIDTH = 1280;
 constexpr auto HEIGHT = 720;
@@ -73,4 +74,5 @@ struct Render {
 
     static void bullet(flecs::iter& it, size_t i, RenderState& render, const Position& pos);
     static void sprite(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col);
+    static void tiles(flecs::iter& it, size_t i, const RenderState& render, const TileChunk& chunk);
 };

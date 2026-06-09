@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -31,6 +32,10 @@ struct ScriptSignal {
 
 struct ScriptProto {
     std::string category;
+};
+
+struct ScriptTile {
+    uint16_t id = 0;
 };
 
 struct ScriptSub {
@@ -69,6 +74,10 @@ struct ComponentDef {
 struct ScriptState {
     lua_State* lua = nullptr;
     uint32_t view_next = 0;
+    uint16_t tile_id_next = 1;
+    std::unordered_map<uint16_t, LuaRef> tile_rules;
+    std::vector<std::string> tile_names;
+    std::optional<LuaRef> generator;
     std::unordered_map<std::string, std::vector<LuaRef>> handlers;
     std::unordered_map<std::string, LuaRef> commands;
     std::unordered_map<std::string, std::vector<std::string>> enum_aliases;
