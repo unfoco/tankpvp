@@ -3,10 +3,12 @@
 #include <array>
 #include <cmath>
 #include <utility>
+#include <vector>
 
 #include "component/asset.h"
 #include "component/network.h"
 #include "component/object.h"
+#include "util/ballistics.h"
 
 static auto tile_at(flecs::world world, float wx, float wy) -> const TileType* {
     const auto* grid = world.try_get<WorldGrid>();
@@ -56,10 +58,41 @@ World::World(flecs::world& world) {
     world.system("world::resolve").kind(flecs::OnUpdate).run(World::resolve);
 
     flecs::entity pi = world.lookup("physics::Init");
-    flecs::entity po = world.lookup("physics::Post");
     world.system<const TileChunk>("world::mesh").with<ChunkDirty>().kind(pi ? pi : flecs::OnUpdate).each(World::mesh);
-    world.system<const Position, VelocityLinear>("world::drag").with<Tank>().kind(pi ? pi : flecs::OnUpdate).each(World::drag);
-    world.system("world::collide").kind(po ? po : flecs::PostUpdate).run(World::collide);
+    const auto* cfg = world.try_get<NetworkConfig>();
+    if (cfg == nullptr || cfg->role != NetworkRole::Client) {
+        world.system<const Position, VelocityLinear>("world::drag").with<Tank>().kind(pi ? pi : flecs::OnUpdate).each(World::drag);
+        world.system("world::ballistics").kind(flecs::OnUpdate).run(World::ballistics);
+    }
+}
+
+void World::ballistics(flecs::iter& it) {
+    flecs::world world = it.world();
+    const auto* grid = world.try_get<WorldGrid>();
+    const auto* tileset = world.try_get<Tileset>();
+    if (grid == nullptr || tileset == nullptr) {
+        return;
+    }
+    float dt = it.delta_time();
+    std::vector<flecs::entity> dead;
+    world.query_builder<Position, Rotation, VelocityLinear>().with<Bullet>().without<Predicted>().build().each([&](flecs::entity e, Position& pos, Rotation& rot, VelocityLinear& vel) -> void {
+        const TileType* hit = nullptr;
+        glm::vec2 hit_at{};
+        ballistics::Step r = ballistics::step(*grid, *tileset, pos.value, vel.value, dt, hit, hit_at);
+        if (hit != nullptr && hit->hp > 0) {
+            world.entity().set(RequestDamageTile{.tx = static_cast<int32_t>(std::floor(hit_at.x / TILE_SIZE)), .ty = static_cast<int32_t>(std::floor(hit_at.y / TILE_SIZE)), .amount = 25});
+        }
+        if (r == ballistics::Step::Absorb) {
+            dead.push_back(e);
+        } else if (r == ballistics::Step::Bounce) {
+            rot.angle = std::atan2(vel.value.y, vel.value.x);
+        }
+    });
+    for (auto e : dead) {
+        if (e.is_alive()) {
+            e.destruct();
+        }
+    }
 }
 
 void World::define(flecs::entity e, const RequestDefineTile& req) {
@@ -291,31 +324,4 @@ void World::drag(flecs::iter& it, size_t, const Position& pos, VelocityLinear& v
         return;
     }
     vel.value *= std::exp(-t->drag * it.delta_time());
-}
-
-void World::collide(flecs::iter& it) {
-    flecs::world world = it.world();
-    const auto& ev = world.get<PhysicsEvents>();
-    for (const ContactEvent& c : ev.contactBegin) {
-        flecs::entity a = c.entity_a;
-        flecs::entity b = c.entity_b;
-        flecs::entity bullet = (a.is_alive() && a.has<Bullet>()) ? a : ((b.is_alive() && b.has<Bullet>()) ? b : flecs::entity());
-        flecs::entity wall = (a.is_alive() && a.has<TileChunk>()) ? a : ((b.is_alive() && b.has<TileChunk>()) ? b : flecs::entity());
-        if (!bullet.is_alive() || !wall.is_alive()) {
-            continue;
-        }
-        float dir = (wall == b) ? 1.0F : -1.0F;
-        float sx = c.point.x + (c.normal.x * dir * TILE_SIZE * 0.5F);
-        float sy = c.point.y + (c.normal.y * dir * TILE_SIZE * 0.5F);
-        const TileType* t = tile_at(world, sx, sy);
-        if (t == nullptr || !t->solid) {
-            continue;
-        }
-        if (t->hp > 0 && !bullet.has<Predicted>()) {
-            world.entity().set(RequestDamageTile{.tx = static_cast<int32_t>(std::floor(sx / TILE_SIZE)), .ty = static_cast<int32_t>(std::floor(sy / TILE_SIZE)), .amount = 25});
-        }
-        if (t->restitution <= 0.0F) {
-            bullet.destruct();
-        }
-    }
 }

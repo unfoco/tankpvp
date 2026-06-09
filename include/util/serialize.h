@@ -78,6 +78,9 @@ struct Reader {
     explicit Reader(std::span<const uint8_t> bytes) : data(bytes.data()), size(bytes.size()) {}
 
     [[nodiscard]] auto remaining() const -> size_t {
+        if (at > size) {
+            return 0;
+        }
         return size - at;
     }
     [[nodiscard]] auto valid() const -> bool {
@@ -146,26 +149,26 @@ struct WriteArchive {
     }
     template <typename Count, typename T>
     void vector(std::vector<T>& v) {
-        assert(v.size() <= std::numeric_limits<Count>::max());
-        writer.put(static_cast<Count>(v.size()));
-        for (auto& element : v) {
-            value(element);
+        size_t n = std::min<size_t>(v.size(), std::numeric_limits<Count>::max());
+        writer.put(static_cast<Count>(n));
+        for (size_t i = 0; i < n; ++i) {
+            value(v[i]);
         }
     }
     template <typename Length>
     void blob(std::vector<uint8_t>& b) {
-        assert(b.size() <= std::numeric_limits<Length>::max());
-        writer.put(static_cast<Length>(b.size()));
-        if (!b.empty()) {
-            writer.bytes(b.data(), b.size());
+        size_t n = std::min<size_t>(b.size(), std::numeric_limits<Length>::max());
+        writer.put(static_cast<Length>(n));
+        if (n > 0) {
+            writer.bytes(b.data(), n);
         }
     }
     template <typename Count>
     void strings(std::vector<std::string>& v) {
-        assert(v.size() <= std::numeric_limits<Count>::max());
-        writer.put(static_cast<Count>(v.size()));
-        for (auto& s : v) {
-            writer.text(s);
+        size_t n = std::min<size_t>(v.size(), std::numeric_limits<Count>::max());
+        writer.put(static_cast<Count>(n));
+        for (size_t i = 0; i < n; ++i) {
+            writer.text(v[i]);
         }
     }
 };

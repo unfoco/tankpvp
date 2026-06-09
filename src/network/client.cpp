@@ -16,6 +16,7 @@
 #include "component/script.h"
 #include "component/settings.h"
 #include "component/world.h"
+#include "util/ballistics.h"
 #include "util/math.h"
 #include "util/movement.h"
 #include "util/prediction.h"
@@ -30,7 +31,7 @@ struct ClientQueries {
     flecs::query<Interpolation, Position, Rotation> interp;
     flecs::query<const Dying> dying;
     flecs::query<InputFlags, Position, Rotation, Interpolation> local_tank;
-    flecs::query<Predicted> ghosts;
+    flecs::query<Position, Rotation, VelocityLinear, Predicted> ghosts;
     flecs::query<const NetworkId, const Position, const Rotation, const CollisionBox> enemies;
     flecs::query<const Position, const Predicted> pred_bullets;
     flecs::query<const NetworkId, Position, Rotation> smooth;
@@ -174,24 +175,36 @@ void ghosts_advance(flecs::world& world, const ClientQueries& q, const std::vect
             .set(Position{.value = s.muzzle})
             .set(Rotation{.angle = s.angle})
             .set(VelocityLinear{.value = fwd * s.speed})
-            .set(VelocityAngular{})
-            .set(CollisionRing{.radius = 3})
-            .add<CollisionContinuous>()
-            .add<Dynamic>()
-            .set(Friction{.value = 0.0F})
-            .set(CollisionLayers{.memberships = 0x0004, .filter = 0x0002})
             .set(Predicted{.life = s.life, .id = s.prediction})
             .set(Bullet{.speed = s.speed});
     }
+    const auto* grid = world.try_get<WorldGrid>();
+    const auto* tileset = world.try_get<Tileset>();
     std::vector<flecs::entity> expired;
-    q.ghosts.each([&](flecs::entity e, Predicted& pred) -> void {
+    q.ghosts.each([&](flecs::entity e, Position& pos, Rotation& rot, VelocityLinear& vel, Predicted& pred) -> void {
+        if (grid != nullptr && tileset != nullptr) {
+            const TileType* hit = nullptr;
+            glm::vec2 hit_at{};
+            ballistics::Step r = ballistics::step(*grid, *tileset, pos.value, vel.value, dt, hit, hit_at);
+            if (r == ballistics::Step::Absorb) {
+                expired.push_back(e);
+                return;
+            }
+            if (r == ballistics::Step::Bounce) {
+                rot.angle = std::atan2(vel.value.y, vel.value.x);
+            }
+        } else {
+            pos.value += vel.value * dt;
+        }
         pred.life -= dt;
         if (pred.life <= 0) {
             expired.push_back(e);
         }
     });
     for (auto e : expired) {
-        e.destruct();
+        if (e.is_alive()) {
+            e.destruct();
+        }
     }
 }
 
@@ -240,11 +253,8 @@ void prediction_hit(const ClientQueries& q, NetworkConnection& conn, glm::vec2 s
             return;
         }
         impacted.push_back(b);
-        if (pred.id) {
-            if (best->nid != conn.self) {
-                killed.push_back(best->e);
-            }
-            conn.hits.push_back({.prediction = pred.id, .target = best->nid, .sends = CLAIM_REDUNDANCY});
+        if (pred.id && best->nid != conn.self) {
+            killed.push_back(best->e);
         }
     });
     for (auto b : impacted) {
@@ -315,7 +325,7 @@ NetworkClient::NetworkClient(flecs::world& world) {
         .interp = world.query_builder<Interpolation, Position, Rotation>().with<Remote>().build(),
         .dying = world.query_builder<const Dying>().build(),
         .local_tank = world.query_builder<InputFlags, Position, Rotation, Interpolation>().with<Local>().build(),
-        .ghosts = world.query_builder<Predicted>().build(),
+        .ghosts = world.query_builder<Position, Rotation, VelocityLinear, Predicted>().build(),
         .enemies = world.query_builder<const NetworkId, const Position, const Rotation, const CollisionBox>().with<Tank>().without<Dying>().build(),
         .pred_bullets = world.query_builder<const Position, const Predicted>().with<Bullet>().build(),
         .smooth = world.query_builder<const NetworkId, Position, Rotation>().with<Tank>().with<Remote>().build(),
@@ -434,9 +444,7 @@ void NetworkClient::interpolate(flecs::iter& it) {
                 }
                 it = dq.erase(it);
             } else {
-                {
-                    ++it;
-                }
+                ++it;
             }
         }
 
@@ -504,9 +512,12 @@ void NetworkClient::predict(flecs::iter& it) {
         double elapsed = std::min((util::now() - conn.newest_time) / TICK_DT, 15.0);
         double server_now = (conn.newest != 0U) ? static_cast<double>(conn.newest) + elapsed : 0.0;
         double rtt_ticks = std::min(conn.rtt, 1.0) / TICK_DT;
-        uint64_t ctarget = static_cast<uint64_t>(server_now + rtt_ticks) + static_cast<uint64_t>(BUFFER_TARGET);
+        conn.buffer_avg += (static_cast<double>(conn.buffer) - conn.buffer_avg) * 0.05;
+        double lead = std::clamp(BUFFER_TARGET - conn.buffer_avg, -2.0, 3.0);
+        uint64_t ctarget = static_cast<uint64_t>(server_now + rtt_ticks + BUFFER_TARGET + lead);
         if ((conn.newest != 0U) && (conn.client_tick + 8 < ctarget || conn.client_tick > ctarget + 8)) {
             conn.client_tick = ctarget;
+            conn.last_fire = std::min(conn.last_fire, conn.client_tick);
         }
 
         {
@@ -562,11 +573,12 @@ void NetworkClient::predict(flecs::iter& it) {
             uint32_t prediction = fire ? ++conn.predictions : 0;
             if (advance) {
                 uint64_t target = conn.client_tick++;
-                long long render = std::llround(conn.playback - conn.delay);
-                uint32_t view = render > 0 && std::cmp_greater(target, render) ? static_cast<uint32_t>(static_cast<long long>(target) - render) : 0;
+                double rtt_half = (std::min(conn.rtt, 1.0) / TICK_DT) * 0.5;
+                uint32_t view = static_cast<uint32_t>(std::max<long long>(0, std::llround(rtt_half + conn.delay)));
                 view = std::min(view, VIEW_MAX);
-                if (conn.commands.size() < 256) {
-                    conn.commands.push_back({.tick = target, .flags = f, .prediction = prediction, .view = view, .sent = util::now()});
+                conn.commands.push_back({.tick = target, .flags = f, .prediction = prediction, .view = view, .sent = util::now()});
+                while (conn.commands.size() > 256) {
+                    conn.commands.erase(conn.commands.begin());
                 }
             }
 
@@ -592,8 +604,11 @@ void NetworkClient::predict(flecs::iter& it) {
                         false);
                     interp.vis_error += e.pos - p;
                     interp.vis_error_angle += math::angle_difference(e.angle, a);
-                    if (glm::length(interp.vis_error) > 200.0F) {
+                    if (glm::length(interp.vis_error) > 120.0F) {
                         interp.vis_error = {0, 0};
+                    }
+                    if (std::fabs(interp.vis_error_angle) > 0.6F) {
+                        interp.vis_error_angle = 0.0F;
                     }
                 }
                 interp.predicted_prev = p;
@@ -642,7 +657,7 @@ void NetworkClient::upload(flecs::iter& it) {
         auto& conn = *probe;
 
         if (!conn.commands.empty()) {
-            constexpr int INPUT_BATCH = 3;
+            constexpr int INPUT_BATCH = 8;
             const auto& cmds = conn.commands;
             int n = static_cast<int>(cmds.size());
             int count = n < INPUT_BATCH ? n : INPUT_BATCH;
@@ -670,23 +685,7 @@ void NetworkClient::upload(flecs::iter& it) {
             serialize::Writer w = wire::message(Message::Input);
             serialize::encode(w, in);
             wire::send(conn.server, w, CHANNEL_UNRELIABLE, false);
-            if (has_fire) {
-                wire::send(conn.server, w, CHANNEL_RELIABLE, true);
-            }
-        }
-
-        if (!conn.hits.empty()) {
-            MessageHit hit;
-            for (auto& c : conn.hits) {
-                hit.claims.push_back({.prediction = c.prediction, .target = c.target});
-            }
-            serialize::Writer hw = wire::message(Message::Hit);
-            serialize::encode(hw, hit);
-            wire::send(conn.server, hw, CHANNEL_UNRELIABLE, false);
-            for (auto& c : conn.hits) {
-                c.sends--;
-            }
-            std::erase_if(conn.hits, [](const NetworkConnection::Claim& c) -> bool { return c.sends <= 0; });
+            (void)has_fire;
         }
 
         enet_host_flush(conn.host);

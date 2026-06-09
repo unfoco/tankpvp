@@ -9,7 +9,7 @@
 #include "component/input.h"
 #include "util/serialize.h"
 
-constexpr uint32_t NETWORK_PROTOCOL = 1;
+constexpr uint32_t NETWORK_PROTOCOL = 3;
 
 constexpr uint16_t MAX_PLAYERS = 32;
 
@@ -24,33 +24,33 @@ constexpr float HIT_MARGIN_SERVER = 4.0F;
 
 constexpr float CLAIM_MARGIN = 12.0F;
 
-constexpr int CLAIM_REDUNDANCY = 4;
+constexpr int CLAIM_REDUNDANCY = 10;
 
 enum class Message : uint8_t {
-    Ping,
-    Pong,
-    Ack,
-    Hello,
-    Welcome,
-    Registry,
-    CommandList,
-    Manifest,
-    AssetRequest,
-    AssetChunk,
-    Tileset,
-    TileChunk,
-    TileUnload,
-    TileSet,
-    Kick,
-    Chat,
-    Sound,
-    Hit,
-    Input,
-    Snapshot,
-    Structural,
-    ViewOpen,
-    ViewClose,
-    ViewEvent,
+    Ping = 0,
+    Pong = 1,
+    Ack = 2,
+    Hello = 3,
+    Welcome = 4,
+    Registry = 5,
+    CommandList = 6,
+    Manifest = 7,
+    AssetRequest = 8,
+    AssetChunk = 9,
+    Tileset = 10,
+    TileChunk = 11,
+    TileUnload = 12,
+    TileSet = 13,
+    Kick = 14,
+    Chat = 15,
+    Sound = 16,
+    Hit = 17,
+    Input = 18,
+    Snapshot = 19,
+    Structural = 20,
+    ViewOpen = 21,
+    ViewClose = 22,
+    ViewEvent = 23,
 };
 
 namespace wire {
@@ -62,8 +62,16 @@ inline auto message(Message kind) -> serialize::Writer {
 }
 
 inline void send(ENetPeer* peer, const serialize::Writer& w, uint8_t channel, bool reliable) {
+    if (peer == nullptr) {
+        return;
+    }
     ENetPacket* packet = enet_packet_create(w.data.data(), w.data.size(), reliable ? ENET_PACKET_FLAG_RELIABLE : 0);
-    enet_peer_send(peer, channel, packet);
+    if (packet == nullptr) {
+        return;
+    }
+    if (enet_peer_send(peer, channel, packet) < 0) {
+        enet_packet_destroy(packet);
+    }
 }
 
 }
@@ -143,10 +151,13 @@ struct MessageInputCommand {
 struct MessageHitClaim {
     uint32_t prediction = 0;
     uint64_t target = 0;
+    float x = 0, y = 0;
     template <class Archive>
     void serialize(Archive& a) {
         a & prediction;
         a & target;
+        a & x;
+        a & y;
     }
 };
 

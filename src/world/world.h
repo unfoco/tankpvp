@@ -21,5 +21,5 @@ struct World {
     static void resolve(flecs::iter& it);
     static void mesh(flecs::iter& it, size_t i, const TileChunk& chunk);
     static void drag(flecs::iter& it, size_t i, const Position& pos, VelocityLinear& vel);
-    static void collide(flecs::iter& it);
+    static void ballistics(flecs::iter& it);
 };

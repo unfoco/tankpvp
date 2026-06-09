@@ -93,10 +93,11 @@ void send_snapshot(flecs::world& world, const NetworkRegistry& reg, NetworkHost&
         }
         flecs::entity e = world.entity(relevant.at(nid));
         bool confirmed = repl.acked.contains(nid);
+        bool keyframe = (host.tick % 180) == (nid % 180);
 
         MessageEntity em;
         em.network_id = nid;
-        int n = collect(world, reg, host, repl, e, nid, !confirmed, em.components);
+        int n = collect(world, reg, host, repl, e, nid, !confirmed || keyframe, em.components);
         size_t esize = entity_size(em);
 
         if (!confirmed) {

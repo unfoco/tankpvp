@@ -11,7 +11,7 @@
 
 #include "component/network.h"
 
-constexpr double BUFFER_TARGET = 3.0;
+constexpr double BUFFER_TARGET = 4.0;
 
 struct Sample {
     glm::vec2 position{0};
@@ -72,6 +72,7 @@ struct NetworkConnection {
     std::unordered_map<uint16_t, uint16_t> remap;
     uint16_t registry_version = 0;
     uint32_t tile_version = UINT32_MAX;
+    std::vector<uint8_t> deferred_snapshot;
 
     std::vector<std::pair<uint64_t, uint64_t>> despawn_queue;
 
@@ -88,12 +89,6 @@ struct NetworkConnection {
     bool fire_pending = false;
     uint64_t last_fire = 0;
 
-    struct Claim {
-        uint32_t prediction = 0;
-        uint64_t target = 0;
-        int sends = 0;
-    };
-    std::vector<Claim> hits;
     uint32_t buffer = 0;
     double buffer_avg = 2.0;
     double rtt = 0;

@@ -128,21 +128,23 @@ void Network::host(flecs::entity e, const RequestHost& req) {
     world.set<NetworkHost>({.host = host, .tickrate = static_cast<uint16_t>((cfg != nullptr) ? cfg->tickrate : 60)});
     SDL_Log("network: hosting on port %u", req.port);
 
-    for (int i = 0; i < 50; i++) {
-        world.entity()
-            .set(Color{.value = {static_cast<float>(rand() % 255), static_cast<float>(rand() % 255), static_cast<float>(rand() % 255)}})
-            .set(Position{.value = {200.0F + static_cast<float>(rand() % 2000), 200.0F + static_cast<float>(rand() % 2000)}})
-            .set(Rotation{.angle = 0})
-            .set(VelocityLinear{})
-            .set(VelocityAngular{})
-            .set(CollisionBox{.height = 30, .width = 40})
-            .set(DampingLinear{.value = 8.0F})
-            .set(DampingAngular{.value = 1.0F})
-            .set<InputFlags>(i % 5 == 0 ? InputFlags::Left | InputFlags::Forward : InputFlags::None)
-            .add<Dynamic>()
-            .add<Tank>()
-            .add<History>()
-            .add<Replicated>();
+    if (std::getenv("TANKPVP_BOTS") != nullptr) {
+        for (int i = 0; i < 50; i++) {
+            world.entity()
+                .set(Color{.value = {static_cast<float>(rand() % 255), static_cast<float>(rand() % 255), static_cast<float>(rand() % 255)}})
+                .set(Position{.value = {200.0F + static_cast<float>(rand() % 2000), 200.0F + static_cast<float>(rand() % 2000)}})
+                .set(Rotation{.angle = 0})
+                .set(VelocityLinear{})
+                .set(VelocityAngular{})
+                .set(CollisionBox{.height = 30, .width = 40})
+                .set(DampingLinear{.value = 8.0F})
+                .set(DampingAngular{.value = 1.0F})
+                .set<InputFlags>(i % 5 == 0 ? InputFlags::Left | InputFlags::Forward : InputFlags::None)
+                .add<Dynamic>()
+                .add<Tank>()
+                .add<History>()
+                .add<Replicated>();
+        }
     }
 
     if (!dedicated) {

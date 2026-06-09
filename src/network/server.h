@@ -27,20 +27,22 @@ struct PendingInput {
     uint32_t view = 0;
     glm::vec2 muzzle{};
     float aim = 0;
+    double sent = 0;
 };
 
 struct Peer {
     ENetPeer* peer = nullptr;
     uint32_t id = 0;
     uint64_t simulated = 0;
+    uint64_t consumed = 0;
+    uint32_t starved = 0;
+    bool primed = false;
     uint32_t buffer = 0;
     double stamp = 0;
     bool welcomed = false;
     uint64_t last_fire = 0;
     std::string username;
     std::map<uint64_t, PendingInput> inputs;
-
-    std::unordered_map<uint32_t, uint64_t> claims;
 
     std::deque<uint64_t> asset_queue;
     uint32_t asset_offset = 0;

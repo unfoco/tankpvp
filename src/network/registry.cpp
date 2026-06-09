@@ -307,7 +307,13 @@ void NetworkRegistry::adopt(flecs::world& world, const std::vector<MessageCompon
         auto it = ids.find(d.name);
         if (it != ids.end()) {
             Component& existing = components[it->second - 1];
-            if (existing.wire != d.wire_size || existing.tag != (d.tag != 0)) {
+            bool layout_differs = existing.fields.size() != fields.size();
+            for (size_t fi = 0; !layout_differs && fi < fields.size(); ++fi) {
+                const auto& a = existing.fields[fi];
+                const auto& b = fields[fi];
+                layout_differs = a.name != b.name || a.kind != b.kind || a.count != b.count || a.quantum != b.quantum || a.bytes != b.bytes;
+            }
+            if (existing.wire != d.wire_size || existing.tag != (d.tag != 0) || layout_differs) {
                 if (!existing.tag && existing.entity != 0) {
                     world.entity(existing.entity).destruct();
                 }
@@ -343,7 +349,7 @@ void NetworkRegistry::adopt(flecs::world& world, const std::vector<MessageCompon
         c.id = static_cast<uint16_t>(components.size() + 1);
         ids[d.name] = c.id;
         remap[d.id] = c.id;
-        SDL_Log("registry: runtime-registered '%s' (%u fields, %u bytes) -- model B", d.name.c_str(), static_cast<unsigned>(c.fields.size()), static_cast<unsigned>(c.size));
+        SDL_Log("registry: runtime-registered '%s' (%u fields, %u bytes)", d.name.c_str(), static_cast<unsigned>(c.fields.size()), static_cast<unsigned>(c.size));
         components.push_back(std::move(c));
     }
 }
@@ -357,8 +363,13 @@ auto NetworkRegistry::register_runtime(flecs::world& world, const std::string& n
 
     ecs_struct_desc_t sd = {};
     sd.entity = comp;
-    std::vector<std::string> mnames(fields.size());
-    for (size_t i = 0; i < fields.size(); ++i) {
+    constexpr size_t MAX_MEMBERS = 32;
+    if (fields.size() > MAX_MEMBERS) {
+        SDL_Log("registry: component '%s' has %zu fields; clamping to %zu (wire layout will mismatch)", name.c_str(), fields.size(), MAX_MEMBERS);
+    }
+    size_t field_count = fields.size() < MAX_MEMBERS ? fields.size() : MAX_MEMBERS;
+    std::vector<std::string> mnames(field_count);
+    for (size_t i = 0; i < field_count; ++i) {
         mnames[i] = !fields[i].name.empty() ? fields[i].name : ("f" + std::to_string(i));
         sd.members[i].name = mnames[i].c_str();
         sd.members[i].type = kind_primitive(fields[i].kind);

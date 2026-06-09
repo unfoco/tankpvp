@@ -151,6 +151,9 @@ static void apply_welcome(flecs::world& world, NetworkConnection& conn, serializ
         world.entity().add<RequestQuit>();
         return;
     }
+    if (msg.tickrate != 0 && msg.tickrate != static_cast<uint16_t>(std::lround(1.0 / TICK_DT))) {
+        SDL_Log("network: server tickrate %u != client %d — timing will desync (only %d Hz supported)", msg.tickrate, static_cast<int>(std::lround(1.0 / TICK_DT)), static_cast<int>(std::lround(1.0 / TICK_DT)));
+    }
     conn.peer_id = msg.peer_id;
     conn.self = msg.controlled_entity;
     conn.registry_version = msg.registry_version;
@@ -191,15 +194,19 @@ static auto peek_is_bullet(const NetworkRegistry& reg, NetworkConnection& conn, 
     return false;
 }
 
-static void apply_snapshot(flecs::world& world, NetworkConnection& conn, serialize::Reader& r) {
+static void apply_snapshot(flecs::world& world, NetworkConnection& conn, serialize::Reader& r, std::span<const uint8_t> raw) {
     const auto& reg = world.get<NetworkRegistry>();
     auto snap = serialize::decode<MessageSnapshot>(r);
     if (!r.valid()) {
         return;
     }
     if (snap.registry_version != conn.registry_version) {
+        if (snap.registry_version > conn.registry_version && !raw.empty()) {
+            conn.deferred_snapshot.assign(raw.begin(), raw.end());
+        }
         return;
     }
+    conn.deferred_snapshot.clear();
     uint64_t tick = snap.tick;
     uint64_t ack = snap.acknowledged_tick;
     uint32_t buffer = snap.input_buffer;
@@ -218,13 +225,16 @@ static void apply_snapshot(flecs::world& world, NetworkConnection& conn, seriali
         auto expected = static_cast<double>(tick - conn.newest);
         conn.jitter = (conn.jitter * 0.9) + (std::abs(arrived - expected) * 0.1);
     }
+    if (conn.newest != 0 && tick < conn.newest) {
+        return;
+    }
     if (tick >= conn.newest) {
         conn.newest = tick;
         conn.newest_time = t;
     }
     conn.delay = std::clamp(2.0 + (conn.jitter * 2.0) + 1.0, 3.0, 12.0);
 
-    conn.simulated = ack;
+    conn.simulated = std::max(conn.simulated, ack);
     conn.buffer = buffer;
     auto& cmds = conn.commands;
     std::erase_if(cmds, [&](const Command& c) -> bool { return c.tick <= ack; });
@@ -287,6 +297,14 @@ static void apply_registry(flecs::world& world, NetworkConnection& conn, seriali
     registry.adopt(world, msg.components, conn.remap);
     conn.registry_version = msg.registry_version;
     SDL_Log("network: adopted registry update v%u (%zu components)", msg.registry_version, msg.components.size());
+
+    if (!conn.deferred_snapshot.empty()) {
+        std::vector<uint8_t> buf = std::move(conn.deferred_snapshot);
+        conn.deferred_snapshot.clear();
+        serialize::Reader rr(buf.data(), buf.size());
+        (void)rr.get<uint8_t>();
+        apply_snapshot(world, conn, rr, buf);
+    }
 }
 
 static void apply_manifest(flecs::world& world, serialize::Reader& r) {
@@ -311,7 +329,7 @@ void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* pack
             break;
         case Message::Snapshot:
             if (conn.welcomed) {
-                apply_snapshot(world, conn, r);
+                apply_snapshot(world, conn, r, {packet->data, packet->dataLength});
             }
             break;
         case Message::Structural:

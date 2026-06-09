@@ -17,16 +17,19 @@
 #include "component/physics.h"
 #include "component/script.h"
 #include "component/audio.h"
-#include "util/math.h"
 #include "component/asset.h"
 #include "component/world.h"
-#include "network.h"
+#include "util/math.h"
+
 #include "protocol.h"
 #include "registry.h"
 #include "snapshot.h"
 
 
 static auto peer_entity(flecs::world& world, ENetPeer* peer) -> flecs::entity {
+    if (peer == nullptr || peer->data == nullptr) {
+        return {};
+    }
     return world.entity(static_cast<flecs::entity_t>(reinterpret_cast<uintptr_t>(peer->data)));
 }
 
@@ -261,8 +264,10 @@ NetworkServer::NetworkServer(flecs::world& world) {
                     ++kit;
                 }
             }
-            for (int dy = -chunks; dy <= chunks; ++dy) {
-                for (int dx = -chunks; dx <= chunks; ++dx) {
+            constexpr int CHUNK_BUDGET = 8;
+            int spent = 0;
+            for (int dy = -chunks; dy <= chunks && spent < CHUNK_BUDGET; ++dy) {
+                for (int dx = -chunks; dx <= chunks && spent < CHUNK_BUDGET; ++dx) {
                     int64_t key = WorldGrid::key(ccx + dx, ccy + dy);
                     if (p.known_chunks.contains(key)) {
                         continue;
@@ -271,6 +276,7 @@ NetworkServer::NetworkServer(flecs::world& world) {
                     if (dit == grid->data.end()) {
                         if (grid->generated.insert(key).second) {
                             world.entity().set(RequestGenerateChunk{.cx = ccx + dx, .cy = ccy + dy});
+                            ++spent;
                         }
                         continue;
                     }
@@ -282,6 +288,7 @@ NetworkServer::NetworkServer(flecs::world& world) {
                     serialize::encode(w, cm);
                     wire::send(p.peer, w, CHANNEL_RELIABLE, true);
                     p.known_chunks.insert(key);
+                    ++spent;
                 }
             }
         });
@@ -473,6 +480,11 @@ static void on_hello(flecs::world& world, NetworkHost& host, ENetPeer* epeer, co
         return;
     }
 
+    if (world.count<Peer>() >= MAX_PLAYERS) {
+        kick(epeer, "Server full");
+        return;
+    }
+
     uint32_t pid = host.next_peer++;
 
     flecs::entity tank = world.entity()
@@ -557,30 +569,19 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
             if (!r.valid()) {
                 break;
             }
-            p.stamp = std::max(in.send_time, p.stamp);
             for (const auto& c : in.commands) {
                 if (c.tick_delta > in.newest_tick) {
                     continue;
                 }
                 uint64_t tick = in.newest_tick - c.tick_delta;
-                if (tick <= p.simulated || (static_cast<unsigned int>(p.inputs.contains(tick)) != 0U)) {
+                if (tick <= p.consumed || p.inputs.contains(tick)) {
                     continue;
                 }
-                p.inputs[tick] = {.tick = tick, .flags = c.flags, .prediction = c.prediction, .view = c.view, .muzzle = {c.muzzle_x, c.muzzle_y}, .aim = c.aim};
+                uint32_t view = c.view > VIEW_MAX ? VIEW_MAX : c.view;
+                p.inputs[tick] = {.tick = tick, .flags = c.flags, .prediction = c.prediction, .view = view, .muzzle = {c.muzzle_x, c.muzzle_y}, .aim = c.aim, .sent = in.send_time};
             }
             while (p.inputs.size() > 128) {
                 p.inputs.erase(p.inputs.begin());
-            }
-            break;
-        }
-        case Message::Hit: {
-            Peer& p = pe.get_mut<Peer>();
-            auto hit = serialize::decode<MessageHit>(r);
-            if (!r.valid()) {
-                break;
-            }
-            for (const auto& c : hit.claims) {
-                p.claims[c.prediction] = c.target;
             }
             break;
         }
@@ -689,13 +690,12 @@ void NetworkServer::pump(flecs::iter& it) {
         if ((probe == nullptr) || (probe->host == nullptr)) {
             return;
         }
-        auto& host = *probe;
-
-        host.tick++;
-        world.set<ServerClock>({.tick = host.tick, .running = true});
+        uint64_t host_tick = ++probe->tick;
+        ENetHost* sock = probe->host;
+        world.set<ServerClock>({.tick = host_tick, .running = true});
 
         ENetEvent ev;
-        while (enet_host_service(host.host, &ev, 0) > 0) {
+        while (enet_host_service(sock, &ev, 0) > 0) {
             switch (ev.type) {
                 case ENET_EVENT_TYPE_CONNECT:
                     break;
@@ -717,49 +717,43 @@ void NetworkServer::pump(flecs::iter& it) {
             }
             flecs::entity tank = pe.target<Controls>();
             if (tank && tank.is_alive()) {
-                auto hit = p.inputs.find(host.tick);
-                if (hit != p.inputs.end()) {
-                    uint32_t flags = hit->second.flags;
+                constexpr size_t CUSHION = 3;
+                if (!p.primed && p.inputs.size() < CUSHION) {
+                    tank.set<InputFlags>({0});
+                    tank.set<Firing>({.prediction = 0, .view = 0});
+                } else if (!p.inputs.empty()) {
+                    p.primed = true;
+                    auto front = p.inputs.begin();
+                    const PendingInput& cmd = front->second;
+                    uint32_t flags = cmd.flags;
                     bool shoot = (flags & static_cast<uint32_t>(InputFlags::Shoot)) != 0;
                     const auto* ws = tank.try_get<WeaponStats>();
                     uint64_t cooldown = ws ? ws->cooldown : WeaponStats{}.cooldown;
-                    if (shoot && host.tick < p.last_fire + cooldown) {
+                    if (shoot && host_tick < p.last_fire + cooldown) {
                         flags &= ~static_cast<uint32_t>(InputFlags::Shoot);
                         shoot = false;
                     }
                     if (shoot) {
-                        p.last_fire = host.tick;
+                        p.last_fire = host_tick;
                     }
                     tank.set<InputFlags>({flags});
-                    tank.set<Firing>({.prediction = hit->second.prediction, .view = hit->second.view, .muzzle = hit->second.muzzle, .aim = hit->second.aim, .aimed = shoot});
-                    tank.set<ViewLag>({hit->second.view > VIEW_MAX ? VIEW_MAX : hit->second.view});
+                    tank.set<Firing>({.prediction = cmd.prediction, .view = cmd.view, .muzzle = cmd.muzzle, .aim = cmd.aim, .aimed = shoot});
+                    tank.set<ViewLag>({cmd.view});
+                    p.consumed = cmd.tick;
+                    p.stamp = cmd.sent;
+                    p.starved = 0;
+                    p.inputs.erase(front);
                 } else {
-                    uint32_t last = tank.has<InputFlags>() ? tank.get<InputFlags>().value : 0U;
+                    ++p.starved;
+                    uint32_t last = (p.starved <= 2 && tank.has<InputFlags>()) ? tank.get<InputFlags>().value : 0U;
                     tank.set<InputFlags>({last & ~static_cast<uint32_t>(InputFlags::Shoot)});
                     tank.set<Firing>({.prediction = 0, .view = 0});
                 }
             }
-            while (!p.inputs.empty() && p.inputs.begin()->first <= host.tick) {
-                p.inputs.erase(p.inputs.begin());
-            }
-            p.simulated = host.tick;
+            p.simulated = host_tick;
             p.buffer = static_cast<uint32_t>(p.inputs.size());
         });
     }
-}
-
-static auto ratify_claim(glm::vec2 bp, glm::vec2 vel, uint32_t lag, uint64_t tick, const History& h, const CollisionBox& box) -> bool {
-    float hw = (box.width * 0.5F) + CLAIM_MARGIN;
-    float hh = (box.height * 0.5F) + CLAIM_MARGIN;
-    for (int i = 0; i < h.count; i++) {
-        const TransformSnapshot& s = h.ring[i];
-        double bullet_tick = static_cast<double>(s.tick) + static_cast<double>(lag);
-        glm::vec2 bpos = bp + vel * static_cast<float>((bullet_tick - static_cast<double>(tick)) * TICK_DT);
-        if (math::point_in_box(bpos, s.pos, s.rot, hw, hh)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 void NetworkServer::hits(flecs::iter& it) {
@@ -776,13 +770,6 @@ void NetworkServer::hits(flecs::iter& it) {
 
         std::vector<flecs::entity> dead_bullets;
         std::vector<flecs::entity> dead_tanks;
-        struct OwnedBullet {
-            flecs::entity e;
-            glm::vec2 pos;
-            glm::vec2 vel;
-            uint32_t lag;
-        };
-        std::unordered_map<uint64_t, OwnedBullet> remote;
 
         q.bullets.each([&](flecs::entity bullet, const Position& bp, const Owner& o) -> void {
             flecs::entity firer = bullet.parent();
@@ -793,15 +780,6 @@ void NetworkServer::hits(flecs::iter& it) {
                 if (const auto* vl = firer.try_get<ViewLag>()) {
                     lag = vl->ticks;
                 }
-            }
-
-            if (o.peer >= 1) {
-                glm::vec2 vel{0};
-                if (const auto* v = bullet.try_get<VelocityLinear>()) {
-                    vel = v->value;
-                }
-                remote[(static_cast<uint64_t>(o.peer) << 32) | o.prediction] = {.e = bullet, .pos = bp.value, .vel = vel, .lag = lag};
-                return;
             }
 
             uint64_t view = tick > lag ? tick - lag : 0;
@@ -849,29 +827,6 @@ void NetworkServer::hits(flecs::iter& it) {
                 dead_bullets.push_back(bullet);
                 dead_tanks.push_back(victim);
             }
-        });
-
-        std::unordered_map<uint64_t, flecs::entity> tank_by_id;
-        q.tanks_by_id.each([&](flecs::entity e, const NetworkId& id, const History&, const CollisionBox&) -> void { tank_by_id[id.value] = e; });
-        q.peers.each([&](flecs::entity, Peer& p, Interest&, Replication&) -> void {
-            for (const auto& [prediction, nid] : p.claims) {
-                auto bit = remote.find((static_cast<uint64_t>(p.id) << 32) | prediction);
-                if (bit == remote.end()) {
-                    continue;
-                }
-                auto tit = tank_by_id.find(nid);
-                if (tit == tank_by_id.end()) {
-                    continue;
-                }
-                flecs::entity tank = tit->second;
-                const auto* h = tank.try_get<History>();
-                const auto* box = tank.try_get<CollisionBox>();
-                if (h && box && ratify_claim(bit->second.pos, bit->second.vel, bit->second.lag, tick, *h, *box)) {
-                    dead_bullets.push_back(bit->second.e);
-                    dead_tanks.push_back(tank);
-                }
-            }
-            p.claims.clear();
         });
 
         for (auto e : dead_bullets) {
