@@ -9,9 +9,11 @@
 #include "component/input.h"
 #include "util/serialize.h"
 
-constexpr uint32_t NETWORK_PROTOCOL = 4;
+constexpr uint32_t NETWORK_PROTOCOL = 1;
 
 constexpr uint16_t MAX_PLAYERS = 32;
+
+constexpr uint32_t QUERY_MAGIC = 0x544E4B51;
 
 constexpr uint8_t CHANNEL_RELIABLE = 0;
 constexpr uint8_t CHANNEL_UNRELIABLE = 1;

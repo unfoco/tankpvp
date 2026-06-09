@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -537,24 +538,6 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
         if (r.valid()) {
             on_hello(world, world.get_mut<NetworkHost>(), epeer, hello.username);
         }
-        return;
-    }
-    if (kind == Message::Ping) {
-        auto ping = serialize::decode<MessagePing>(r);
-        if (!r.valid()) {
-            return;
-        }
-        serialize::Writer w = wire::message(Message::Pong);
-        MessagePong pong{
-            .protocol = NETWORK_PROTOCOL,
-            .token = ping.token,
-            .players = static_cast<uint16_t>(world.count<Peer>()),
-            .max_players = MAX_PLAYERS,
-            .tickrate = world.get<NetworkHost>().tickrate,
-        };
-        serialize::encode(w, pong);
-        wire::send(epeer, w, CHANNEL_RELIABLE, true);
-        enet_peer_disconnect_later(epeer, 0);
         return;
     }
     flecs::entity pe = peer_entity(world, epeer);

@@ -102,6 +102,7 @@ struct ScriptState {
     std::unordered_map<std::string, LuaRef> modules;
     int timer_next = 0;
     bool reload_pending = false;
+    bool loaded = false;
     std::map<std::string, std::vector<std::string>> api_decls;
     std::map<std::string, std::vector<std::string>> api_types;
     std::vector<ScriptTimer> timers;
@@ -123,6 +124,7 @@ struct ScriptState {
 
     void swap(ScriptState& other) noexcept {
         std::swap(lua, other.lua);
+        std::swap(loaded, other.loaded);
         std::swap(view_next, other.view_next);
         handlers.swap(other.handlers);
         commands.swap(other.commands);

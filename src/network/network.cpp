@@ -20,6 +20,35 @@
 #include "registry.h"
 #include "server.h"
 
+static uint16_t g_query_tickrate = 60;
+
+static int ENET_CALLBACK query_intercept(ENetHost* host, ENetEvent*) {
+    if (host->receivedDataLength < sizeof(uint32_t)) {
+        return 0;
+    }
+    serialize::Reader r(host->receivedData, host->receivedDataLength);
+    if (r.get<uint32_t>() != QUERY_MAGIC) {
+        return 0;
+    }
+    auto ping = serialize::decode<MessagePing>(r);
+    if (!r.valid()) {
+        return 1;
+    }
+    serialize::Writer w;
+    w.put<uint32_t>(QUERY_MAGIC);
+    MessagePong pong{
+        .protocol = NETWORK_PROTOCOL,
+        .token = ping.token,
+        .players = static_cast<uint16_t>(host->connectedPeers),
+        .max_players = MAX_PLAYERS,
+        .tickrate = g_query_tickrate,
+    };
+    serialize::encode(w, pong);
+    ENetBuffer out{.data = w.data.data(), .dataLength = w.data.size()};
+    enet_socket_send(host->socket, &host->receivedAddress, &out, 1);
+    return 1;
+}
+
 Network::Network(flecs::world& world) {
     if (enet_initialize() != 0) {
         SDL_Log("network: failed to initialize ENet");
@@ -128,7 +157,10 @@ void Network::host(flecs::entity e, const RequestHost& req) {
 
     const auto* cfg = world.try_get<NetworkConfig>();
     bool dedicated = (cfg != nullptr) && cfg->role == NetworkRole::Server;
-    world.set<NetworkHost>({.host = host, .tickrate = static_cast<uint16_t>((cfg != nullptr) ? cfg->tickrate : 60)});
+    auto tickrate = static_cast<uint16_t>((cfg != nullptr) ? cfg->tickrate : 60);
+    g_query_tickrate = tickrate;
+    host->intercept = query_intercept;
+    world.set<NetworkHost>({.host = host, .tickrate = tickrate});
     SDL_Log("network: hosting on port %u", req.port);
 
     if (std::getenv("TANKPVP_BOTS") != nullptr) {

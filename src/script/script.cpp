@@ -376,6 +376,7 @@ static void clear_loaded(ScriptState& state) {
     state.enum_aliases.clear();
     state.modules.clear();
     state.declared_this_load.clear();
+    state.loaded = false;
 }
 
 static void unload_scripts(flecs::world world) {
@@ -402,6 +403,7 @@ static void reload_scripts(flecs::world world) {
     wire_component_observers(world);
     world.set<CommandBook>({.commands = Command::command_list(world)});
     world.entity().add<RequestReload>();
+    state.loaded = true;
     SDL_Log("[script] reloaded mods");
 }
 
@@ -1159,8 +1161,13 @@ Script::Script(flecs::world& world) {
         wire_component_observers(world);
         world.set<CommandBook>({.commands = Command::command_list(world)});
         world.entity().add<RequestReload>();
+        ScriptState::of(world).loaded = true;
     });
-    world.observer().with<RequestQuit>().event(flecs::OnAdd).each([](flecs::entity e) -> void { unload_scripts(e.world()); });
+    world.observer().with<RequestQuit>().event(flecs::OnAdd).each([](flecs::entity e) -> void {
+        if (ScriptState::of(e.world()).loaded) {
+            unload_scripts(e.world());
+        }
+    });
 
     world.observer<const RequestTileUpdate>("script::tile_update").event(flecs::OnSet).each([](flecs::entity e, const RequestTileUpdate& req) -> void {
         ScriptState& state = ScriptState::of(e.world());
