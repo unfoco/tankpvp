@@ -142,12 +142,12 @@ void prediction_smooth(const flecs::query<const NetworkId, Position, Rotation>& 
             ta = r.angle;
         }
 
-        if (!o->vinit) {
+        if (!o->vinit || e.has<Teleported>()) {
             o->vpos = tp;
             o->vang = ta;
             o->vinit = true;
-        }
-        if (!present && glm::length(o->vpos - tp) < 0.5F) {
+            e.remove<Teleported>();
+        } else if (!present && glm::length(o->vpos - tp) < 0.5F) {
             o->vpos = tp;
             o->vang = ta;
         } else {
@@ -452,8 +452,7 @@ void NetworkClient::interpolate(flecs::iter& it) {
             if (!in.ready) {
                 return;
             }
-            if (e.has<Bullet>() && e.has<VelocityLinear>()) {
-                glm::vec2 vel = e.get<VelocityLinear>().value;
+            if (e.has<Bullet>()) {
                 const Sample& anchor = in.at(0);
                 double age = render - static_cast<double>(anchor.tick);
                 if (e.has<Latent>()) {
@@ -465,9 +464,6 @@ void NetworkClient::interpolate(flecs::iter& it) {
                         return;
                     }
                 }
-                pos.value = anchor.position + vel * static_cast<float>(std::max(age, 0.0) * TICK_DT);
-                rot.angle = in.angle;
-                return;
             }
             const Sample* lo = nullptr;
             const Sample* hi = nullptr;

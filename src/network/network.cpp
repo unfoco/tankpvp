@@ -34,6 +34,7 @@ Network::Network(flecs::world& world) {
     world.component<MovementStats>().member<float>("speed").member<float>("turn");
     world.component<WeaponStats>().member<uint32_t>("cooldown").member<float>("speed").member<float>("muzzle").member<float>("life");
     world.component<Bullet>().member<float>("speed");
+    world.component<Spawn>().member<uint16_t>("epoch");
     world.component<Sprite>()
         .member<uint64_t>("texture", SPRITE_LAYERS)
         .member<float>("offset_x", SPRITE_LAYERS)
@@ -48,6 +49,7 @@ Network::Network(flecs::world& world) {
     world.component<Owner>().add<Networked>();
     world.component<Tank>().add<Networked>();
     world.component<Bullet>().add<Networked>();
+    world.component<Spawn>().add<Networked>();
     world.component<MovementStats>().add<Networked>();
     world.component<WeaponStats>().add<Networked>();
     world.component<CollisionBox>().add<Networked>();
@@ -67,6 +69,7 @@ Network::Network(flecs::world& world) {
     world.observer().with<RequestQuit>().event(flecs::OnAdd).each([](flecs::entity e) -> void { Network::quit(e, RequestQuit{}); });
 
     world.observer("network::tank_sprite").with<Tank>().without<Sprite>().event(flecs::OnAdd).each([](flecs::entity e) -> void { e.set<Sprite>(tank_default_sprite()); });
+    world.observer("network::tank_spawn").with<Tank>().without<Spawn>().event(flecs::OnAdd).each([](flecs::entity e) -> void { e.set<Spawn>({}); });
 
     world.system<const RequestSound>("network::sounds").kind(flecs::OnStore).each([](flecs::entity e, const RequestSound&) -> void { e.destruct(); });
 

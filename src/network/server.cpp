@@ -804,7 +804,18 @@ void NetworkServer::hits(flecs::iter& it) {
             float vd2 = 1e30F;
             q.tanks.each([&](flecs::entity tank, const History& h, const CollisionBox& box) -> void {
                 bool is_self = (tank == firer);
-                const TransformSnapshot* s = h.at(view);
+                TransformSnapshot self_now;
+                const TransformSnapshot* s = nullptr;
+                if (is_self) {
+                    if (fpos == nullptr) {
+                        return;
+                    }
+                    const auto* frot = firer.try_get<Rotation>();
+                    self_now = {.tick = tick, .pos = fpos->value, .rot = (frot != nullptr) ? frot->angle : 0.0F};
+                    s = &self_now;
+                } else {
+                    s = h.at(view);
+                }
                 if (!s) {
                     return;
                 }
@@ -838,9 +849,34 @@ void NetworkServer::hits(flecs::iter& it) {
             if (!e.is_alive()) {
                 continue;
             }
+            {
+                glm::vec2 dp{0};
+                float da = 0;
+                glm::vec3 dc{255, 255, 255};
+                if (const auto* pp = e.try_get<Position>()) {
+                    dp = pp->value;
+                }
+                if (const auto* rr = e.try_get<Rotation>()) {
+                    da = rr->angle;
+                }
+                if (const auto* cc = e.try_get<Color>()) {
+                    dc = cc->value;
+                }
+                MessageEffect fx{.x = dp.x, .y = dp.y, .angle = da, .r = static_cast<uint8_t>(dc.r), .g = static_cast<uint8_t>(dc.g), .b = static_cast<uint8_t>(dc.b)};
+                serialize::Writer w = wire::message(Message::Effect);
+                serialize::encode(w, fx);
+                world.query_builder<Peer>().build().each([&](const Peer& pr) -> void {
+                    if (pr.welcomed && (pr.peer != nullptr)) {
+                        wire::send(pr.peer, w, CHANNEL_RELIABLE, true);
+                    }
+                });
+            }
             if (const auto* o = e.try_get<Owner>()) {
                 uint32_t pid = o->peer;
                 e.set(Position{.value = {300.0F + (static_cast<float>(pid % 8) * 70.0F), 300.0F}}).set(Rotation{.angle = 0}).set(VelocityLinear{}).set(VelocityAngular{}).add<Teleport>();
+                if (auto* sp = e.try_get_mut<Spawn>()) {
+                    sp->epoch++;
+                }
             } else {
                 e.destruct();
             }

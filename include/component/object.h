@@ -22,6 +22,10 @@ struct Decay {
 
 struct Tank {};
 
+struct Spawn {
+    uint16_t epoch = 0;
+};
+
 struct Bullet {
     float speed = 300.0F;
 };

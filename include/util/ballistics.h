@@ -34,6 +34,15 @@ inline auto step(const WorldGrid& grid, const Tileset& tileset, glm::vec2& pos, 
     hit = nullptr;
 
     if (solid(tile_at(grid, tileset, pos.x, pos.y))) {
+        glm::vec2 dir = (glm::length(vel) > 1e-4F) ? glm::normalize(vel) : glm::vec2{1.0F, 0.0F};
+        for (int k = 1; k <= 8; ++k) {
+            glm::vec2 test = pos - (dir * (TILE_SIZE * 0.2F * static_cast<float>(k)));
+            if (!solid(tile_at(grid, tileset, test.x, test.y))) {
+                pos = test;
+                vel = -vel;
+                return Step::Bounce;
+            }
+        }
         return Step::Absorb;
     }
 

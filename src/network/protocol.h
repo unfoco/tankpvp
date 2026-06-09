@@ -9,7 +9,7 @@
 #include "component/input.h"
 #include "util/serialize.h"
 
-constexpr uint32_t NETWORK_PROTOCOL = 3;
+constexpr uint32_t NETWORK_PROTOCOL = 4;
 
 constexpr uint16_t MAX_PLAYERS = 32;
 
@@ -51,6 +51,7 @@ enum class Message : uint8_t {
     ViewOpen = 21,
     ViewClose = 22,
     ViewEvent = 23,
+    Effect = 24,
 };
 
 namespace wire {
@@ -450,6 +451,24 @@ struct MessageSound {
         a & x;
         a & y;
         a & volume;
+    }
+};
+
+struct MessageEffect {
+    float x = 0;
+    float y = 0;
+    float angle = 0;
+    uint8_t r = 255;
+    uint8_t g = 255;
+    uint8_t b = 255;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & x;
+        a & y;
+        a & angle;
+        a & r;
+        a & g;
+        a & b;
     }
 };
 

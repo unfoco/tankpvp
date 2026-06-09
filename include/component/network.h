@@ -118,6 +118,8 @@ struct ViewLag {
 
 struct Latent {};
 
+struct Teleported {};
+
 struct Dying {
     uint64_t revive = 0;
 };

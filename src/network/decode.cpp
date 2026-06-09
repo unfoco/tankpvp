@@ -14,6 +14,7 @@
 #include "component/physics.h"
 #include "component/script.h"
 #include "component/audio.h"
+#include "component/effect.h"
 #include "util/math.h"
 #include "util/time.h"
 #include "component/asset.h"
@@ -84,6 +85,8 @@ static void apply_components(flecs::world& world, const NetworkRegistry& reg, Ne
     bool is_bullet = false;
     glm::vec2 pos{0};
     float rot = 0;
+    bool had_spawn = e.has<Spawn>();
+    uint16_t old_epoch = had_spawn ? e.get<Spawn>().epoch : 0;
 
     for (const auto& cb : comps) {
         auto rit = conn.remap.find(cb.server_id);
@@ -115,6 +118,11 @@ static void apply_components(flecs::world& world, const NetworkRegistry& reg, Ne
         bvel = math::heading(rot) * e.get<Bullet>().speed;
     }
 
+    bool teleported = had_spawn && e.is_alive() && e.has<Spawn>() && e.get<Spawn>().epoch != old_epoch;
+    if (teleported) {
+        e.add<Teleported>();
+    }
+
     if (e.is_alive() && (got_pos || got_rot)) {
         bool has_interp = e.has<Interpolation>();
         bool ready = has_interp && e.get<Interpolation>().ready;
@@ -128,7 +136,12 @@ static void apply_components(flecs::world& world, const NetworkRegistry& reg, Ne
                 e.set<Rotation>({a});
             }
             if (has_interp) {
-                e.get_mut<Interpolation>().push(p, a, static_cast<double>(tick));
+                auto& in = e.get_mut<Interpolation>();
+                if (teleported) {
+                    in.count = 0;
+                    in.head = 0;
+                }
+                in.push(p, a, static_cast<double>(tick));
             }
         }
     }
@@ -396,6 +409,13 @@ void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* pack
             auto msg = serialize::decode<MessageSound>(r);
             if (r.valid()) {
                 world.entity().set<RequestSound>({.asset = msg.asset, .x = msg.x, .y = msg.y, .volume = msg.volume});
+            }
+            break;
+        }
+        case Message::Effect: {
+            auto msg = serialize::decode<MessageEffect>(r);
+            if (r.valid()) {
+                world.entity().set<RequestEffect>({.position = {msg.x, msg.y}, .angle = msg.angle, .r = msg.r, .g = msg.g, .b = msg.b});
             }
             break;
         }

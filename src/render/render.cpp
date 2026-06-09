@@ -3,6 +3,9 @@
 #include <SDL3_image/SDL_image.h>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <string>
 
 #include "component/event.h"
 #include "component/network.h"
@@ -23,7 +26,8 @@ Render::Render(flecs::world& world) {
     auto tiles = world.entity("render::tiles_phase").add<Rendering>().depends_on(camera);
     auto tanks = world.entity("render::tanks").add<Rendering>().depends_on(tiles);
     auto bullets = world.entity("render::bullets").add<Rendering>().depends_on(tanks);
-    auto view = world.entity("render::view").add<Rendering>().depends_on(bullets);
+    auto effects = world.entity("render::effects").add<Rendering>().depends_on(bullets);
+    auto view = world.entity("render::view").add<Rendering>().depends_on(effects);
     auto present = world.entity("render::present").add<Rendering>().depends_on(view);
 
     world.system<RenderState>("render::start").kind(begin).each(Render::start);
@@ -31,7 +35,11 @@ Render::Render(flecs::world& world) {
     world.system<RenderState, const TileChunk>("render::tiles").kind(tiles).each(Render::tiles);
     world.system<RenderState, const Position, const Rotation, const Sprite, const Color*>("render::sprite").kind(tanks).without<Dying>().each(Render::sprite);
     world.system<RenderState, Position>("render::bullet").kind(bullets).with<Bullet>().without<Latent>().each(Render::bullet);
+    world.system<RenderState, const Particle>("render::particles").kind(effects).each(Render::particles);
     world.system<RenderState, InterfaceCommands>("render::interface").kind(view).each(Render::interface);
+
+    world.observer<const RequestEffect>("render::burst").event(flecs::OnSet).each(Render::burst);
+    world.system<Particle>("render::age").kind(flecs::OnUpdate).each(Render::age);
     world.system<RenderState>("render::finish").kind(present).each(Render::finish);
 
     flecs::entity pipeline = world.pipeline().with(flecs::System).with<Rendering>().cascade(flecs::DependsOn).build();
@@ -117,10 +125,40 @@ void Render::init(flecs::iter& it, size_t) {
     SDL_Texture* tankTurretTexture = IMG_LoadTexture(renderer, "asset/texture/tank/turret0.png");
     SDL_Texture* weaponBulletTexture = IMG_LoadTexture(renderer, "asset/texture/weapon/bullet.png");
 
+    constexpr int SMOKE = 32;
+    SDL_Texture* smokeTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, SMOKE, SMOKE);
+    if (smokeTexture != nullptr) {
+        SDL_SetTextureBlendMode(smokeTexture, SDL_BLENDMODE_BLEND);
+        std::array<uint8_t, SMOKE * SMOKE * 4> pixels{};
+        for (int y = 0; y < SMOKE; ++y) {
+            for (int x = 0; x < SMOKE; ++x) {
+                float dx = (static_cast<float>(x) + 0.5F - (SMOKE / 2.0F)) / (SMOKE / 2.0F);
+                float dy = (static_cast<float>(y) + 0.5F - (SMOKE / 2.0F)) / (SMOKE / 2.0F);
+                float fall = std::clamp(1.0F - std::sqrt((dx * dx) + (dy * dy)), 0.0F, 1.0F);
+                size_t idx = (static_cast<size_t>(y) * SMOKE + static_cast<size_t>(x)) * 4;
+                pixels[idx + 0] = 255;
+                pixels[idx + 1] = 255;
+                pixels[idx + 2] = 255;
+                pixels[idx + 3] = static_cast<uint8_t>(fall * fall * 255.0F);
+            }
+        }
+        SDL_UpdateTexture(smokeTexture, nullptr, pixels.data(), SMOKE * 4);
+    }
+
+    SDL_Texture* fragments[10] = {};
+    int fragmentCount = 0;
+    for (int i = 0; i < 10; ++i) {
+        std::string path = "asset/texture/tank/fragment" + std::to_string(i) + ".png";
+        SDL_Texture* frag = IMG_LoadTexture(renderer, path.c_str());
+        if (frag != nullptr) {
+            fragments[fragmentCount++] = frag;
+        }
+    }
+
     it.world().set<WindowEvents>({
         .target = window,
     });
-    it.world().set(RenderState{
+    RenderState state{
         .window = window,
         .target = renderer,
         .clay =
@@ -132,7 +170,13 @@ void Render::init(flecs::iter& it, size_t) {
         .tankBaseTexture = tankBaseTexture,
         .tankTurretTexture = tankTurretTexture,
         .weaponBulletTexture = weaponBulletTexture,
-    });
+        .smokeTexture = smokeTexture,
+    };
+    for (int i = 0; i < fragmentCount; ++i) {
+        state.fragmentTextures[i] = fragments[i];
+    }
+    state.fragmentCount = fragmentCount;
+    it.world().set<RenderState>(state);
     it.world().set<SpriteCache>({});
 }
 

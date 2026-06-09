@@ -11,6 +11,7 @@
 #include <unordered_map>
 
 #include "component/asset.h"
+#include "component/effect.h"
 #include "component/interface.h"
 #include "component/object.h"
 #include "component/world.h"
@@ -42,6 +43,9 @@ struct RenderState {
     SDL_Texture* tankBaseTexture;
     SDL_Texture* tankTurretTexture;
     SDL_Texture* weaponBulletTexture;
+    SDL_Texture* smokeTexture = nullptr;
+    SDL_Texture* fragmentTextures[10] = {};
+    int fragmentCount = 0;
 
     SDL_Texture* frameA = nullptr;
     SDL_Texture* frameB = nullptr;
@@ -60,6 +64,19 @@ struct SpriteCache {
     std::unordered_map<uint64_t, SDL_Texture*> textures;
 };
 
+struct Particle {
+    glm::vec2 pos{0};
+    glm::vec2 vel{0};
+    float angle = 0;
+    float spin = 0;
+    float life = 0;
+    float max_life = 1;
+    float size = 16;
+    int fragment = 0;
+    Uint8 r = 255, g = 255, b = 255;
+    bool smoke = false;
+};
+
 struct Render {
     Render(flecs::world& world);
 
@@ -75,4 +92,8 @@ struct Render {
     static void bullet(flecs::iter& it, size_t i, RenderState& render, const Position& pos);
     static void sprite(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col);
     static void tiles(flecs::iter& it, size_t i, const RenderState& render, const TileChunk& chunk);
+
+    static void burst(flecs::entity e, const RequestEffect& req);
+    static void age(flecs::iter& it, size_t i, Particle& p);
+    static void particles(flecs::iter& it, size_t i, const RenderState& render, const Particle& p);
 };
