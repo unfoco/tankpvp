@@ -43,7 +43,7 @@ static auto to_view_widget(const MessageViewWidget& w) -> ViewWidget {
     out.bg_a = w.bg_a;
     out.field = w.field;
     for (const auto& b : w.blips) {
-        out.blips.push_back({.x = b.x, .y = b.y, .r = b.r, .g = b.g, .b = b.b});
+        out.blips.push_back({.x = b.x, .y = b.y, .radius = b.radius, .r = b.r, .g = b.g, .b = b.b, .a = b.a});
     }
     for (const auto& c : w.children) {
         out.children.push_back(to_view_widget(c));
@@ -416,6 +416,18 @@ void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* pack
             auto msg = serialize::decode<MessageSound>(r);
             if (r.valid()) {
                 world.entity().set<RequestSound>({.asset = msg.asset, .x = msg.x, .y = msg.y, .volume = msg.volume, .global = msg.global});
+            }
+            break;
+        }
+        case Message::Particles: {
+            auto msg = serialize::decode<MessageParticles>(r);
+            if (r.valid()) {
+                world.entity().set<RequestParticles>({
+                    .position = {msg.x, msg.y}, .dir = msg.dir, .spread = msg.spread, .count = msg.count, .texture = msg.texture,
+                    .speed_min = msg.speed_min, .speed_max = msg.speed_max, .size_min = msg.size_min, .size_max = msg.size_max,
+                    .life_min = msg.life_min, .life_max = msg.life_max, .gravity = msg.gravity, .drag = msg.drag, .spin = msg.spin, .grow = msg.grow,
+                    .r = msg.r, .g = msg.g, .b = msg.b, .alpha = msg.alpha, .additive = msg.additive != 0,
+                });
             }
             break;
         }

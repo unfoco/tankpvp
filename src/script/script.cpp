@@ -23,6 +23,8 @@
 #include "component/world.h"
 #include "component/audio.h"
 #include "component/network.h"
+#include "component/effect.h"
+#include "component/render.h"
 #include "component/object.h"
 #include "component/physics.h"
 #include "component/script.h"
@@ -289,7 +291,7 @@ static void generate_types(flecs::world world) {
     out << "export type Vec = { x: number, y: number }\n";
     out << "export type RaycastHit = { entity: Entity, point: Vec, normal: Vec, fraction: number }\n";
     out << "export type AreaHit = { entity: Entity, distance: number }\n";
-    out << "export type Tile = { read id: number }\n";
+    out << "export type Tile = { id: number }\n";
     out << "export type TileDef = { texture: string?, solid: boolean?, hp: number?, restitution: number?, friction: number?, drag: number? }\n";
     out << "declare function Tile(def: TileDef): Tile\n";
     out << "export type Sub = { cancel: (self: Sub) -> () }\n";
@@ -335,7 +337,18 @@ static void generate_types(flecs::world world) {
     }
     out << "\n";
 
+    std::unordered_set<std::string> api_names;
+    for (const auto& [type, lines] : state.api_types) {
+        api_names.insert(type);
+    }
+    std::unordered_set<std::string> enum_names;
+    for (const EngineEnum& e : Reflect::engine_enums()) {
+        enum_names.insert(e.name);
+    }
     for (const std::string& name : names) {
+        if (enum_names.contains(name)) {
+            continue;
+        }
         flecs::entity_t comp = state.components[name];
         const auto* layout = ecs_get(world.c_ptr(), comp, EcsStruct);
         std::string value;
@@ -351,7 +364,7 @@ static void generate_types(flecs::world world) {
             fields.emplace_back(member->name);
         }
         bool is_vec = fields.size() == 2 && fields[0] == "x" && fields[1] == "y";
-        if (!state.author_components.contains(name) && name != "Replicated") {
+        if (!state.author_components.contains(name) && name != "Replicated" && !api_names.contains(name)) {
             out << "export type " << name << " = " << (is_vec ? "Vec" : "{ " + value + " }") << "\n";
         }
         out << "declare " << name << ": { " << binding << " }\n";
@@ -623,6 +636,65 @@ static void setup_api(flecs::world world, lua_State* lua) {
             .b = static_cast<uint8_t>(Lua::ref_number(col, "b", 255.0)),
         });
     });
+    api_fn(worldns, state, "world", "particles",
+           "({ at: Vec, count: number?, asset: string?, soft: boolean?, direction: number?, spread: number?, speed: { min: number, max: number }?, size: { min: number, max: number }?, life: { min: number, max: number }?, color: { r: number, g: number, b: number }?, alpha: number?, additive: boolean?, gravity: number?, drag: number?, spin: number?, grow: number? }) -> ()",
+           [world](const LuaRef& spec) -> void {
+        LuaRef at = spec["at"];
+        LuaRef col = spec["color"];
+        LuaRef speed = spec["speed"];
+        LuaRef size = spec["size"];
+        LuaRef life = spec["life"];
+        RequestParticles rp{};
+        rp.position = {static_cast<float>(Lua::ref_number(at, "x", 0.0)), static_cast<float>(Lua::ref_number(at, "y", 0.0))};
+        rp.count = static_cast<uint16_t>(std::clamp(static_cast<int>(Lua::ref_number(spec, "count", 12.0)), 1, 512));
+        rp.dir = static_cast<float>(Lua::ref_number(spec, "direction", 0.0));
+        rp.spread = static_cast<float>(Lua::ref_number(spec, "spread", 6.2832));
+        rp.speed_min = static_cast<float>(Lua::ref_number(speed, "min", 40.0));
+        rp.speed_max = static_cast<float>(Lua::ref_number(speed, "max", 120.0));
+        rp.size_min = static_cast<float>(Lua::ref_number(size, "min", 8.0));
+        rp.size_max = static_cast<float>(Lua::ref_number(size, "max", 18.0));
+        rp.life_min = static_cast<float>(Lua::ref_number(life, "min", 0.5));
+        rp.life_max = static_cast<float>(Lua::ref_number(life, "max", 1.0));
+        rp.gravity = static_cast<float>(Lua::ref_number(spec, "gravity", 0.0));
+        rp.drag = static_cast<float>(Lua::ref_number(spec, "drag", 1.5));
+        rp.spin = static_cast<float>(Lua::ref_number(spec, "spin", 9.0));
+        rp.grow = static_cast<float>(Lua::ref_number(spec, "grow", 0.0));
+        rp.r = static_cast<uint8_t>(Lua::ref_number(col, "r", 255.0));
+        rp.g = static_cast<uint8_t>(Lua::ref_number(col, "g", 255.0));
+        rp.b = static_cast<uint8_t>(Lua::ref_number(col, "b", 255.0));
+        rp.alpha = static_cast<uint8_t>(std::clamp(Lua::ref_number(spec, "alpha", 1.0), 0.0, 1.0) * 255.0);
+        rp.additive = Lua::ref_bool(spec, "additive", false);
+        if (Lua::ref_bool(spec, "soft", false)) {
+            rp.texture = 1;
+        }
+        std::string asset = Lua::ref_string(spec, "asset", "");
+        if (!asset.empty()) {
+            if (const auto* catalog = world.try_get<AssetCatalog>()) {
+                rp.texture = catalog->hash_of(asset);
+            }
+        }
+        world.entity().set(rp);
+    });
+    api_fn(worldns, state, "world", "loading", "(boolean) -> ()", [world](bool active) -> void {
+        flecs::entity holder = world.query_builder<Loading>().build().first();
+        if (!holder) {
+            holder = world.entity().add<Replicated>();
+        }
+        holder.set<Loading>({.active = active ? 1.0F : 0.0F});
+    });
+    api_fn(worldns, state, "world", "background", "({ r: number, g: number, b: number }) -> ()", [world](const LuaRef& spec) -> void {
+        Environment env{
+            .bg_r = static_cast<float>(Lua::ref_number(spec, "r", 230.0)),
+            .bg_g = static_cast<float>(Lua::ref_number(spec, "g", 230.0)),
+            .bg_b = static_cast<float>(Lua::ref_number(spec, "b", 230.0)),
+        };
+        flecs::entity holder = world.query_builder<Environment>().build().first();
+        if (holder) {
+            holder.set(env);
+        } else {
+            world.entity().set(env).add<Replicated>();
+        }
+    });
     api_fn(worldns, state, "world", "raycast", "({ origin: Vec, direction: Vec, range: number }, ({ RaycastHit }) -> ()) -> ()", [world](const LuaRef& spec, const LuaRef& callback) -> void {
         LuaRef o = spec["origin"];
         LuaRef d = spec["direction"];
@@ -801,7 +873,9 @@ static void setup_api(flecs::world world, lua_State* lua) {
         table["kind"] = "bar";
         return table;
     });
-    api_fn(viewns, state, "view", "minimap", "({ size: number?, blips: { { x: number, y: number, color: { r: number, g: number, b: number }? } }? }) -> Widget", [](LuaRef table) -> LuaRef {
+    api_fn(viewns, state, "view", "minimap",
+           "({ size: number?, range: number?, blips: { { x: number, y: number, color: { r: number, g: number, b: number }?, alpha: number? } }?, areas: { { x: number, y: number, radius: number?, color: { r: number, g: number, b: number }?, alpha: number? } }? }) -> Widget",
+           [](LuaRef table) -> LuaRef {
         table["kind"] = "minimap";
         return table;
     });

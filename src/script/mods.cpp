@@ -7,6 +7,7 @@
 #include <Luau/Parser.h>
 
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>

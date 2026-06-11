@@ -10,13 +10,18 @@ auto Interface::assets(flecs::iter& it, InterfaceState& state, InterfacePage& pa
     prev.page = InterfacePage::Main;
 
     const auto* store = it.world().try_get<AssetStore>();
+    const bool downloading = store != nullptr && store->downloading();
     float frac = 0.0F;
+    std::string title = "LOADING";
     std::string counts = "preparing\xE2\x80\xA6";
-    std::string pct = "0%";
-    if (store != nullptr) {
+    std::string pct;
+    if (downloading) {
+        title = "DOWNLOADING ASSETS";
         frac = std::clamp(store->progress(), 0.0F, 1.0F);
         counts = std::to_string(store->download_done) + " / " + std::to_string(store->download_count) + " files     " + std::to_string(store->download_have / 1024) + " / " + std::to_string(store->download_target / 1024) + " KB";
         pct = std::to_string(static_cast<int>(frac * 100.0F)) + "%";
+    } else {
+        counts = "building the world\xE2\x80\xA6";
     }
 
     bool cancel = false;
@@ -41,25 +46,26 @@ auto Interface::assets(flecs::iter& it, InterfaceState& state, InterfacePage& pa
                   .layoutDirection = CLAY_TOP_TO_BOTTOM,
               },
           .backgroundColor = {20, 20, 25, 255}}) {
-        CLAY_TEXT(Str("DOWNLOADING ASSETS"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 48}));
+        CLAY_TEXT(Str(state.intern(title)), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 48}));
         CLAY_TEXT(Str(state.intern(counts)), CLAY_TEXT_CONFIG({.textColor = {190, 190, 200, 255}, .fontSize = 32}));
 
-        CLAY({.id = CLAY_ID("AssetsTrack"),
-              .layout = {.sizing = {CLAY_SIZING_FIXED(BAR_W), CLAY_SIZING_FIXED(26)}, .padding = {3, 3, 3, 3}},
-              .backgroundColor = {40, 40, 48, 255},
-              .cornerRadius = {6, 6, 6, 6}}) {
-            CLAY({.id = CLAY_ID("AssetsFill"),
-                  .layout = {.sizing = {CLAY_SIZING_FIXED(fillW), CLAY_SIZING_GROW()}},
-                  .backgroundColor = {90, 200, 120, 255},
-                  .cornerRadius = {4, 4, 4, 4}}) {}
+        if (downloading) {
+            CLAY({.id = CLAY_ID("AssetsTrack"),
+                  .layout = {.sizing = {CLAY_SIZING_FIXED(BAR_W), CLAY_SIZING_FIXED(26)}, .padding = {3, 3, 3, 3}},
+                  .backgroundColor = {40, 40, 48, 255},
+                  .cornerRadius = {6, 6, 6, 6}}) {
+                CLAY({.id = CLAY_ID("AssetsFill"),
+                      .layout = {.sizing = {CLAY_SIZING_FIXED(fillW), CLAY_SIZING_GROW()}},
+                      .backgroundColor = {90, 200, 120, 255},
+                      .cornerRadius = {4, 4, 4, 4}}) {}
+            }
+            CLAY_TEXT(Str(state.intern(pct)), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32}));
         }
-
-        CLAY_TEXT(Str(state.intern(pct)), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32}));
     }
 
     auto commands = Clay_EndLayout();
 
-    if (cancel) {
+    if (cancel && downloading) {
         it.world().entity().add<RequestQuit>();
         page = InterfacePage::Main;
     }

@@ -94,16 +94,22 @@ static auto build_view_widget(ScriptState& state, const LuaRef& widget, uint64_t
     } else if (kind == "minimap") {
         out.kind = ViewKind::Minimap;
         out.number = static_cast<float>(Lua::ref_number(widget, "size", 200.0));
-        LuaRef blips = widget["blips"];
-        if (blips.isTable()) {
+        out.number_max = static_cast<float>(Lua::ref_number(widget, "range", 1700.0));
+        auto collect = [&](const char* key, float default_radius) -> void {
+            LuaRef list = widget[key];
+            if (!list.isTable()) {
+                return;
+            }
             for (int i = 1;; ++i) {
-                LuaRef b = blips[i];
+                LuaRef b = list[i];
                 if (!b.isTable()) {
                     break;
                 }
                 Blip blip;
                 blip.x = static_cast<float>(Lua::ref_number(b, "x", 0.0));
                 blip.y = static_cast<float>(Lua::ref_number(b, "y", 0.0));
+                blip.radius = static_cast<float>(Lua::ref_number(b, "radius", default_radius));
+                blip.a = static_cast<uint8_t>(std::clamp(Lua::ref_number(b, "alpha", 1.0), 0.0, 1.0) * 255.0);
                 LuaRef color = b["color"];
                 if (color.isTable()) {
                     blip.r = static_cast<uint8_t>(Lua::ref_number(color, "r", 255.0));
@@ -112,7 +118,9 @@ static auto build_view_widget(ScriptState& state, const LuaRef& widget, uint64_t
                 }
                 out.blips.push_back(blip);
             }
-        }
+        };
+        collect("blips", 0.0F);
+        collect("areas", 96.0F);
     } else if (kind == "input") {
         out.kind = ViewKind::Input;
         out.field = Lua::ref_string(widget, "field", "");

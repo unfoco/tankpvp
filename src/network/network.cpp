@@ -7,6 +7,7 @@
 
 #include "component/asset.h"
 #include "component/audio.h"
+#include "component/effect.h"
 #include "component/network.h"
 #include "component/interface.h"
 #include "component/input.h"
@@ -75,6 +76,8 @@ Network::Network(flecs::world& world) {
         .member<float>("tint_r").member<float>("tint_g").member<float>("tint_b").member<float>("tint_a")
         .member<float>("flash").member<float>("flash_fade").member<float>("vignette").member<float>("blur").member<float>("chromatic");
     world.component<Light>().member<float>("r").member<float>("g").member<float>("b").member<float>("radius").member<float>("intensity");
+    world.component<Environment>().member<float>("bg_r").member<float>("bg_g").member<float>("bg_b");
+    world.component<Loading>().member<float>("active");
     world.component<VisionBlocker>().member<float>("radius").member<float>("alpha").member<float>("r").member<float>("g").member<float>("b");
     world.component<Ammo>().member<uint32_t>("mag").member<uint32_t>("reserve").member<uint32_t>("mag_size").member<float>("reload_time").member<float>("reloading");
     world.component<BlendMode>();
@@ -98,6 +101,8 @@ Network::Network(flecs::world& world) {
     world.component<Dying>().add<Networked>();
     world.component<Camera>().add<Networked>();
     world.component<Light>().add<Networked>();
+    world.component<Environment>().add<Networked>();
+    world.component<Loading>().add<Networked>();
     world.component<VisionBlocker>().add<Networked>();
     world.component<Ammo>().add<Networked>();
     world.component<Blend>().add<Networked>();
@@ -140,6 +145,7 @@ Network::Network(flecs::world& world) {
     });
 
     world.system<const RequestSound>("network::sounds").kind(flecs::OnStore).each([](flecs::entity e, const RequestSound&) -> void { e.destruct(); });
+    world.system<const RequestParticles>("network::particles_gc").kind(flecs::OnStore).each([](flecs::entity e, const RequestParticles&) -> void { e.destruct(); });
 
     world.import<NetworkServer>();
     world.import<NetworkClient>();

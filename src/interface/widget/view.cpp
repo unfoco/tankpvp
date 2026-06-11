@@ -171,22 +171,8 @@ static void render_widget(RenderContext& rc, const ViewWidget& node, int& index)
         }
         case ViewKind::Minimap: {
             const float box = node.number > 0.0F ? node.number : 200.0F;
-            CLAY({.id = CLAY_IDI("ViewNode", self),
-                  .layout = {.sizing = {CLAY_SIZING_FIXED(box), CLAY_SIZING_FIXED(box)}},
-                  .backgroundColor = {10, 12, 16, 205},
-                  .cornerRadius = CLAY_CORNER_RADIUS(4)}) {
-                int bi = 0;
-                for (const Blip& b : node.blips) {
-                    constexpr float D = 7.0F;
-                    float ox = (std::clamp(b.x, 0.0F, 1.0F) * box) - (D / 2.0F);
-                    float oy = (std::clamp(b.y, 0.0F, 1.0F) * box) - (D / 2.0F);
-                    CLAY({.id = CLAY_IDI("ViewBlip", (self << 8) + bi++),
-                          .layout = {.sizing = {CLAY_SIZING_FIXED(D), CLAY_SIZING_FIXED(D)}},
-                          .backgroundColor = {static_cast<float>(b.r), static_cast<float>(b.g), static_cast<float>(b.b), 255},
-                          .cornerRadius = CLAY_CORNER_RADIUS(D / 2.0F),
-                          .floating = {.offset = {ox, oy}, .attachTo = CLAY_ATTACH_TO_PARENT}}) {}
-                }
-            }
+            CLAY({.id = CLAY_IDI("ViewMinimap", self),
+                  .layout = {.sizing = {CLAY_SIZING_FIXED(box), CLAY_SIZING_FIXED(box)}}}) {}
             break;
         }
         case ViewKind::Input: {
@@ -276,8 +262,8 @@ void widget::view(flecs::world world, InterfaceState& state, const WindowEvents&
         CLAY({.id = CLAY_IDI("ViewActive", index),
               .layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_GROW()}, .padding = {24, 24, 24, 24}, .childAlignment = align},
               .floating = {
-                  .attachTo = CLAY_ATTACH_TO_ROOT,
                   .pointerCaptureMode = modal ? CLAY_POINTER_CAPTURE_MODE_CAPTURE : CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
+                  .attachTo = CLAY_ATTACH_TO_ROOT,
               }}) {
             RenderContext rc{.world = world, .state = state, .events = events, .values = active.values, .view = active.id};
             render_widget(rc, active.root, index);

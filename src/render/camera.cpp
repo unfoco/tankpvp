@@ -26,12 +26,7 @@ void Render::camera(flecs::iter& it, size_t i, RenderState& render, const Positi
     glm::vec2 offset{0};
     float follow = 0.16F;
     if (cam != nullptr) {
-        if (cam->target != 0) {
-            flecs::entity t = it.world().entity(cam->target);
-            if (t.is_alive() && t.has<Position>()) {
-                focus = t.get<Position>().value;
-            }
-        } else if (cam->focus_x != 0.0F || cam->focus_y != 0.0F) {
+        if (cam->focus_x != 0.0F || cam->focus_y != 0.0F) {
             focus = {cam->focus_x, cam->focus_y};
         }
         zoom = base_zoom * (cam->zoom > 0.0F ? cam->zoom : 1.0F);

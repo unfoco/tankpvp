@@ -74,7 +74,11 @@ void Render::floor(flecs::iter& it, size_t, const RenderState& render, const Til
             }
             SDL_Texture* tex = tile_texture(world, cache, render, type);
             if (tex != nullptr) {
-                SDL_RenderTexture(render.target, tex, nullptr, &rect);
+                if (render.camera.rotation != 0.0F) {
+                    SDL_RenderTextureRotated(render.target, tex, nullptr, &rect, glm::degrees(render.camera.rotation), nullptr, SDL_FLIP_NONE);
+                } else {
+                    SDL_RenderTexture(render.target, tex, nullptr, &rect);
+                }
             } else {
                 SDL_SetRenderDrawBlendMode(render.target, SDL_BLENDMODE_BLEND);
                 SDL_SetRenderDrawColor(render.target, 60, 200, 255, 170);
@@ -174,7 +178,11 @@ void Render::solid(flecs::iter& it, size_t, const RenderState& render, const Til
             }
             SDL_Texture* tex = tile_texture(world, cache, render, type);
             if (tex != nullptr) {
-                SDL_RenderTexture(render.target, tex, nullptr, &rect);
+                if (render.camera.rotation != 0.0F) {
+                    SDL_RenderTextureRotated(render.target, tex, nullptr, &rect, glm::degrees(render.camera.rotation), nullptr, SDL_FLIP_NONE);
+                } else {
+                    SDL_RenderTexture(render.target, tex, nullptr, &rect);
+                }
             } else {
                 SDL_SetRenderDrawBlendMode(render.target, SDL_BLENDMODE_NONE);
                 SDL_SetRenderDrawColor(render.target, 220, 70, 70, 255);

@@ -54,9 +54,11 @@ enum class ViewKind : uint8_t {
 struct Blip {
     float x = 0;
     float y = 0;
+    float radius = 0;
     uint8_t r = 255;
     uint8_t g = 255;
     uint8_t b = 255;
+    uint8_t a = 255;
 };
 
 enum class ViewPlacement : uint8_t {

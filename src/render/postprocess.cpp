@@ -186,21 +186,13 @@ void Render::postprocess(flecs::iter& it, size_t /*i*/, RenderState& render) {
 
     Camera cam{};
     bool have = false;
-    glm::vec2 origin{0};
     float facing = 0.0F;
     cam_q.each([&](flecs::entity e, const Camera& c) -> void {
         cam = c;
         have = true;
-        if (const auto* p = e.try_get<Position>()) { origin = p->value; }
         if (const auto* r = e.try_get<Rotation>()) { facing = r->angle; }
     });
-    if (have && cam.target != 0) {
-        flecs::entity t = world.entity(cam.target);
-        if (t.is_alive()) {
-            if (const auto* p = t.try_get<Position>()) { origin = p->value; }
-            if (const auto* r = t.try_get<Rotation>()) { facing = r->angle; }
-        }
-    }
+    glm::vec2 origin = render.camera.position;
 
     int w = 0;
     int h = 0;
@@ -240,8 +232,7 @@ void Render::postprocess(flecs::iter& it, size_t /*i*/, RenderState& render) {
         };
         ensure(render.lightTexture, pw, ph);
         ensure(render.maskTexture, pw, ph);
-        ensure(render.lightBlur, std::max(1, pw / 2), std::max(1, ph / 2));
-        ensure(render.lightBlur2, std::max(1, pw / 2), std::max(1, ph / 2));
+        ensure(render.lightBlur, pw, ph);
 
         if (cam.vision != VisionKind::None) {
             build_vision(render, world.try_get<WorldGrid>(), world.try_get<Tileset>(), w, h, sc, origin, facing, cam.vision_range, cam.vision_angle, cam.vision == VisionKind::Cone);
@@ -274,12 +265,6 @@ void Render::postprocess(flecs::iter& it, size_t /*i*/, RenderState& render) {
             }
         });
 
-        auto copy = [&](SDL_Texture* src, SDL_Texture* dst, float dw, float dh) -> void {
-            SDL_SetRenderTarget(render.target, dst);
-            SDL_SetTextureBlendMode(src, SDL_BLENDMODE_NONE);
-            SDL_FRect r = {.x = 0, .y = 0, .w = dw, .h = dh};
-            SDL_RenderTexture(render.target, src, nullptr, &r);
-        };
         auto gauss = [&](SDL_Texture* src, SDL_Texture* dst, float dx, float dy) -> void {
             static const std::array<float, 9> wt{0.0039F, 0.0313F, 0.1094F, 0.2188F, 0.2734F, 0.2188F, 0.1094F, 0.0313F, 0.0039F};
             static const std::array<float, 9> off{-4, -3, -2, -1, 0, 1, 2, 3, 4};
@@ -301,14 +286,10 @@ void Render::postprocess(flecs::iter& it, size_t /*i*/, RenderState& render) {
             SDL_SetTextureColorMod(src, 255, 255, 255);
             SDL_SetTextureAlphaMod(src, 255);
         };
-        constexpr float SPREAD = 1.6F;
-        float hw = pfull.w / 2.0F;
-        float hh = pfull.h / 2.0F;
+        constexpr float SPREAD = 3.0F;
         auto blur = [&](SDL_Texture* tex) -> void {
-            copy(tex, render.lightBlur, hw, hh);
-            gauss(render.lightBlur, render.lightBlur2, SPREAD, 0.0F);
-            gauss(render.lightBlur2, render.lightBlur, 0.0F, SPREAD);
-            copy(render.lightBlur, tex, pfull.w, pfull.h);
+            gauss(tex, render.lightBlur, SPREAD, 0.0F);
+            gauss(render.lightBlur, tex, 0.0F, SPREAD);
         };
         blur(render.lightTexture);
         blur(render.maskTexture);
@@ -324,13 +305,6 @@ void Render::postprocess(flecs::iter& it, size_t /*i*/, RenderState& render) {
     }
 
     compose_entities();
-
-    if (have && cam.tint_a > 0.001F) {
-        fullscreen(render.target, pw, ph, static_cast<Uint8>(cam.tint_r), static_cast<Uint8>(cam.tint_g), static_cast<Uint8>(cam.tint_b), static_cast<Uint8>(std::clamp(cam.tint_a, 0.0F, 1.0F) * 255.0F));
-    }
-    if (have && cam.flash > 0.001F) {
-        fullscreen(render.target, pw, ph, 255, 255, 255, static_cast<Uint8>(std::clamp(cam.flash, 0.0F, 1.0F) * 255.0F));
-    }
 
     SDL_SetRenderScale(render.target, prevX, prevY);
 }

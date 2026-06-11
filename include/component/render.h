@@ -81,3 +81,14 @@ struct Light {
     float radius = 220.0F;
     float intensity = 1.0F;
 };
+
+struct Environment {
+    float bg_r = 230;
+    float bg_g = 230;
+    float bg_b = 230;
+};
+
+
+struct Loading {
+    float active = 0;
+};

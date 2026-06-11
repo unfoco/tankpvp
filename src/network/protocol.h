@@ -54,6 +54,7 @@ enum class Message : uint8_t {
     ViewClose = 22,
     ViewEvent = 23,
     Effect = 24,
+    Particles = 25,
 };
 
 namespace wire {
@@ -195,16 +196,20 @@ struct MessageCommandInfo {
 struct MessageBlip {
     float x = 0;
     float y = 0;
+    float radius = 0;
     uint8_t r = 255;
     uint8_t g = 255;
     uint8_t b = 255;
+    uint8_t a = 255;
     template <class Archive>
-    void serialize(Archive& a) {
-        a & x;
-        a & y;
-        a & r;
-        a & g;
-        a & b;
+    void serialize(Archive& ar) {
+        ar & x;
+        ar & y;
+        ar & radius;
+        ar & r;
+        ar & g;
+        ar & b;
+        ar & a;
     }
 };
 
@@ -493,6 +498,54 @@ struct MessageEffect {
         a & r;
         a & g;
         a & b;
+    }
+};
+
+struct MessageParticles {
+    float x = 0;
+    float y = 0;
+    float dir = 0;
+    float spread = 6.2832F;
+    uint16_t count = 12;
+    uint64_t texture = 0;
+    float speed_min = 40;
+    float speed_max = 120;
+    float size_min = 8;
+    float size_max = 18;
+    float life_min = 0.5F;
+    float life_max = 1.0F;
+    float gravity = 0;
+    float drag = 1.5F;
+    float spin = 9.0F;
+    float grow = 0;
+    uint8_t r = 255;
+    uint8_t g = 255;
+    uint8_t b = 255;
+    uint8_t alpha = 255;
+    uint8_t additive = 0;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & x;
+        a & y;
+        a & dir;
+        a & spread;
+        a & count;
+        a & texture;
+        a & speed_min;
+        a & speed_max;
+        a & size_min;
+        a & size_max;
+        a & life_min;
+        a & life_max;
+        a & gravity;
+        a & drag;
+        a & spin;
+        a & grow;
+        a & r;
+        a & g;
+        a & b;
+        a & alpha;
+        a & additive;
     }
 };
 

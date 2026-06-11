@@ -81,8 +81,6 @@ struct RenderState {
     bool shadowSolid = false;
     SDL_Texture* lightTexture = nullptr;
     SDL_Texture* lightBlur = nullptr;
-    SDL_Texture* lightBlur2 = nullptr;
-    SDL_Texture* lightBlur3 = nullptr;
     SDL_Texture* maskTexture = nullptr;
     SDL_Texture* entityTexture = nullptr;
     SDL_Texture* effectsTexture = nullptr;
@@ -109,6 +107,12 @@ struct Particle {
     int fragment = 0;
     Uint8 r = 255, g = 255, b = 255;
     bool smoke = false;
+    uint64_t texture = 0;
+    bool additive = false;
+    float alpha = 1.0F;
+    float grow = 0;
+    float gravity = 0;
+    float drag = 3.0F;
 };
 
 struct Render {
@@ -135,6 +139,7 @@ struct Render {
     static void overhead_top(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col, const Blend* blend, const Layer* layer);
 
     static void burst(flecs::entity e, const RequestEffect& req);
+    static void emit(flecs::entity e, const RequestParticles& req);
     static void age(flecs::iter& it, size_t i, Particle& p);
     static void particles(flecs::iter& it, size_t i, const RenderState& render, const Particle& p);
 

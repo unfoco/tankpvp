@@ -1,6 +1,7 @@
 #include "interface.h"
 
 #include "component/asset.h"
+#include "component/render.h"
 #include "component/network.h"
 #include "component/script.h"
 #include "util/time.h"
@@ -111,7 +112,10 @@ void Interface::build(flecs::iter& it, size_t, InterfaceState& state, InterfaceC
         const auto* store = it.world().try_get<AssetStore>();
         const auto* conn = it.world().try_get<ConnectionStatus>();
         const bool in_session = (conn != nullptr) && conn->state != ConnectionState::Disconnected;
-        if (store != nullptr && store->downloading() && in_session) {
+        bool downloading = store != nullptr && store->downloading();
+        bool loading = false;
+        it.world().query<const Loading>().each([&](const Loading& l) -> void { loading = loading || l.active > 0.5F; });
+        if (in_session && (downloading || loading)) {
             effective = InterfacePage::Assets;
         }
     }

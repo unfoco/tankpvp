@@ -4,7 +4,6 @@
 #include <flecs.h>
 
 #include <algorithm>
-#include <atomic>
 #include <charconv>
 #include <csignal>
 #include <cstdlib>

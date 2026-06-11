@@ -5,7 +5,6 @@
 #include <cmath>
 
 #include "component/asset.h"
-#include "component/network.h"
 
 static auto resolve_layer(flecs::world world, const RenderState& render, uint64_t hash) -> SDL_Texture* {
     if (hash == SPRITE_ENGINE_BASE) {
@@ -55,8 +54,9 @@ void Render::sprite(flecs::iter& it, size_t, const RenderState& render, const Po
     glm::vec2 screenPos = render.camera.worldToScreen(pos.value, windowW, windowH);
 
     const float zoom = render.camera.zoom;
-    const float ca = std::cos(rot.angle);
-    const float sa = std::sin(rot.angle);
+    const float screen_angle = rot.angle + render.camera.rotation;
+    const float ca = std::cos(screen_angle);
+    const float sa = std::sin(screen_angle);
     const auto cr = static_cast<Uint8>(col != nullptr ? col->value.r : 255.0F);
     const auto cg = static_cast<Uint8>(col != nullptr ? col->value.g : 255.0F);
     const auto cb = static_cast<Uint8>(col != nullptr ? col->value.b : 255.0F);
@@ -88,7 +88,7 @@ void Render::sprite(flecs::iter& it, size_t, const RenderState& render, const Po
         SDL_SetTextureColorMod(tex, cr, cg, cb);
         SDL_SetTextureAlphaMod(tex, alpha);
         SDL_SetTextureBlendMode(tex, mode);
-        SDL_RenderTextureRotated(render.target, tex, nullptr, &rect, glm::degrees(rot.angle), &pivot, SDL_FLIP_NONE);
+        SDL_RenderTextureRotated(render.target, tex, nullptr, &rect, glm::degrees(screen_angle), &pivot, SDL_FLIP_NONE);
         SDL_SetTextureColorMod(tex, 255, 255, 255);
         SDL_SetTextureAlphaMod(tex, 255);
         SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);

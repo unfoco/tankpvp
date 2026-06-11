@@ -13,6 +13,7 @@
 
 #include "component/asset.h"
 #include "component/audio.h"
+#include "component/effect.h"
 #include "component/input.h"
 #include "component/interface.h"
 #include "component/network.h"
@@ -149,7 +150,7 @@ static auto to_message_widget(const ViewWidget& w) -> MessageViewWidget {
     out.bg_a = w.bg_a;
     out.field = w.field;
     for (const auto& b : w.blips) {
-        out.blips.push_back({.x = b.x, .y = b.y, .r = b.r, .g = b.g, .b = b.b});
+        out.blips.push_back({.x = b.x, .y = b.y, .radius = b.radius, .r = b.r, .g = b.g, .b = b.b, .a = b.a});
     }
     for (const auto& c : w.children) {
         out.children.push_back(to_message_widget(c));
@@ -256,6 +257,26 @@ NetworkServer::NetworkServer(flecs::world& world) {
         e.destruct();
     });
 
+    world.observer<const RequestParticles>("network::server::particles_fx").event(flecs::OnSet).each([](flecs::entity e, const RequestParticles& fx) -> void {
+        flecs::world world = e.world();
+        if (!world.has<NetworkHost>()) {
+            return;
+        }
+        MessageParticles msg{
+            .x = fx.position.x, .y = fx.position.y, .dir = fx.dir, .spread = fx.spread, .count = fx.count, .texture = fx.texture,
+            .speed_min = fx.speed_min, .speed_max = fx.speed_max, .size_min = fx.size_min, .size_max = fx.size_max,
+            .life_min = fx.life_min, .life_max = fx.life_max, .gravity = fx.gravity, .drag = fx.drag, .spin = fx.spin, .grow = fx.grow,
+            .r = fx.r, .g = fx.g, .b = fx.b, .alpha = fx.alpha, .additive = static_cast<uint8_t>(fx.additive ? 1 : 0),
+        };
+        serialize::Writer w = wire::message(Message::Particles);
+        serialize::encode(w, msg);
+        world.query_builder<Peer>().build().each([&](const Peer& pr) -> void {
+            if (pr.welcomed && (pr.peer != nullptr)) {
+                wire::send(pr.peer, w, CHANNEL_RELIABLE, true);
+            }
+        });
+    });
+
     world.observer<const RequestBurst>("network::server::burst_fx").event(flecs::OnSet).each([](flecs::entity e, const RequestBurst& fx) -> void {
         flecs::world world = e.world();
         MessageEffect msg{.x = fx.x, .y = fx.y, .angle = 0, .r = fx.r, .g = fx.g, .b = fx.b};
@@ -295,6 +316,25 @@ NetworkServer::NetworkServer(flecs::world& world) {
                 wire::send(pr.peer, w, CHANNEL_RELIABLE, true);
             }
         });
+    });
+
+    world.system<Camera>("network::server::camera_focus").kind(flecs::OnUpdate).each([](flecs::entity e, Camera& cam) -> void {
+        if (cam.target == 0) {
+            return;
+        }
+        flecs::entity t = e.world().entity(cam.target);
+        if (t.is_alive()) {
+            if (const auto* p = t.try_get<Position>()) {
+                if (cam.focus_x != p->value.x || cam.focus_y != p->value.y) {
+                    cam.focus_x = p->value.x;
+                    cam.focus_y = p->value.y;
+                    e.modified<Camera>();
+                }
+                return;
+            }
+        }
+        cam.target = 0;
+        e.modified<Camera>();
     });
 
     world.system<const Dying>("network::server::respawn").kind(flecs::OnUpdate).each([](flecs::entity e, const Dying& d) -> void {
@@ -977,12 +1017,15 @@ void NetworkServer::replicate(flecs::iter& it) {
             uint32_t bulletOwner;
         };
         std::unordered_map<int64_t, std::vector<Entry>> grid;
+        std::vector<Entry> global;
 
         q.replicated.each([&](flecs::entity e, const NetworkId& nid) -> void {
-            glm::vec2 pos{0};
-            if (const auto* p = e.try_get<Position>()) {
-                pos = p->value;
+            const auto* p = e.try_get<Position>();
+            if (p == nullptr) {
+                global.push_back({.nid = nid.value, .e = e.id(), .pos = {0, 0}, .bulletOwner = 0});
+                return;
             }
+            glm::vec2 pos = p->value;
             uint32_t bulletOwner = 0;
             if (e.has<Bullet>()) {
                 if (const auto* o = e.try_get<Owner>()) {
@@ -1026,6 +1069,10 @@ void NetworkServer::replicate(flecs::iter& it) {
                         }
                     }
                 }
+            }
+
+            for (const auto& en : global) {
+                relevant[en.nid] = en.e;
             }
 
             uint64_t self_nid = 0;

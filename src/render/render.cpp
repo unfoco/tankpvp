@@ -52,9 +52,9 @@ Render::Render(flecs::world& world) {
     world.system<RenderState>("render::entities_begin").kind(ebegin).each(Render::entities_begin);
     world.system<RenderState, const Position, const Rotation, const Sprite, const Color*, const Blend*>("render::sprite").kind(tanks).without<Decoration>().without<Dying>().each(Render::sprite);
     world.system<RenderState, Position>("render::bullet").kind(bullets).with<Bullet>().without<Latent>().each(Render::bullet);
+    world.system<RenderState, const Particle>("render::particles").kind(bullets).each(Render::particles);
+    world.system<const RenderState, const Position, const VisionBlocker>("render::smoke").kind(bullets).each(Render::smoke);
     world.system<RenderState>("render::entities_end").kind(eend).each(Render::entities_end);
-    world.system<RenderState, const Particle>("render::particles").kind(effects).each(Render::particles);
-    world.system<const RenderState, const Position, const VisionBlocker>("render::smoke").kind(effects).each(Render::smoke);
     world.system<RenderState>("render::post").kind(post).each(Render::postprocess);
     world.system<RenderState, const TileChunk>("render::walls_top").kind(wallstop).each(Render::walls_top);
     world.system<RenderState, const Position, const Rotation, const Sprite, const Color*, const Blend*, const Layer*>("render::overhead_top").kind(wallstop).with<Decoration>().without<Dying>().each(Render::overhead_top);
@@ -62,6 +62,7 @@ Render::Render(flecs::world& world) {
     world.system<RenderState, InterfaceCommands>("render::interface").kind(view).each(Render::interface);
 
     world.observer<const RequestEffect>("render::burst").event(flecs::OnSet).each(Render::burst);
+    world.observer<const RequestParticles>("render::emit").event(flecs::OnSet).each(Render::emit);
     world.system<Particle>("render::age").kind(flecs::OnUpdate).each(Render::age);
     world.system<RenderState>("render::finish").kind(present).each(Render::finish);
 
@@ -247,12 +248,15 @@ static void ensure_targets(RenderState& r) {
     r.frameH = oh;
 }
 
-void Render::start(flecs::iter&, size_t, RenderState& render) {
+void Render::start(flecs::iter& it, size_t, RenderState& render) {
     ensure_targets(render);
     SDL_SetRenderTarget(render.target, render.curIsA ? render.frameA : render.frameB);
     float scale = SDL_GetWindowDisplayScale(render.window);
     SDL_SetRenderScale(render.target, scale, scale);
-    SDL_SetRenderDrawColor(render.target, 0xE6, 0xE6, 0xE6, 0xFF);
+    Environment env{};
+    static flecs::query<const Environment> env_q = it.world().query<const Environment>();
+    env_q.each([&](const Environment& e) -> void { env = e; });
+    SDL_SetRenderDrawColor(render.target, static_cast<Uint8>(env.bg_r), static_cast<Uint8>(env.bg_g), static_cast<Uint8>(env.bg_b), 0xFF);
     SDL_RenderClear(render.target);
 }
 
@@ -324,6 +328,17 @@ void Render::finish(flecs::iter& it, size_t, RenderState& render) {
             SDL_RenderTexture(render.target, render.snapshot, nullptr, &full);
             SDL_SetTextureAlphaMod(render.snapshot, 255);
         }
+    }
+
+    if (have_cam && cam.tint_a > 0.001F) {
+        SDL_SetRenderDrawBlendMode(render.target, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(render.target, static_cast<Uint8>(cam.tint_r), static_cast<Uint8>(cam.tint_g), static_cast<Uint8>(cam.tint_b), static_cast<Uint8>(std::clamp(cam.tint_a, 0.0F, 1.0F) * 255.0F));
+        SDL_RenderFillRect(render.target, &full);
+    }
+    if (have_cam && cam.flash > 0.001F) {
+        SDL_SetRenderDrawBlendMode(render.target, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(render.target, 255, 255, 255, static_cast<Uint8>(std::clamp(cam.flash, 0.0F, 1.0F) * 255.0F));
+        SDL_RenderFillRect(render.target, &full);
     }
 
     render.curIsA = !render.curIsA;
