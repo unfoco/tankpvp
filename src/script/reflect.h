@@ -1,8 +1,19 @@
 #pragma once
 
+#include <utility>
+#include <vector>
+
 #include "state.h"
 
+struct EngineEnum {
+    const char* name;
+    std::vector<std::pair<const char*, int>> constants;
+};
+
 struct Reflect {
+    static auto engine_enums() -> const std::vector<EngineEnum>&;
+    static void expose_enums(flecs::world world);
+
     static auto component_entity(flecs::world world, const std::string& name) -> flecs::entity_t;
     static auto component_ref_name(const LuaRef& ref) -> std::string;
     static auto is_known_component(flecs::world world, const std::string& name) -> bool;

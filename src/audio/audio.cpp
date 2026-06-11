@@ -52,13 +52,13 @@ static auto load_music(ma_engine* engine, const char* path, Music* music) -> boo
     return true;
 }
 
-static void emit(AudioState& audio, const char* path, glm::vec2 position, float volume) {
+static void emit(AudioState& audio, const char* path, glm::vec2 position, float volume, bool global = false) {
     if (!audio.ready) {
         return;
     }
     float gain = volume;
     float pan = 0.0F;
-    if (audio.haveListener) {
+    if (!global && audio.haveListener) {
         glm::vec2 delta = position - audio.listener;
         float distance = glm::length(delta);
         float falloff = std::clamp(1.0F - (distance / AUDIO_MAX_DIST), 0.0F, 1.0F);
@@ -96,7 +96,7 @@ Audio::Audio(flecs::world& world) {
         std::string path = store != nullptr ? store->path_for(s.asset) : std::string();
         if (!path.empty()) {
             float volume = world.has<Settings>() ? world.get<Settings>().volume : 1.0F;
-            emit(audio, path.c_str(), {s.x, s.y}, volume * s.volume);
+            emit(audio, path.c_str(), {s.x, s.y}, volume * s.volume, s.global);
         }
     });
 }

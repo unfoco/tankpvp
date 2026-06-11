@@ -19,6 +19,7 @@ enum class InterfacePage : std::uint8_t {
     Connect,
     Settings,
     Status,
+    Assets,
 };
 
 struct InterfacePrevious {

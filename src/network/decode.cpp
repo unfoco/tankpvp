@@ -27,6 +27,7 @@ static auto to_view_widget(const MessageViewWidget& w) -> ViewWidget {
     ViewWidget out;
     out.kind = static_cast<ViewKind>(w.kind);
     out.layout = static_cast<ViewLayout>(w.layout);
+    out.card = w.card != 0;
     out.text = w.text;
     out.handler = w.handler;
     out.bind = w.bind;
@@ -41,6 +42,9 @@ static auto to_view_widget(const MessageViewWidget& w) -> ViewWidget {
     out.bg_b = w.bg_b;
     out.bg_a = w.bg_a;
     out.field = w.field;
+    for (const auto& b : w.blips) {
+        out.blips.push_back({.x = b.x, .y = b.y, .r = b.r, .g = b.g, .b = b.b});
+    }
     for (const auto& c : w.children) {
         out.children.push_back(to_view_widget(c));
     }
@@ -121,6 +125,9 @@ static void apply_components(flecs::world& world, const NetworkRegistry& reg, Ne
     bool teleported = had_spawn && e.is_alive() && e.has<Spawn>() && e.get<Spawn>().epoch != old_epoch;
     if (teleported) {
         e.add<Teleported>();
+        if (e.has<Dying>()) {
+            e.remove<Dying>();
+        }
     }
 
     if (e.is_alive() && (got_pos || got_rot)) {
@@ -408,7 +415,7 @@ void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* pack
         case Message::Sound: {
             auto msg = serialize::decode<MessageSound>(r);
             if (r.valid()) {
-                world.entity().set<RequestSound>({.asset = msg.asset, .x = msg.x, .y = msg.y, .volume = msg.volume});
+                world.entity().set<RequestSound>({.asset = msg.asset, .x = msg.x, .y = msg.y, .volume = msg.volume, .global = msg.global});
             }
             break;
         }

@@ -20,6 +20,8 @@ struct NetworkConfig {
     uint16_t tickrate = 60;
 };
 
+struct Frozen {};
+
 struct SimulationClock {
     double scale = 1.0;
 };
@@ -60,6 +62,13 @@ struct RequestChat {
 };
 struct RequestBroadcast {
     std::string line;
+};
+struct RequestBurst {
+    float x = 0;
+    float y = 0;
+    uint8_t r = 255;
+    uint8_t g = 255;
+    uint8_t b = 255;
 };
 struct RequestReply {
     flecs::entity peer;
@@ -122,4 +131,9 @@ struct Teleported {};
 
 struct Dying {
     uint64_t revive = 0;
+};
+
+struct CameraFocus {
+    float x = 0;
+    float y = 0;
 };

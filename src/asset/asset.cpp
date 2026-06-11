@@ -131,6 +131,12 @@ void Asset::scan(flecs::entity e) {
 void Asset::adopt(flecs::entity e, const RequestAssetAdopt& r) {
     auto& store = e.world().get_mut<AssetStore>();
     store.version = r.version;
+    if (!store.downloading()) {
+        store.download_target = 0;
+        store.download_have = 0;
+        store.download_count = 0;
+        store.download_done = 0;
+    }
     std::error_code ec;
     fs::create_directories(cache_dir(), ec);
 
@@ -156,6 +162,8 @@ void Asset::adopt(flecs::entity e, const RequestAssetAdopt& r) {
         in.buffer.resize(desc.size);
         store.pending.emplace(desc.hash, std::move(in));
         store.downloaded += desc.size;
+        store.download_target += desc.size;
+        store.download_count++;
         missing.push_back(desc.hash);
     }
     e.set<ResponseAssetAdopt>({.hashes = std::move(missing)});
@@ -175,12 +183,14 @@ void Asset::store(flecs::entity e, const RequestAssetStore& r) {
     }
     std::copy(r.bytes.begin(), r.bytes.end(), in.buffer.begin() + r.offset);
     in.received += static_cast<uint32_t>(r.bytes.size());
+    store.download_have += r.bytes.size();
     if (in.received < in.total) {
         return;
     }
     if (content_hash(in.buffer.data(), in.buffer.size()) != r.hash) {
         SDL_Log("asset: hash mismatch for incoming '%s' — dropped", in.name.c_str());
         store.pending.erase(it);
+        store.download_done++;
         return;
     }
     std::string path = cache_path(r.hash);
@@ -190,6 +200,7 @@ void Asset::store(flecs::entity e, const RequestAssetStore& r) {
     SDL_Log("asset: installed '%s' (%u bytes)", in.name.c_str(), in.total);
     store.ready[r.hash] = path;
     store.pending.erase(it);
+    store.download_done++;
 }
 
 Asset::Asset(flecs::world& world) {

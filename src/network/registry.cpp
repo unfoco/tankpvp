@@ -184,16 +184,22 @@ void NetworkRegistry::build(flecs::world& world) {
             for (int32_t mi = 0; mi < n; ++mi) {
                 ecs_member_t* m = ecs_vec_get_t(&s->members, ecs_member_t, mi);
                 const EcsPrimitive* p = ecs_get(w, m->type, EcsPrimitive);
-                if (p == nullptr) {
-                    continue;
-                }
 
                 Field f;
-                if (!primitive_info(p->kind, f.size, f.real)) {
+                if (p != nullptr) {
+                    if (!primitive_info(p->kind, f.size, f.real)) {
+                        continue;
+                    }
+                    f.kind = kind_from_primitive(p->kind);
+                } else if (ecs_has(w, m->type, EcsEnum)) {
+                    const ecs_type_info_t* eti = ecs_get_type_info(w, m->type);
+                    f.size = (eti != nullptr) ? static_cast<uint32_t>(eti->size) : 4;
+                    f.real = false;
+                    f.kind = f.size == 1 ? FieldKind::U8 : (f.size == 2 ? FieldKind::U16 : FieldKind::U32);
+                } else {
                     continue;
                 }
                 f.name = m->name != nullptr ? m->name : "";
-                f.kind = kind_from_primitive(p->kind);
                 f.offset = static_cast<uint32_t>(m->offset);
                 f.count = (m->count != 0) ? static_cast<uint32_t>(m->count) : 1;
                 if (f.real && quantum > 0) {

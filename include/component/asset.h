@@ -57,6 +57,14 @@ struct AssetStore {
     uint64_t downloaded = 0;
     uint16_t version = 0;
 
+    uint64_t download_target = 0;
+    uint64_t download_have = 0;
+    uint32_t download_count = 0;
+    uint32_t download_done = 0;
+
+    [[nodiscard]] auto downloading() const -> bool { return download_done < download_count; }
+    [[nodiscard]] auto progress() const -> float { return download_target > 0 ? static_cast<float>(static_cast<double>(download_have) / static_cast<double>(download_target)) : 1.0F; }
+
     [[nodiscard]] auto path_for(const std::string& name) const -> std::string {
         auto n = names.find(name);
         if (n == names.end()) {

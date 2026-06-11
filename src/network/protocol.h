@@ -192,9 +192,26 @@ struct MessageCommandInfo {
     }
 };
 
+struct MessageBlip {
+    float x = 0;
+    float y = 0;
+    uint8_t r = 255;
+    uint8_t g = 255;
+    uint8_t b = 255;
+    template <class Archive>
+    void serialize(Archive& a) {
+        a & x;
+        a & y;
+        a & r;
+        a & g;
+        a & b;
+    }
+};
+
 struct MessageViewWidget {
     uint8_t kind = 0;
     uint8_t layout = 0;
+    uint8_t card = 0;
     std::string text;
     uint32_t handler = 0;
     std::string bind;
@@ -209,11 +226,13 @@ struct MessageViewWidget {
     uint8_t bg_b = 32;
     uint8_t bg_a = 240;
     std::string field;
+    std::vector<MessageBlip> blips;
     std::vector<MessageViewWidget> children;
     template <class Archive>
     void serialize(Archive& a) {
         a & kind;
         a & layout;
+        a & card;
         a.text(text);
         a & handler;
         a.text(bind);
@@ -228,6 +247,7 @@ struct MessageViewWidget {
         a & bg_b;
         a & bg_a;
         a.text(field);
+        a.template vector<uint8_t>(blips);
         a.template vector<uint8_t>(children);
     }
 };
@@ -447,12 +467,14 @@ struct MessageSound {
     float x = 0;
     float y = 0;
     float volume = 1.0F;
+    bool global = false;
     template <class Archive>
     void serialize(Archive& a) {
         a.text(asset);
         a & x;
         a & y;
         a & volume;
+        a & global;
     }
 };
 

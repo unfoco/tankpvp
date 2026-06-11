@@ -3,6 +3,8 @@
 #include <cmath>
 
 #include "component/network.h"
+#include "component/render.h"
+#include "component/script.h"
 
 static auto read_field(ecs_primitive_kind_t kind, const void* ptr) -> double {
     switch (kind) {
@@ -147,12 +149,23 @@ void Reflect::set_component_from_ref(flecs::entity entity, const std::string& na
     int32_t count = ecs_vec_count(&layout->members);
     for (int32_t i = 0; i < count; ++i) {
         auto* member = ecs_vec_get_t(&layout->members, ecs_member_t, i);
-        const auto* primitive = ecs_get(world.c_ptr(), member->type, EcsPrimitive);
-        if (primitive == nullptr) {
-            continue;
-        }
         LuaRef field = value[member->name];
         void* ptr = static_cast<uint8_t*>(base) + member->offset;
+        const auto* primitive = ecs_get(world.c_ptr(), member->type, EcsPrimitive);
+        if (primitive == nullptr) {
+            const ecs_type_info_t* eti = ecs_get_type_info(world.c_ptr(), member->type);
+            if (eti != nullptr && ecs_has(world.c_ptr(), member->type, EcsEnum) && field.isNumber()) {
+                auto v = static_cast<int64_t>(field.unsafe_cast<double>());
+                if (eti->size == 1) {
+                    *static_cast<uint8_t*>(ptr) = static_cast<uint8_t>(v);
+                } else if (eti->size == 2) {
+                    *static_cast<uint16_t*>(ptr) = static_cast<uint16_t>(v);
+                } else {
+                    *static_cast<uint32_t*>(ptr) = static_cast<uint32_t>(v);
+                }
+            }
+            continue;
+        }
         if (primitive->kind == EcsString) {
             if (field.isString()) {
                 char** slot = reinterpret_cast<char**>(ptr);
@@ -307,6 +320,39 @@ static auto is_internal_component(const std::string& name) -> bool {
     return internal.contains(name);
 }
 
+auto Reflect::engine_enums() -> const std::vector<EngineEnum>& {
+    static const std::vector<EngineEnum> ENUMS = {
+        {"BlendMode", {{"Normal", static_cast<int>(BlendMode::Normal)},
+                       {"Add", static_cast<int>(BlendMode::Add)},
+                       {"Multiply", static_cast<int>(BlendMode::Multiply)},
+                       {"Modulate", static_cast<int>(BlendMode::Modulate)}}},
+        {"RenderLayer", {{"Underlay", static_cast<int>(RenderLayer::Underlay)},
+                         {"Ground", static_cast<int>(RenderLayer::Ground)},
+                         {"Overlay", static_cast<int>(RenderLayer::Overlay)}}},
+        {"ViewPlacement", {{"Center", static_cast<int>(ViewPlacement::Center)},
+                           {"TopRight", static_cast<int>(ViewPlacement::TopRight)},
+                           {"BottomLeft", static_cast<int>(ViewPlacement::BottomLeft)},
+                           {"Bottom", static_cast<int>(ViewPlacement::Bottom)},
+                           {"BottomRight", static_cast<int>(ViewPlacement::BottomRight)}}},
+        {"VisionKind", {{"None", static_cast<int>(VisionKind::None)},
+                        {"Radial", static_cast<int>(VisionKind::Radial)},
+                        {"Cone", static_cast<int>(VisionKind::Cone)}}},
+    };
+    return ENUMS;
+}
+
+void Reflect::expose_enums(flecs::world world) {
+    ScriptState& state = ScriptState::of(world);
+    for (const EngineEnum& e : engine_enums()) {
+        lua_newtable(state.lua);
+        for (const auto& [key, value] : e.constants) {
+            lua_pushinteger(state.lua, value);
+            lua_setfield(state.lua, -2, key);
+        }
+        lua_setglobal(state.lua, e.name);
+    }
+}
+
 void Reflect::refresh_components(flecs::world world) {
     ScriptState& state = ScriptState::of(world);
     world.query_builder().with<flecs::Component>().build().each([&](flecs::entity comp) -> void {
@@ -324,7 +370,10 @@ void Reflect::refresh_components(flecs::world world) {
         if (name.rfind("Request", 0) == 0 || name.rfind("Response", 0) == 0) {
             return;
         }
+        if (ecs_has(world.c_ptr(), comp.id(), EcsEnum)) {
+        }
         state.components.insert({name, comp.id()});
         create_binding_proxy(state.lua, name);
     });
+    expose_enums(world);
 }

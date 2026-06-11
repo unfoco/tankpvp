@@ -1,17 +1,28 @@
 #include <cmath>
 
 #include "component/network.h"
+#include "component/object.h"
 #include "logic.h"
 #include "util/math.h"
 #include "util/movement.h"
 
+static auto is_client(flecs::world world) -> bool {
+    const auto* cfg = world.try_get<NetworkConfig>();
+    return cfg != nullptr && cfg->role == NetworkRole::Client;
+}
+
 void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Position& pos, const Rotation& rot, VelocityLinear& vel, VelocityAngular& ang) {
+    if (is_client(it.world())) {
+        return;
+    }
     flecs::entity tank = it.entity(i);
     const auto* ms = tank.try_get<MovementStats>();
     movement::velocity(flags.value, rot.angle, ms ? *ms : MovementStats{}, vel.value, ang.value);
 
-    if (flags.has(InputFlags::Shoot)) {
+    auto* ammo = tank.try_get_mut<Ammo>();
+    bool out_of_ammo = ammo != nullptr && (ammo->reloading > 0.0F || ammo->mag == 0);
 
+    if (flags.has(InputFlags::Shoot) && !out_of_ammo) {
         uint32_t peer = 0;
         uint32_t prediction = 0;
         uint32_t view = 0;
@@ -47,5 +58,26 @@ void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Posi
             .set(Owner{.peer = peer, .prediction = prediction})
             .add<Replicated>()
             .child_of(tank);
+
+        if (ammo != nullptr) {
+            ammo->mag -= 1;
+            if (ammo->mag == 0 && ammo->reserve > 0) {
+                ammo->reloading = ammo->reload_time;
+            }
+        }
+    }
+}
+
+void Logic::reload(flecs::iter& it, size_t /*i*/, Ammo& a) {
+    if (is_client(it.world()) || a.reloading <= 0.0F) {
+        return;
+    }
+    a.reloading -= it.delta_time();
+    if (a.reloading <= 0.0F) {
+        a.reloading = 0.0F;
+        uint32_t need = (a.mag_size > a.mag) ? (a.mag_size - a.mag) : 0;
+        uint32_t take = (need < a.reserve) ? need : a.reserve;
+        a.mag += take;
+        a.reserve -= take;
     }
 }

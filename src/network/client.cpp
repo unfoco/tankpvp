@@ -209,8 +209,6 @@ void ghosts_advance(flecs::world& world, const ClientQueries& q, const std::vect
 }
 
 void prediction_hit(const ClientQueries& q, NetworkConnection& conn, glm::vec2 self_pos, bool have_self) {
-    uint64_t deadline = conn.newest + static_cast<uint64_t>(std::min(conn.rtt, 1.0) / TICK_DT) + VIEW_MAX + 12;
-
     struct Enemy {
         flecs::entity e;
         uint64_t nid;
@@ -228,7 +226,6 @@ void prediction_hit(const ClientQueries& q, NetworkConnection& conn, glm::vec2 s
     }
 
     std::vector<flecs::entity> impacted;
-    std::vector<flecs::entity> killed;
     q.pred_bullets.each([&](flecs::entity b, const Position& p, const Predicted& pred) -> void {
         bool pointblank = have_self && glm::distance(p.value, self_pos) < 80.0F;
         const Enemy* best = nullptr;
@@ -253,18 +250,10 @@ void prediction_hit(const ClientQueries& q, NetworkConnection& conn, glm::vec2 s
             return;
         }
         impacted.push_back(b);
-        if (pred.id && best->nid != conn.self) {
-            killed.push_back(best->e);
-        }
     });
     for (auto b : impacted) {
         if (b.is_alive()) {
             b.destruct();
-        }
-    }
-    for (auto k : killed) {
-        if (k.is_alive()) {
-            k.set<Dying>({deadline});
         }
     }
 }
@@ -519,7 +508,7 @@ void NetworkClient::predict(flecs::iter& it) {
         {
             std::vector<flecs::entity> revive;
             q.dying.each([&](flecs::entity e, const Dying& d) -> void {
-                if (conn.newest >= d.revive) {
+                if (d.revive != 0 && conn.newest >= d.revive) {
                     revive.push_back(e);
                 }
             });
@@ -542,6 +531,13 @@ void NetworkClient::predict(flecs::iter& it) {
         bool have_self = false;
 
         q.local_tank.each([&](flecs::entity self, InputFlags& flags, Position& pos, Rotation& rot, Interpolation& interp) -> void {
+            if (self.has<Dying>()) {
+                if (interp.ready) {
+                    pos.value = glm::mix(pos.value, interp.position, 0.35F);
+                    rot.angle = interp.angle;
+                }
+                return;
+            }
             uint32_t f = flags.value;
             const auto* ms = self.try_get<MovementStats>();
             MovementStats stats = ms ? *ms : MovementStats{};
@@ -554,7 +550,9 @@ void NetworkClient::predict(flecs::iter& it) {
                 conn.fire_pending = true;
             }
             bool cooled = !conn.newest || conn.client_tick >= conn.last_fire + cooldown;
-            bool fire = advance && wants_fire && cooled;
+            const auto* ammo = self.try_get<Ammo>();
+            bool has_ammo = ammo == nullptr || (ammo->mag > 0 && ammo->reloading <= 0.0F);
+            bool fire = advance && wants_fire && cooled && has_ammo;
             if (advance && wants_fire) {
                 conn.fire_pending = false;
             }

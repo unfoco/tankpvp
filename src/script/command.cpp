@@ -34,18 +34,19 @@ static void read_value_or_bind(const LuaRef& widget, const char* key, std::strin
 static auto build_view_widget(ScriptState& state, const LuaRef& widget, uint64_t owner, const std::string& view) -> ViewWidget {
     ViewWidget out;
     std::string kind = Lua::ref_string(widget, "kind", "label");
-    if (kind == "panel") {
+    if (kind == "card" || kind == "column" || kind == "row") {
         out.kind = ViewKind::Panel;
-        out.layout = Lua::ref_string(widget, "layout", "column") == "row" ? ViewLayout::Row : ViewLayout::Column;
+        out.card = (kind == "card");
+        out.layout = (kind == "row") ? ViewLayout::Row : ViewLayout::Column;
         out.text = Lua::ref_string(widget, "title", "");
-        LuaRef background = widget["background"];
-        if (background.isBool() && !background.unsafe_cast<bool>()) {
-            out.bg_a = 0;
-        } else if (background.isTable()) {
-            out.bg_r = static_cast<uint8_t>(Lua::ref_number(background, "r", 35.0));
-            out.bg_g = static_cast<uint8_t>(Lua::ref_number(background, "g", 35.0));
-            out.bg_b = static_cast<uint8_t>(Lua::ref_number(background, "b", 40.0));
-            out.bg_a = static_cast<uint8_t>(Lua::ref_number(background, "a", 255.0));
+        if (out.card) {
+            LuaRef background = widget["background"];
+            if (background.isTable()) {
+                out.bg_r = static_cast<uint8_t>(Lua::ref_number(background, "r", 24.0));
+                out.bg_g = static_cast<uint8_t>(Lua::ref_number(background, "g", 24.0));
+                out.bg_b = static_cast<uint8_t>(Lua::ref_number(background, "b", 32.0));
+                out.bg_a = static_cast<uint8_t>(Lua::ref_number(background, "a", 240.0));
+            }
         }
         int count = widget.length();
         for (int i = 1; i <= count; ++i) {
@@ -90,6 +91,28 @@ static auto build_view_widget(ScriptState& state, const LuaRef& widget, uint64_t
             out.color_g = static_cast<uint8_t>(Lua::ref_number(color, "g", 200.0));
             out.color_b = static_cast<uint8_t>(Lua::ref_number(color, "b", 120.0));
         }
+    } else if (kind == "minimap") {
+        out.kind = ViewKind::Minimap;
+        out.number = static_cast<float>(Lua::ref_number(widget, "size", 200.0));
+        LuaRef blips = widget["blips"];
+        if (blips.isTable()) {
+            for (int i = 1;; ++i) {
+                LuaRef b = blips[i];
+                if (!b.isTable()) {
+                    break;
+                }
+                Blip blip;
+                blip.x = static_cast<float>(Lua::ref_number(b, "x", 0.0));
+                blip.y = static_cast<float>(Lua::ref_number(b, "y", 0.0));
+                LuaRef color = b["color"];
+                if (color.isTable()) {
+                    blip.r = static_cast<uint8_t>(Lua::ref_number(color, "r", 255.0));
+                    blip.g = static_cast<uint8_t>(Lua::ref_number(color, "g", 255.0));
+                    blip.b = static_cast<uint8_t>(Lua::ref_number(color, "b", 255.0));
+                }
+                out.blips.push_back(blip);
+            }
+        }
     } else if (kind == "input") {
         out.kind = ViewKind::Input;
         out.field = Lua::ref_string(widget, "field", "");
@@ -110,6 +133,7 @@ static auto build_view_widget(ScriptState& state, const LuaRef& widget, uint64_t
         out.text = Lua::ref_string(widget, "label", "");
     } else {
         out.kind = ViewKind::Label;
+        out.number = static_cast<float>(Lua::ref_number(widget, "width", 0.0));
         LuaRef value = widget["value"];
         if (value.isTable()) {
             LuaRef path = value["__bind"];
@@ -130,7 +154,19 @@ static void script_open_view(flecs::world world, const CommandSender& sender, co
     RequestView req;
     req.peer = sender.peer;
     req.id = id;
-    req.placement = Lua::ref_string(tree, "placement", "center") == "hud" ? ViewPlacement::Hud : ViewPlacement::Center;
+    {
+        LuaRef pl = tree["placement"];
+        if (pl.isNumber()) {
+            req.placement = static_cast<ViewPlacement>(static_cast<int>(pl.unsafe_cast<double>()));
+        } else {
+            std::string p = pl.isString() ? pl.unsafe_cast<std::string>() : "center";
+            req.placement = p == "topright"     ? ViewPlacement::TopRight
+                            : p == "bottomleft" ? ViewPlacement::BottomLeft
+                            : p == "bottom"     ? ViewPlacement::Bottom
+                            : p == "bottomright" ? ViewPlacement::BottomRight
+                                                 : ViewPlacement::Center;
+        }
+    }
     req.root = build_view_widget(state, tree, owner, id);
     world.entity().set(std::move(req));
 }

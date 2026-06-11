@@ -32,6 +32,62 @@
 #include "reflect.h"
 #include "state.h"
 
+static auto script_spawn(flecs::world world, const LuaRef& def) -> flecs::entity {
+    flecs::entity e = world.entity();
+    if (def.isTable()) {
+        for (auto&& entry : luabridge::pairs(def)) {
+            std::string name = Reflect::component_ref_name(entry.first);
+            flecs::entity_t comp = name.empty() ? 0 : Reflect::component_entity(world, name);
+            if (comp == 0) {
+                continue;
+            }
+            if (ecs_get(world.c_ptr(), comp, EcsStruct) != nullptr && entry.second.isTable()) {
+                Reflect::set_component_from_ref(e, name, entry.second);
+            } else {
+                ecs_add_id(world.c_ptr(), e.id(), comp);
+            }
+        }
+    }
+    ScriptState& st = ScriptState::of(world);
+    if (st.active_scene && st.active_scene.is_alive()) {
+        e.add<PartOf>(st.active_scene);
+    }
+    return e;
+}
+
+static void scene_unload(flecs::world world, flecs::entity scene) {
+    if (!scene || !scene.is_alive()) {
+        return;
+    }
+    std::vector<flecs::entity> doomed;
+    world.query_builder().with<PartOf>(scene).build().each([&](flecs::entity e) -> void { doomed.push_back(e); });
+    for (flecs::entity e : doomed) {
+        if (e.is_alive()) {
+            e.destruct();
+        }
+    }
+    ScriptState& st = ScriptState::of(world);
+    if (st.tile_scene == scene) {
+        if (auto* grid = world.try_get_mut<WorldGrid>()) {
+            for (auto& [key, chunk] : grid->chunks) {
+                if (chunk.is_alive()) {
+                    chunk.destruct();
+                }
+            }
+            grid->chunks.clear();
+            grid->data.clear();
+            grid->hp.clear();
+            grid->dirty.clear();
+            grid->updates.clear();
+            grid->generated.clear();
+            ++grid->version;
+            ++grid->wipe;
+        }
+        st.generator.reset();
+        st.tile_scene = {};
+    }
+}
+
 static void emit(ScriptState& state, const char* name, const std::function<void(lua_State*)>& push_event) {
     auto it = state.handlers.find(name);
     if (it == state.handlers.end()) {
@@ -211,6 +267,7 @@ static constexpr EventType EVENT_TYPES[] = {
     {"EventPlayerJoin", "{ player: Player }"},
     {"EventPlayerLeave", "{ player: Player }"},
     {"EventDeath", "{ entity: Entity }"},
+    {"EventHit", "{ attacker: Entity, victim: Entity, point: Vec }"},
     {"EventContact", "{ a: Entity, b: Entity }"},
     {"EventSensor", "{ a: Entity, b: Entity }"},
     {"EventContactEnd", "{ a: Entity, b: Entity }"},
@@ -298,6 +355,16 @@ static void generate_types(flecs::world world) {
             out << "export type " << name << " = " << (is_vec ? "Vec" : "{ " + value + " }") << "\n";
         }
         out << "declare " << name << ": { " << binding << " }\n";
+    }
+
+    out << "\n";
+    for (const EngineEnum& e : Reflect::engine_enums()) {
+        out << "export type " << e.name << " = number\n";
+        out << "declare " << e.name << ": { ";
+        for (size_t i = 0; i < e.constants.size(); ++i) {
+            out << (i == 0 ? "" : ", ") << e.constants[i].first << ": number";
+        }
+        out << " }\n";
     }
 
     out << "\n";
@@ -469,8 +536,20 @@ static void setup_api(flecs::world world, lua_State* lua) {
     api_fn(worldns, state, "world", "reload", "() -> ()", [world]() -> void { ScriptState::of(world).reload_pending = true; });
     api_fn(worldns, state, "world", "generator", "((number, number) -> ()) -> ()", [world](const LuaRef& fn) -> void {
         if (fn.isFunction()) {
-            ScriptState::of(world).generator = fn;
+            ScriptState& st = ScriptState::of(world);
+            st.generator = fn;
+            st.tile_scene = st.active_scene;
         }
+    });
+    api_fn(worldns, state, "world", "scene", "(string) -> Scene", [world](const std::string& name, lua_State* s) -> LuaRef {
+        ScriptState& st = ScriptState::of(world);
+        auto it = st.scenes.find(name);
+        flecs::entity sc = (it != st.scenes.end() && it->second.is_alive()) ? it->second : flecs::entity{};
+        if (!sc) {
+            sc = world.entity().set<Scene>({.name = name});
+            st.scenes[name] = sc;
+        }
+        return LuaRef(s, ScriptScene{.entity = sc});
     });
     api_fn(worldns, state, "world", "set_tile", "(number, number, Tile) -> ()", [world](double x, double y, const ScriptTile& tile) -> void {
         world.entity().set(RequestSetTile{.tx = static_cast<int32_t>(std::floor(x)), .ty = static_cast<int32_t>(std::floor(y)), .id = tile.id});
@@ -491,22 +570,7 @@ static void setup_api(flecs::world world, lua_State* lua) {
     });
     api_fn(worldns, state, "world", "each", "(any, (Entity) -> ()) -> ()", [world](const LuaRef& names, const LuaRef& fn) -> void { query_each(world, names, fn); });
     api_fn(worldns, state, "world", "spawn", "(any) -> Entity", [world](const LuaRef& def, lua_State* s) -> LuaRef {
-        flecs::entity e = world.entity();
-        if (def.isTable()) {
-            for (auto&& entry : luabridge::pairs(def)) {
-                std::string name = Reflect::component_ref_name(entry.first);
-                flecs::entity_t comp = name.empty() ? 0 : Reflect::component_entity(world, name);
-                if (comp == 0) {
-                    continue;
-                }
-                if (ecs_get(world.c_ptr(), comp, EcsStruct) != nullptr && entry.second.isTable()) {
-                    Reflect::set_component_from_ref(e, name, entry.second);
-                } else {
-                    ecs_add_id(world.c_ptr(), e.id(), comp);
-                }
-            }
-        }
-        return LuaRef(s, ScriptEntity{.entity = e});
+        return LuaRef(s, ScriptEntity{.entity = script_spawn(world, def)});
     });
     api_fn(worldns, state, "world", "entity", "(number) -> Entity?", [world](double id, lua_State* s) -> LuaRef {
         flecs::entity e = world.entity(static_cast<flecs::entity_t>(id));
@@ -546,6 +610,17 @@ static void setup_api(flecs::world world, lua_State* lua) {
             .radius = static_cast<float>(Lua::ref_number(spec, "radius", 0.0)),
             .force = static_cast<float>(Lua::ref_number(spec, "force", 0.0)),
             .damage = static_cast<float>(Lua::ref_number(spec, "damage", 0.0)),
+        });
+    });
+    api_fn(worldns, state, "world", "effect", "({ at: Vec, color: { r: number, g: number, b: number }? }) -> ()", [world](const LuaRef& spec) -> void {
+        LuaRef at = spec["at"];
+        LuaRef col = spec["color"];
+        world.entity().set(RequestBurst{
+            .x = static_cast<float>(Lua::ref_number(at, "x", 0.0)),
+            .y = static_cast<float>(Lua::ref_number(at, "y", 0.0)),
+            .r = static_cast<uint8_t>(Lua::ref_number(col, "r", 255.0)),
+            .g = static_cast<uint8_t>(Lua::ref_number(col, "g", 255.0)),
+            .b = static_cast<uint8_t>(Lua::ref_number(col, "b", 255.0)),
         });
     });
     api_fn(worldns, state, "world", "raycast", "({ origin: Vec, direction: Vec, range: number }, ({ RaycastHit }) -> ()) -> ()", [world](const LuaRef& spec, const LuaRef& callback) -> void {
@@ -607,11 +682,13 @@ static void setup_api(flecs::world world, lua_State* lua) {
     auto audions = luabridge::getGlobalNamespace(lua).beginNamespace("audio");
     api_fn(audions, state, "audio", "play", "(string, { at: Vec?, volume: number? }?) -> ()", [world](const std::string& name, const LuaRef& opts) -> void {
         RequestSound sound{.asset = name};
+        sound.global = true;
         if (opts.isTable()) {
             LuaRef at = opts["at"];
             if (at.isTable()) {
                 sound.x = static_cast<float>(Lua::ref_number(at, "x", 0.0));
                 sound.y = static_cast<float>(Lua::ref_number(at, "y", 0.0));
+                sound.global = false;
             }
             sound.volume = static_cast<float>(Lua::ref_number(opts, "volume", 1.0));
         }
@@ -704,10 +781,13 @@ static void setup_api(flecs::world world, lua_State* lua) {
     });
 
     auto viewns = luabridge::getGlobalNamespace(lua).beginNamespace("view");
-    api_fn(viewns, state, "view", "label", "(any) -> Widget", [](const LuaRef& value, lua_State* s) -> LuaRef {
+    api_fn(viewns, state, "view", "label", "(any, number?) -> Widget", [](const LuaRef& value, const LuaRef& width, lua_State* s) -> LuaRef {
         LuaRef table = luabridge::newTable(s);
         table["kind"] = "label";
         table["value"] = value;
+        if (width.isNumber()) {
+            table["width"] = width;
+        }
         return table;
     });
     api_fn(viewns, state, "view", "button", "(string, (Context) -> ()) -> Widget", [](const std::string& text, const LuaRef& fn, lua_State* s) -> LuaRef {
@@ -719,6 +799,10 @@ static void setup_api(flecs::world world, lua_State* lua) {
     });
     api_fn(viewns, state, "view", "bar", "(any) -> Widget", [](LuaRef table) -> LuaRef {
         table["kind"] = "bar";
+        return table;
+    });
+    api_fn(viewns, state, "view", "minimap", "({ size: number?, blips: { { x: number, y: number, color: { r: number, g: number, b: number }? } }? }) -> Widget", [](LuaRef table) -> LuaRef {
+        table["kind"] = "minimap";
         return table;
     });
     api_fn(viewns, state, "view", "input", "(any) -> Widget", [](LuaRef table) -> LuaRef {
@@ -733,24 +817,26 @@ static void setup_api(flecs::world world, lua_State* lua) {
         table["kind"] = "toggle";
         return table;
     });
-    api_fn(viewns, state, "view", "panel", "(any) -> Widget", [](LuaRef table) -> LuaRef {
-        table["kind"] = "panel";
+    api_fn(viewns, state, "view", "card", "(any) -> Widget", [](LuaRef table) -> LuaRef {
+        table["kind"] = "card";
         return table;
     });
-    api_fn(viewns, state, "view", "row", "(any) -> Widget", [](LuaRef table) -> LuaRef {
-        table["kind"] = "panel";
-        table["layout"] = "row";
+    api_fn(viewns, state, "view", "panel", "(any) -> Widget", [](LuaRef table) -> LuaRef {
+        table["kind"] = "card";
         return table;
     });
     api_fn(viewns, state, "view", "column", "(any) -> Widget", [](LuaRef table) -> LuaRef {
-        table["kind"] = "panel";
-        table["layout"] = "column";
+        table["kind"] = "column";
+        return table;
+    });
+    api_fn(viewns, state, "view", "row", "(any) -> Widget", [](LuaRef table) -> LuaRef {
+        table["kind"] = "row";
         return table;
     });
     api_fn(viewns, state, "view", "spacer", "(number?) -> Widget", [](const LuaRef& size, lua_State* s) -> LuaRef {
         LuaRef table = luabridge::newTable(s);
         table["kind"] = "spacer";
-        table["value"] = size.isNumber() ? size.unsafe_cast<double>() : 8.0;
+        table["value"] = size.isNumber() ? size.unsafe_cast<double>() : 0.0;
         return table;
     });
     api_fn(viewns, state, "view", "separator", "() -> Widget", [](lua_State* s) -> LuaRef {
@@ -770,6 +856,16 @@ static void setup_api(flecs::world world, lua_State* lua) {
     auto entity = luabridge::getGlobalNamespace(lua).beginClass<ScriptEntity>("Entity");
     api_method(entity, state, "Entity", "id", "(self: Entity) -> number", [](const ScriptEntity* self) -> double { return static_cast<double>(self->entity.id()); });
     api_method(entity, state, "Entity", "alive", "(self: Entity) -> boolean", [](const ScriptEntity* self) -> bool { return self->entity.is_alive(); });
+    api_method(entity, state, "Entity", "teleport", "(self: Entity, number, number) -> ()", [](const ScriptEntity* self, double x, double y) -> void {
+        flecs::entity e = self->entity;
+        if (!e.is_alive()) {
+            return;
+        }
+        e.set<Position>({.value = {static_cast<float>(x), static_cast<float>(y)}}).set<VelocityLinear>({}).set<VelocityAngular>({}).add<Teleport>();
+        if (auto* sp = e.try_get_mut<Spawn>()) {
+            sp->epoch++;
+        }
+    });
     api_method(entity, state, "Entity", "destroy", "(self: Entity) -> ()", [](const ScriptEntity* self) -> void {
         if (self->entity.is_alive()) {
             self->entity.destruct();
@@ -896,6 +992,47 @@ static void setup_api(flecs::world world, lua_State* lua) {
         })
         .endClass();
 
+    auto scene = luabridge::getGlobalNamespace(lua).beginClass<ScriptScene>("Scene");
+    api_method(scene, state, "Scene", "id", "(self: Scene) -> number",
+               [](const ScriptScene* self) -> double { return static_cast<double>(self->entity.id()); });
+    api_method(scene, state, "Scene", "name", "(self: Scene) -> string", [](const ScriptScene* self) -> std::string {
+        const auto* s = self->entity.try_get<Scene>();
+        return s != nullptr ? s->name : std::string{};
+    });
+    api_method(scene, state, "Scene", "load", "(self: Scene, () -> ()) -> ()", [](const ScriptScene* self, const LuaRef& fn) -> void {
+        if (!fn.isFunction()) {
+            return;
+        }
+        flecs::world world = self->entity.world();
+        ScriptState& st = ScriptState::of(world);
+        flecs::entity prev = st.active_scene;
+        st.active_scene = self->entity;
+        lua_State* lua = st.lua;
+        Lua::push(lua, fn);
+        int status = 0;
+        {
+            BudgetGuard guard(lua);
+            status = lua_pcall(lua, 0, 0, 0);
+        }
+        if (status != 0) {
+            SDL_Log("[lua] scene load error: %s", lua_tostring(lua, -1));
+            lua_pop(lua, 1);
+        }
+        st.active_scene = prev;
+    });
+    api_method(scene, state, "Scene", "spawn", "(self: Scene, any) -> Entity", [](const ScriptScene* self, const LuaRef& def, lua_State* s) -> LuaRef {
+        flecs::world world = self->entity.world();
+        ScriptState& st = ScriptState::of(world);
+        flecs::entity prev = st.active_scene;
+        st.active_scene = self->entity;
+        flecs::entity e = script_spawn(world, def);
+        st.active_scene = prev;
+        return LuaRef(s, ScriptEntity{.entity = e});
+    });
+    api_method(scene, state, "Scene", "unload", "(self: Scene) -> ()",
+               [](const ScriptScene* self) -> void { scene_unload(self->entity.world(), self->entity); });
+    scene.endClass();
+
     auto context = luabridge::getGlobalNamespace(lua).beginClass<ScriptContext>("Context");
     api_prop(context, state, "Context", "name", "string", &ScriptContext::name);
     api_prop(context, state, "Context", "player", "Player?", +[](const ScriptContext* self) -> LuaRef { return self->player; });
@@ -1009,6 +1146,8 @@ Script::Script(flecs::world& world) {
     setup_api(world, state.lua);
     Reflect::refresh_components(world);
     Reflect::register_component(world, "Replicated", world.component<Replicated>().id());
+    world.component<Scene>();
+    world.component<PartOf>();
 
     world.observer().with<Dying>().event(flecs::OnAdd).each([](flecs::entity e) -> void {
         flecs::world w = e.world();
@@ -1017,6 +1156,21 @@ Script::Script(flecs::world& world) {
             ev["entity"] = ScriptEntity{.entity = e};
             ev.push(lua);
         });
+    });
+
+    world.observer<const RequestHit>("script::hit").event(flecs::OnSet).each([](flecs::entity e, const RequestHit& hit) -> void {
+        flecs::world w = e.world();
+        emit(ScriptState::of(w), "hit", [&](lua_State* lua) -> void {
+            LuaRef ev = luabridge::newTable(lua);
+            ev["attacker"] = ScriptEntity{.entity = flecs::entity(w, hit.attacker)};
+            ev["victim"] = ScriptEntity{.entity = flecs::entity(w, hit.victim)};
+            LuaRef pt = luabridge::newTable(lua);
+            pt["x"] = hit.x;
+            pt["y"] = hit.y;
+            ev["point"] = pt;
+            ev.push(lua);
+        });
+        e.destruct();
     });
 
     world.observer<const ResponseRaycast>("script::raycast_result").event(flecs::OnSet).each([](flecs::entity e, const ResponseRaycast& r) -> void {
@@ -1197,6 +1351,8 @@ Script::Script(flecs::world& world) {
         ScriptState& state = ScriptState::of(e.world());
         if (state.generator && state.generator->isFunction()) {
             lua_State* lua = state.lua;
+            flecs::entity prev = state.active_scene;
+            state.active_scene = state.tile_scene;
             state.generator->push(lua);
             lua_pushnumber(lua, req.cx);
             lua_pushnumber(lua, req.cy);
@@ -1209,6 +1365,7 @@ Script::Script(flecs::world& world) {
                 SDL_Log("[lua] generator error: %s", lua_tostring(lua, -1));
                 lua_pop(lua, 1);
             }
+            state.active_scene = prev;
         }
         e.destruct();
     });

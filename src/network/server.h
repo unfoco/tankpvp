@@ -48,6 +48,7 @@ struct Peer {
     uint32_t asset_offset = 0;
 
     std::unordered_set<int64_t> known_chunks;
+    uint32_t grid_wipe = 0;
 };
 
 struct Interest {

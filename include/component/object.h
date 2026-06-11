@@ -12,10 +12,6 @@ struct Rotation {
     float angle;
 };
 
-struct Color {
-    glm::vec3 value;
-};
-
 struct Decay {
     float seconds;
 };
@@ -40,4 +36,12 @@ struct WeaponStats {
     float speed = 300.0F;
     float muzzle = 30.0F;
     float life = 5.0F;
+};
+
+struct Ammo {
+    uint32_t mag = 30;
+    uint32_t reserve = 90;
+    uint32_t mag_size = 30;
+    float reload_time = 1.8F;
+    float reloading = 0.0F;
 };

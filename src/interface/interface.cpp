@@ -1,5 +1,7 @@
 #include "interface.h"
 
+#include "component/asset.h"
+#include "component/network.h"
 #include "component/script.h"
 #include "util/time.h"
 
@@ -37,6 +39,7 @@ Interface::Interface(flecs::world& world) {
 void Interface::frame(flecs::iter&, size_t, InterfaceState& state) {
     state.prevFocusedId = state.focusedId;
     state.mousePressed = false;
+    state.mouseReleased = false;
     state.focusConsumed = false;
     state.cursor = InterfaceCursor::Default;
     state.textPool.clear();
@@ -49,6 +52,7 @@ void Interface::event(flecs::iter&, size_t, InterfaceState& state, const WindowE
             state.mouseDown = true;
         } else if (e.type == SDL_EVENT_MOUSE_BUTTON_UP && e.button.button == SDL_BUTTON_LEFT) {
             state.mouseDown = false;
+            state.mouseReleased = true;
             state.activeId = 0;
         } else if (e.type == SDL_EVENT_MOUSE_MOTION) {
             state.mouseX = e.motion.x;
@@ -102,7 +106,17 @@ void Interface::build(flecs::iter& it, size_t, InterfaceState& state, InterfaceC
         state.cursors[static_cast<int>(InterfaceCursor::Text)] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_TEXT);
     }
 
-    InterfacePage shown = page;
+    InterfacePage effective = page;
+    {
+        const auto* store = it.world().try_get<AssetStore>();
+        const auto* conn = it.world().try_get<ConnectionStatus>();
+        const bool in_session = (conn != nullptr) && conn->state != ConnectionState::Disconnected;
+        if (store != nullptr && store->downloading() && in_session) {
+            effective = InterfacePage::Assets;
+        }
+    }
+
+    InterfacePage shown = effective;
     if (auto& tr = it.world().get_mut<InterfaceTransition>(); shown != tr.shown) {
         InterfacePage from = tr.shown;
         if (from == tr.last_to && shown == tr.last_from) {
@@ -116,7 +130,10 @@ void Interface::build(flecs::iter& it, size_t, InterfaceState& state, InterfaceC
         tr.start = util::now();
     }
 
-    switch (page) {
+    switch (effective) {
+        case InterfacePage::Assets:
+            cmds.list = Interface::assets(it, state, page, prev, events);
+            break;
         case InterfacePage::Main:
             cmds.list = Interface::main(it, state, page, prev, events);
             break;

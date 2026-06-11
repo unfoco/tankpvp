@@ -12,7 +12,9 @@
 #include "component/input.h"
 #include "component/object.h"
 #include "component/physics.h"
+#include "component/render.h"
 #include "component/script.h"
+#include "util/ballistics.h"
 #include "component/settings.h"
 
 #include "client.h"
@@ -64,6 +66,21 @@ Network::Network(flecs::world& world) {
     world.component<WeaponStats>().member<uint32_t>("cooldown").member<float>("speed").member<float>("muzzle").member<float>("life");
     world.component<Bullet>().member<float>("speed");
     world.component<Spawn>().member<uint16_t>("epoch");
+    world.component<Dying>().member<uint64_t>("revive");
+    world.component<VisionKind>();
+    world.component<Camera>()
+        .member<uint64_t>("target").member<float>("focus_x").member<float>("focus_y").member<float>("offset_x").member<float>("offset_y")
+        .member<float>("zoom").member<float>("rotation").member<float>("follow").member<float>("shake").member<float>("ambient")
+        .member<VisionKind>("vision").member<float>("vision_range").member<float>("vision_angle").member<float>("shadow_solid")
+        .member<float>("tint_r").member<float>("tint_g").member<float>("tint_b").member<float>("tint_a")
+        .member<float>("flash").member<float>("flash_fade").member<float>("vignette").member<float>("blur").member<float>("chromatic");
+    world.component<Light>().member<float>("r").member<float>("g").member<float>("b").member<float>("radius").member<float>("intensity");
+    world.component<VisionBlocker>().member<float>("radius").member<float>("alpha").member<float>("r").member<float>("g").member<float>("b");
+    world.component<Ammo>().member<uint32_t>("mag").member<uint32_t>("reserve").member<uint32_t>("mag_size").member<float>("reload_time").member<float>("reloading");
+    world.component<BlendMode>();
+    world.component<RenderLayer>();
+    world.component<Blend>().member<float>("opacity").member<BlendMode>("mode");
+    world.component<Layer>().member<RenderLayer>("value");
     world.component<Sprite>()
         .member<uint64_t>("texture", SPRITE_LAYERS)
         .member<float>("offset_x", SPRITE_LAYERS)
@@ -77,6 +94,14 @@ Network::Network(flecs::world& world) {
     world.component<Color>().add<Networked>();
     world.component<Owner>().add<Networked>();
     world.component<Tank>().add<Networked>();
+    world.component<Decoration>().add<Networked>();
+    world.component<Dying>().add<Networked>();
+    world.component<Camera>().add<Networked>();
+    world.component<Light>().add<Networked>();
+    world.component<VisionBlocker>().add<Networked>();
+    world.component<Ammo>().add<Networked>();
+    world.component<Blend>().add<Networked>();
+    world.component<Layer>().add<Networked>();
     world.component<Bullet>().add<Networked>();
     world.component<Spawn>().add<Networked>();
     world.component<MovementStats>().add<Networked>();
@@ -100,6 +125,20 @@ Network::Network(flecs::world& world) {
     world.observer("network::tank_sprite").with<Tank>().without<Sprite>().event(flecs::OnAdd).each([](flecs::entity e) -> void { e.set<Sprite>(tank_default_sprite()); });
     world.observer("network::tank_spawn").with<Tank>().without<Spawn>().event(flecs::OnAdd).each([](flecs::entity e) -> void { e.set<Spawn>({}); });
 
+    world.observer<const Position>("network::decoration_setup").with<Decoration>().without<Frozen>().event(flecs::OnSet).each([](flecs::entity e, const Position& pos) -> void {
+        flecs::world w = e.world();
+        if (!w.has<NetworkHost>()) {
+            return;
+        }
+        e.add<Frozen>();
+        if (!e.has<Layer>()) {
+            const auto* grid = w.try_get<WorldGrid>();
+            const auto* tileset = w.try_get<Tileset>();
+            bool over = grid != nullptr && tileset != nullptr && ballistics::solid(ballistics::tile_at(*grid, *tileset, pos.value.x, pos.value.y));
+            e.set<Layer>({over ? RenderLayer::Overlay : RenderLayer::Ground});
+        }
+    });
+
     world.system<const RequestSound>("network::sounds").kind(flecs::OnStore).each([](flecs::entity e, const RequestSound&) -> void { e.destruct(); });
 
     world.import<NetworkServer>();
@@ -118,6 +157,11 @@ static void rebuild_registry(flecs::world world) {
 static void leave_session(flecs::world world) {
     if (const auto* h = world.try_get<NetworkHost>(); (h != nullptr) && (h->host != nullptr)) {
         ENetHost* host = h->host;
+        for (size_t i = 0; i < host->peerCount; ++i) {
+            if (host->peers[i].state == ENET_PEER_STATE_CONNECTED) {
+                enet_peer_disconnect_now(&host->peers[i], 0);
+            }
+        }
         NetworkServer::teardown(world);
         enet_host_destroy(host);
         world.remove<NetworkHost>();

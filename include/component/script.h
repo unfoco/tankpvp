@@ -8,6 +8,12 @@
 #include <utility>
 #include <vector>
 
+struct Scene {
+    std::string name;
+};
+
+struct PartOf {};
+
 struct CommandSender {
     flecs::entity peer;
     std::string name;
@@ -42,11 +48,23 @@ enum class ViewKind : uint8_t {
     Separator,
     Slider,
     Toggle,
+    Minimap,
+};
+
+struct Blip {
+    float x = 0;
+    float y = 0;
+    uint8_t r = 255;
+    uint8_t g = 255;
+    uint8_t b = 255;
 };
 
 enum class ViewPlacement : uint8_t {
     Center,
-    Hud,
+    TopRight,
+    BottomLeft,
+    Bottom,
+    BottomRight,
 };
 
 enum class ViewLayout : uint8_t {
@@ -57,6 +75,7 @@ enum class ViewLayout : uint8_t {
 struct ViewWidget {
     ViewKind kind = ViewKind::Label;
     ViewLayout layout = ViewLayout::Column;
+    bool card = false;
     std::string text;
     uint32_t handler = 0;
     std::string bind;
@@ -71,6 +90,7 @@ struct ViewWidget {
     uint8_t bg_b = 32;
     uint8_t bg_a = 240;
     std::string field;
+    std::vector<Blip> blips;
     std::vector<ViewWidget> children;
 };
 
@@ -127,3 +147,10 @@ struct RequestKick {
 };
 
 struct RequestReload {};
+
+struct RequestHit {
+    uint64_t attacker = 0;
+    uint64_t victim = 0;
+    float x = 0;
+    float y = 0;
+};

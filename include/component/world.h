@@ -54,6 +54,7 @@ struct WorldGrid {
     std::vector<int64_t> updates;
     std::unordered_set<int64_t> generated;
     uint32_t version = 0;
+    uint32_t wipe = 0;
 
     static auto key(int32_t cx, int32_t cy) -> int64_t {
         return (static_cast<int64_t>(cx) << 32) | static_cast<uint32_t>(cy);

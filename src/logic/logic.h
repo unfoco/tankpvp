@@ -11,5 +11,6 @@ struct Logic {
 
    private:
     static void input(flecs::iter& it, size_t i, const InputFlags& flags, const Position& pos, const Rotation& rot, VelocityLinear& vel, VelocityAngular& ang);
+    static void reload(flecs::iter& it, size_t i, Ammo& ammo);
     static void decay(flecs::entity e, Decay& decay);
 };

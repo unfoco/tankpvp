@@ -22,6 +22,10 @@ struct ScriptEntity {
     flecs::entity entity;
 };
 
+struct ScriptScene {
+    flecs::entity entity;
+};
+
 struct ScriptPlayer {
     flecs::entity peer;
 };
@@ -78,6 +82,9 @@ struct ScriptState {
     std::unordered_map<uint16_t, LuaRef> tile_rules;
     std::vector<std::string> tile_names;
     std::optional<LuaRef> generator;
+    flecs::entity active_scene;
+    flecs::entity tile_scene;
+    std::unordered_map<std::string, flecs::entity> scenes;
     std::unordered_map<std::string, std::vector<LuaRef>> handlers;
     std::unordered_map<std::string, LuaRef> commands;
     std::unordered_map<std::string, std::vector<std::string>> enum_aliases;
@@ -151,6 +158,9 @@ struct ScriptState {
         api_decls.swap(other.api_decls);
         api_types.swap(other.api_types);
         timers.swap(other.timers);
+        std::swap(active_scene, other.active_scene);
+        std::swap(tile_scene, other.tile_scene);
+        scenes.swap(other.scenes);
     }
     void reset() {
         handlers.clear();
@@ -164,6 +174,9 @@ struct ScriptState {
         prototypes.clear();
         view_owner.clear();
         timers.clear();
+        scenes.clear();
+        active_scene = {};
+        tile_scene = {};
         if (lua != nullptr) {
             lua_close(lua);
             lua = nullptr;

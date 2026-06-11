@@ -59,6 +59,7 @@ struct ButtonStyle {
     uint16_t fontSize = 32;
     float cornerRadius = 6;
     float width = 0;
+    bool grow = false;
     Clay_Padding padding = {.left = 16, .right = 16, .top = 10, .bottom = 10};
 };
 
@@ -150,6 +151,7 @@ struct InterfaceState {
     SDL_Cursor* cursors[3] = {};
 
     bool mousePressed = false;
+    bool mouseReleased = false;
     bool mouseDown = false;
     float mouseX = 0;
     float mouseY = 0;

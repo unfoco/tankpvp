@@ -4,6 +4,7 @@
 #include <utility>
 #include <vector>
 
+#include "component/network.h"
 #include "component/object.h"
 #include "util/math.h"
 #include "protocol.h"
@@ -39,7 +40,7 @@ static auto entity_size(const MessageEntity& em) -> size_t {
 }
 
 void send_snapshot(flecs::world& world, const NetworkRegistry& reg, NetworkHost& host, glm::vec2 view, Peer& peer, Replication& repl,
-                   const std::unordered_map<uint64_t, flecs::entity_t>& relevant) {
+                   const std::unordered_map<uint64_t, flecs::entity_t>& relevant, uint64_t self_nid) {
     auto dist2 = [&](flecs::entity_t eid) -> float {
         glm::vec2 p{0};
         if (const auto* pp = world.entity(eid).try_get<Position>()) {
@@ -54,9 +55,14 @@ void send_snapshot(flecs::world& world, const NetworkRegistry& reg, NetworkHost&
     }
 
     for (const auto& [nid, eid] : relevant) {
+        bool confirmed = repl.acked.contains(nid);
+        bool frozen = world.entity(eid).has<Frozen>();
+        if (frozen && confirmed) {
+            continue;
+        }
         float closeness = 1.0F / (1.0F + (dist2(eid) / (256.0F * 256.0F)));
         float gain = 1.0F + (closeness * 4.0F);
-        if (static_cast<unsigned int>(repl.acked.contains(nid)) == 0U) {
+        if (!confirmed) {
             gain += 20.0F;
         }
         float& pr = repl.priority[nid];
@@ -70,9 +76,16 @@ void send_snapshot(flecs::world& world, const NetworkRegistry& reg, NetworkHost&
         }
     }
 
+    if (self_nid != 0 && relevant.contains(self_nid)) {
+        repl.priority[self_nid] = 1e9F;
+    }
+
     std::vector<std::pair<float, uint64_t>> order;
     order.reserve(relevant.size());
     for (const auto& [nid, eid] : relevant) {
+        if (repl.acked.contains(nid) && world.entity(eid).has<Frozen>()) {
+            continue;
+        }
         order.emplace_back(repl.priority[nid], nid);
     }
     std::ranges::sort(order, [](auto& a, auto& b) -> auto { return a.first > b.first; });

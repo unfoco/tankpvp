@@ -4,7 +4,9 @@
 #include <flecs.h>
 
 #include <algorithm>
+#include <atomic>
 #include <charconv>
+#include <csignal>
 #include <cstdlib>
 #include <string>
 
@@ -168,4 +170,8 @@ auto SDL_AppIterate(void* appstate) -> SDL_AppResult {
 
 void SDL_AppQuit(void* appstate, SDL_AppResult result) {
     auto* state = static_cast<State*>(appstate);
+    auto& world = state->world;
+
+    world.entity().add<RequestQuit>();
+    world.progress(TICK_DT);
 }

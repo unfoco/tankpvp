@@ -5,6 +5,8 @@
 #include <clay.h>
 #include <flecs.h>
 
+#include <cmath>
+
 #include <glm/glm.hpp>
 
 #include <cstdint>
@@ -14,21 +16,37 @@
 #include "component/effect.h"
 #include "component/interface.h"
 #include "component/object.h"
+#include "component/render.h"
 #include "component/world.h"
 
 constexpr auto WIDTH = 1280;
 constexpr auto HEIGHT = 720;
 
-struct Camera {
-    glm::vec2 position;
-    float zoom;
+struct Viewport {
+    glm::vec2 position{0};
+    float zoom = 1.0F;
+    float rotation = 0.0F;
+    glm::vec2 offset{0};
+    glm::vec2 shakeOffset{0};
 
     [[nodiscard]] auto worldToScreen(const glm::vec2& worldPos, int windowW, int windowH) const -> glm::vec2 {
-        return {((worldPos.x - position.x) * zoom) + (static_cast<float>(windowW) / 2.0F), ((worldPos.y - position.y) * zoom) + (static_cast<float>(windowH) / 2.0F)};
+        glm::vec2 d = (worldPos - position) * zoom;
+        if (rotation != 0.0F) {
+            float c = std::cos(rotation);
+            float s = std::sin(rotation);
+            d = {(d.x * c) - (d.y * s), (d.x * s) + (d.y * c)};
+        }
+        return {d.x + (static_cast<float>(windowW) / 2.0F) + offset.x + shakeOffset.x, d.y + (static_cast<float>(windowH) / 2.0F) + offset.y + shakeOffset.y};
     }
 
     [[nodiscard]] auto screenToWorld(const glm::vec2& screenPos, int windowW, int windowH) const -> glm::vec2 {
-        return {((screenPos.x - (static_cast<float>(windowW) / 2.0F)) / zoom) + position.x, ((screenPos.y - (static_cast<float>(windowH) / 2.0F)) / zoom) + position.y};
+        glm::vec2 d = {screenPos.x - (static_cast<float>(windowW) / 2.0F) - offset.x - shakeOffset.x, screenPos.y - (static_cast<float>(windowH) / 2.0F) - offset.y - shakeOffset.y};
+        if (rotation != 0.0F) {
+            float c = std::cos(-rotation);
+            float s = std::sin(-rotation);
+            d = {(d.x * c) - (d.y * s), (d.x * s) + (d.y * c)};
+        }
+        return (d / zoom) + position;
     }
 };
 
@@ -38,12 +56,17 @@ struct RenderState {
 
     SDL_Clay_RendererData clay;
 
-    Camera camera;
+    Viewport camera;
 
     SDL_Texture* tankBaseTexture;
     SDL_Texture* tankTurretTexture;
     SDL_Texture* weaponBulletTexture;
     SDL_Texture* smokeTexture = nullptr;
+    SDL_Texture* occlusionTexture = nullptr;
+    SDL_Texture* aoTexture = nullptr;
+    SDL_Texture* radarTexture = nullptr;
+    int aoW = 0;
+    int aoH = 0;
     SDL_Texture* fragmentTextures[10] = {};
     int fragmentCount = 0;
 
@@ -54,6 +77,17 @@ struct RenderState {
     int frameH = 0;
     bool curIsA = true;
     double lastStart = -1;
+    float shakeTime = 0;
+    bool shadowSolid = false;
+    SDL_Texture* lightTexture = nullptr;
+    SDL_Texture* lightBlur = nullptr;
+    SDL_Texture* lightBlur2 = nullptr;
+    SDL_Texture* lightBlur3 = nullptr;
+    SDL_Texture* maskTexture = nullptr;
+    SDL_Texture* entityTexture = nullptr;
+    SDL_Texture* effectsTexture = nullptr;
+    SDL_Texture* effectsHalf = nullptr;
+    SDL_Texture* vignetteTexture = nullptr;
 };
 
 struct RenderPipeline {
@@ -90,10 +124,24 @@ struct Render {
     static void camera(flecs::iter& it, size_t i, RenderState& render, const Position& pos);
 
     static void bullet(flecs::iter& it, size_t i, RenderState& render, const Position& pos);
-    static void sprite(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col);
-    static void tiles(flecs::iter& it, size_t i, const RenderState& render, const TileChunk& chunk);
+    static void sprite(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col, const Blend* blend);
+    static void prop_under(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col, const Blend* blend, const Layer* layer);
+    static void prop_below(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col, const Blend* blend, const Layer* layer);
+    static void prop_above(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col, const Blend* blend, const Layer* layer);
+    static void floor(flecs::iter& it, size_t i, const RenderState& render, const TileChunk& chunk);
+    static void shadow(flecs::iter& it);
+    static void solid(flecs::iter& it, size_t i, const RenderState& render, const TileChunk& chunk);
+    static void walls_top(flecs::iter& it, size_t i, const RenderState& render, const TileChunk& chunk);
+    static void overhead_top(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col, const Blend* blend, const Layer* layer);
 
     static void burst(flecs::entity e, const RequestEffect& req);
     static void age(flecs::iter& it, size_t i, Particle& p);
     static void particles(flecs::iter& it, size_t i, const RenderState& render, const Particle& p);
+
+    static void smoke(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const VisionBlocker& vb);
+    static void radar(flecs::iter& it, size_t i, RenderState& render);
+    static void entities_begin(flecs::iter& it, size_t i, RenderState& render);
+    static void entities_end(flecs::iter& it, size_t i, RenderState& render);
+    static void postprocess(flecs::iter& it, size_t i, RenderState& render);
+    static auto effects(RenderState& render, SDL_Texture* cur, const Camera& cam, int w, int h) -> SDL_Texture*;
 };

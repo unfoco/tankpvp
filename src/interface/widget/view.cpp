@@ -1,4 +1,5 @@
 #include "widget.h"
+#include <cstring>
 
 #include <algorithm>
 #include <cstdint>
@@ -103,14 +104,20 @@ static void render_widget(RenderContext& rc, const ViewWidget& node, int& index)
     int self = index++;
     switch (node.kind) {
         case ViewKind::Panel: {
+            const bool row = node.layout == ViewLayout::Row;
+            const Clay_Sizing sizing = node.card ? Clay_Sizing{CLAY_SIZING_FIT(280), CLAY_SIZING_FIT()}
+                                                 : Clay_Sizing{row ? CLAY_SIZING_GROW() : CLAY_SIZING_FIT(), CLAY_SIZING_FIT()};
+            const Clay_Padding padding = node.card ? Clay_Padding{14, 14, 12, 12} : Clay_Padding{0, 0, 0, 0};
+            const Clay_Color bg = node.card ? Clay_Color{static_cast<float>(node.bg_r), static_cast<float>(node.bg_g), static_cast<float>(node.bg_b), static_cast<float>(node.bg_a)}
+                                            : Clay_Color{0.0F, 0.0F, 0.0F, 0.0F};
             CLAY({.id = CLAY_IDI("ViewNode", self),
-                  .layout = {.sizing = {CLAY_SIZING_FIT(), CLAY_SIZING_FIT()},
-                             .padding = {8, 8, 8, 8},
+                  .layout = {.sizing = sizing,
+                             .padding = padding,
                              .childGap = 8,
                              .childAlignment = {.y = CLAY_ALIGN_Y_CENTER},
-                             .layoutDirection = node.layout == ViewLayout::Row ? CLAY_LEFT_TO_RIGHT : CLAY_TOP_TO_BOTTOM},
-                  .backgroundColor = {static_cast<float>(node.bg_r), static_cast<float>(node.bg_g), static_cast<float>(node.bg_b), static_cast<float>(node.bg_a)},
-                  .cornerRadius = CLAY_CORNER_RADIUS(8)}) {
+                             .layoutDirection = row ? CLAY_LEFT_TO_RIGHT : CLAY_TOP_TO_BOTTOM},
+                  .backgroundColor = bg,
+                  .cornerRadius = CLAY_CORNER_RADIUS(node.card ? 8.0F : 0.0F)}) {
                 if (!node.text.empty()) {
                     CLAY_TEXT(Str(rc.state.intern("§l" + node.text)), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
                 }
@@ -127,7 +134,21 @@ static void render_widget(RenderContext& rc, const ViewWidget& node, int& index)
                 std::snprintf(tmp, sizeof(tmp), "%.0f", static_cast<double>(resolve_number(rc.world, node.bind)));
                 text = tmp;
             }
-            CLAY({.id = CLAY_IDI("ViewNode", self)}) {
+            for (size_t open = text.find('{'); open != std::string::npos; open = text.find('{', open)) {
+                size_t close = text.find('}', open);
+                if (close == std::string::npos) {
+                    break;
+                }
+                std::string path = text.substr(open + 1, close - open - 1);
+                char tmp[32];
+                std::snprintf(tmp, sizeof(tmp), "%.0f", static_cast<double>(resolve_number(rc.world, path)));
+                text.replace(open, close - open + 1, tmp);
+                open += std::strlen(tmp);
+            }
+            const bool fixed = node.number > 0.0F;
+            CLAY({.id = CLAY_IDI("ViewNode", self),
+                  .layout = {.sizing = {fixed ? CLAY_SIZING_FIXED(node.number) : CLAY_SIZING_GROW(), CLAY_SIZING_FIT()},
+                             .childAlignment = {.x = fixed ? CLAY_ALIGN_X_LEFT : CLAY_ALIGN_X_CENTER}}}) {
                 CLAY_TEXT(Str(rc.state.intern(text)), CLAY_TEXT_CONFIG({.textColor = {235, 235, 235, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
             }
             break;
@@ -137,13 +158,33 @@ static void render_widget(RenderContext& rc, const ViewWidget& node, int& index)
             float max = node.bind_max.empty() ? node.number_max : resolve_number(rc.world, node.bind_max);
             float frac = (max > 0) ? std::clamp(value / max, 0.0F, 1.0F) : 0.0F;
             CLAY({.id = CLAY_IDI("ViewNode", self),
-                  .layout = {.sizing = {CLAY_SIZING_FIXED(220), CLAY_SIZING_FIXED(18)}, .padding = {2, 2, 2, 2}},
+                  .layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_FIXED(18)}, .padding = {2, 2, 2, 2}},
                   .backgroundColor = {30, 30, 30, 220},
                   .cornerRadius = CLAY_CORNER_RADIUS(4)}) {
                 if (frac > 0) {
                     CLAY({.layout = {.sizing = {CLAY_SIZING_PERCENT(frac), CLAY_SIZING_GROW()}},
                           .backgroundColor = {static_cast<float>(node.color_r), static_cast<float>(node.color_g), static_cast<float>(node.color_b), 255},
                           .cornerRadius = CLAY_CORNER_RADIUS(2)}) {}
+                }
+            }
+            break;
+        }
+        case ViewKind::Minimap: {
+            const float box = node.number > 0.0F ? node.number : 200.0F;
+            CLAY({.id = CLAY_IDI("ViewNode", self),
+                  .layout = {.sizing = {CLAY_SIZING_FIXED(box), CLAY_SIZING_FIXED(box)}},
+                  .backgroundColor = {10, 12, 16, 205},
+                  .cornerRadius = CLAY_CORNER_RADIUS(4)}) {
+                int bi = 0;
+                for (const Blip& b : node.blips) {
+                    constexpr float D = 7.0F;
+                    float ox = (std::clamp(b.x, 0.0F, 1.0F) * box) - (D / 2.0F);
+                    float oy = (std::clamp(b.y, 0.0F, 1.0F) * box) - (D / 2.0F);
+                    CLAY({.id = CLAY_IDI("ViewBlip", (self << 8) + bi++),
+                          .layout = {.sizing = {CLAY_SIZING_FIXED(D), CLAY_SIZING_FIXED(D)}},
+                          .backgroundColor = {static_cast<float>(b.r), static_cast<float>(b.g), static_cast<float>(b.b), 255},
+                          .cornerRadius = CLAY_CORNER_RADIUS(D / 2.0F),
+                          .floating = {.offset = {ox, oy}, .attachTo = CLAY_ATTACH_TO_PARENT}}) {}
                 }
             }
             break;
@@ -156,7 +197,11 @@ static void render_widget(RenderContext& rc, const ViewWidget& node, int& index)
             break;
         }
         case ViewKind::Spacer:
-            CLAY({.id = CLAY_IDI("ViewNode", self), .layout = {.sizing = {CLAY_SIZING_FIXED(node.number), CLAY_SIZING_FIXED(node.number)}}}) {}
+            if (node.number > 0.0F) {
+                CLAY({.id = CLAY_IDI("ViewNode", self), .layout = {.sizing = {CLAY_SIZING_FIXED(node.number), CLAY_SIZING_FIXED(node.number)}}}) {}
+            } else {
+                CLAY({.id = CLAY_IDI("ViewNode", self), .layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_GROW()}}}) {}
+            }
             break;
         case ViewKind::Separator:
             CLAY({.id = CLAY_IDI("ViewNode", self),
@@ -190,7 +235,7 @@ static void render_widget(RenderContext& rc, const ViewWidget& node, int& index)
             break;
         }
         case ViewKind::Button: {
-            ButtonStyle style{.color = {52, 52, 64, 255}, .padding = {.left = 14, .right = 14, .top = 7, .bottom = 7}};
+            ButtonStyle style{.color = {52, 52, 64, 255}, .grow = true, .padding = {.left = 14, .right = 14, .top = 7, .bottom = 7}};
             if (widget::button(rc.state, CLAY_IDI("ViewNode", self), node.text.c_str(), style) && node.handler != 0) {
                 if (auto* view = rc.world.try_get_mut<ViewState>()) {
                     view->clicked = node.handler;
@@ -209,15 +254,30 @@ void widget::view(flecs::world world, InterfaceState& state, const WindowEvents&
     }
     int index = 0;
     for (auto& active : views->views) {
-        bool hud = active.placement == ViewPlacement::Hud;
-        Clay_ChildAlignment align = hud
-                                        ? Clay_ChildAlignment{.x = CLAY_ALIGN_X_RIGHT, .y = CLAY_ALIGN_Y_TOP}
-                                        : Clay_ChildAlignment{.x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER};
+        Clay_ChildAlignment align{.x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER};
+        bool modal = false;
+        switch (active.placement) {
+            case ViewPlacement::Center:
+                modal = true;
+                break;
+            case ViewPlacement::TopRight:
+                align = {.x = CLAY_ALIGN_X_RIGHT, .y = CLAY_ALIGN_Y_TOP};
+                break;
+            case ViewPlacement::BottomLeft:
+                align = {.x = CLAY_ALIGN_X_LEFT, .y = CLAY_ALIGN_Y_BOTTOM};
+                break;
+            case ViewPlacement::Bottom:
+                align = {.x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_BOTTOM};
+                break;
+            case ViewPlacement::BottomRight:
+                align = {.x = CLAY_ALIGN_X_RIGHT, .y = CLAY_ALIGN_Y_BOTTOM};
+                break;
+        }
         CLAY({.id = CLAY_IDI("ViewActive", index),
               .layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_GROW()}, .padding = {24, 24, 24, 24}, .childAlignment = align},
               .floating = {
                   .attachTo = CLAY_ATTACH_TO_ROOT,
-                  .pointerCaptureMode = hud ? CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH : CLAY_POINTER_CAPTURE_MODE_CAPTURE,
+                  .pointerCaptureMode = modal ? CLAY_POINTER_CAPTURE_MODE_CAPTURE : CLAY_POINTER_CAPTURE_MODE_PASSTHROUGH,
               }}) {
             RenderContext rc{.world = world, .state = state, .events = events, .values = active.values, .view = active.id};
             render_widget(rc, active.root, index);

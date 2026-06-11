@@ -7,6 +7,7 @@
 #include <cmath>
 #include <string>
 
+#include "component/render.h"
 #include "component/event.h"
 #include "component/network.h"
 #include "util/format.h"
@@ -23,19 +24,41 @@ Render::Render(flecs::world& world) {
 
     auto begin = world.entity("render::begin").add<Rendering>();
     auto camera = world.entity("render::camera_phase").add<Rendering>().depends_on(begin);
-    auto tiles = world.entity("render::tiles_phase").add<Rendering>().depends_on(camera);
-    auto tanks = world.entity("render::tanks").add<Rendering>().depends_on(tiles);
+    auto floor = world.entity("render::floor_phase").add<Rendering>().depends_on(camera);
+    auto shadow = world.entity("render::shadow_phase").add<Rendering>().depends_on(floor);
+    auto underlay = world.entity("render::underlay_phase").add<Rendering>().depends_on(shadow);
+    auto props = world.entity("render::props_phase").add<Rendering>().depends_on(underlay);
+    auto solid = world.entity("render::solid_phase").add<Rendering>().depends_on(props);
+    auto overhead = world.entity("render::overhead_phase").add<Rendering>().depends_on(solid);
+    auto ebegin = world.entity("render::ebegin_phase").add<Rendering>().depends_on(overhead);
+    auto tanks = world.entity("render::tanks").add<Rendering>().depends_on(ebegin);
     auto bullets = world.entity("render::bullets").add<Rendering>().depends_on(tanks);
-    auto effects = world.entity("render::effects").add<Rendering>().depends_on(bullets);
-    auto view = world.entity("render::view").add<Rendering>().depends_on(effects);
+    auto eend = world.entity("render::eend_phase").add<Rendering>().depends_on(bullets);
+    auto effects = world.entity("render::effects").add<Rendering>().depends_on(eend);
+    auto post = world.entity("render::post_phase").add<Rendering>().depends_on(effects);
+    auto wallstop = world.entity("render::wallstop_phase").add<Rendering>().depends_on(post);
+    auto screenfx = world.entity("render::screenfx_phase").add<Rendering>().depends_on(wallstop);
+    auto view = world.entity("render::view").add<Rendering>().depends_on(screenfx);
     auto present = world.entity("render::present").add<Rendering>().depends_on(view);
 
     world.system<RenderState>("render::start").kind(begin).each(Render::start);
     world.system<RenderState, Position>("render::camera").kind(camera).with<Local>().each(Render::camera);
-    world.system<RenderState, const TileChunk>("render::tiles").kind(tiles).each(Render::tiles);
-    world.system<RenderState, const Position, const Rotation, const Sprite, const Color*>("render::sprite").kind(tanks).without<Dying>().each(Render::sprite);
+    world.system<RenderState, const TileChunk>("render::floor").kind(floor).each(Render::floor);
+    world.system("render::shadow").kind(shadow).run(Render::shadow);
+    world.system<RenderState, const TileChunk>("render::solid").kind(solid).each(Render::solid);
+    world.system<RenderState, const Position, const Rotation, const Sprite, const Color*, const Blend*, const Layer*>("render::underlay").kind(underlay).with<Decoration>().without<Dying>().each(Render::prop_under);
+    world.system<RenderState, const Position, const Rotation, const Sprite, const Color*, const Blend*, const Layer*>("render::props").kind(props).with<Decoration>().without<Dying>().each(Render::prop_below);
+    world.system<RenderState, const Position, const Rotation, const Sprite, const Color*, const Blend*, const Layer*>("render::overhead").kind(overhead).with<Decoration>().without<Dying>().each(Render::prop_above);
+    world.system<RenderState>("render::entities_begin").kind(ebegin).each(Render::entities_begin);
+    world.system<RenderState, const Position, const Rotation, const Sprite, const Color*, const Blend*>("render::sprite").kind(tanks).without<Decoration>().without<Dying>().each(Render::sprite);
     world.system<RenderState, Position>("render::bullet").kind(bullets).with<Bullet>().without<Latent>().each(Render::bullet);
+    world.system<RenderState>("render::entities_end").kind(eend).each(Render::entities_end);
     world.system<RenderState, const Particle>("render::particles").kind(effects).each(Render::particles);
+    world.system<const RenderState, const Position, const VisionBlocker>("render::smoke").kind(effects).each(Render::smoke);
+    world.system<RenderState>("render::post").kind(post).each(Render::postprocess);
+    world.system<RenderState, const TileChunk>("render::walls_top").kind(wallstop).each(Render::walls_top);
+    world.system<RenderState, const Position, const Rotation, const Sprite, const Color*, const Blend*, const Layer*>("render::overhead_top").kind(wallstop).with<Decoration>().without<Dying>().each(Render::overhead_top);
+    world.system<RenderState>("render::radar").kind(screenfx).each(Render::radar);
     world.system<RenderState, InterfaceCommands>("render::interface").kind(view).each(Render::interface);
 
     world.observer<const RequestEffect>("render::burst").event(flecs::OnSet).each(Render::burst);
@@ -145,6 +168,22 @@ void Render::init(flecs::iter& it, size_t) {
         SDL_UpdateTexture(smokeTexture, nullptr, pixels.data(), SMOKE * 4);
     }
 
+    constexpr int AO = 48;
+    SDL_Texture* occlusionTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC, AO, AO);
+    if (occlusionTexture != nullptr) {
+        SDL_SetTextureBlendMode(occlusionTexture, SDL_BLENDMODE_BLEND);
+        std::array<uint8_t, AO * AO * 4> pixels{};
+        for (int y = 0; y < AO; ++y) {
+            for (int x = 0; x < AO; ++x) {
+                int edge = std::min(std::min(x, AO - 1 - x), std::min(y, AO - 1 - y));
+                float a = std::clamp(static_cast<float>(edge) / (AO * 0.30F), 0.0F, 1.0F);
+                size_t idx = (static_cast<size_t>(y) * AO + static_cast<size_t>(x)) * 4;
+                pixels[idx + 3] = static_cast<uint8_t>(a * a * 150.0F);
+            }
+        }
+        SDL_UpdateTexture(occlusionTexture, nullptr, pixels.data(), AO * 4);
+    }
+
     SDL_Texture* fragments[10] = {};
     int fragmentCount = 0;
     for (int i = 0; i < 10; ++i) {
@@ -171,6 +210,7 @@ void Render::init(flecs::iter& it, size_t) {
         .tankTurretTexture = tankTurretTexture,
         .weaponBulletTexture = weaponBulletTexture,
         .smokeTexture = smokeTexture,
+        .occlusionTexture = occlusionTexture,
     };
     for (int i = 0; i < fragmentCount; ++i) {
         state.fragmentTextures[i] = fragments[i];
@@ -225,6 +265,14 @@ void Render::finish(flecs::iter& it, size_t, RenderState& render) {
     int winW = 0;
     int winH = 0;
     SDL_GetWindowSize(render.window, &winW, &winH);
+
+    static flecs::query<const Camera> cam_q = it.world().query_builder<const Camera>().with<Local>().build();
+    Camera cam{};
+    bool have_cam = false;
+    cam_q.each([&](flecs::entity /*e*/, const Camera& c) -> void { cam = c; have_cam = true; });
+    if (have_cam) {
+        cur = Render::effects(render, cur, cam, winW, winH);
+    }
     float fw = static_cast<float>(winW);
     float fh = static_cast<float>(winH);
     SDL_FRect full = {.x = 0, .y = 0, .w = fw, .h = fh};

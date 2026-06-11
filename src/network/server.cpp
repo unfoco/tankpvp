@@ -11,14 +11,15 @@
 #include <utility>
 #include <vector>
 
-#include "component/interface.h"
+#include "component/asset.h"
+#include "component/audio.h"
 #include "component/input.h"
+#include "component/interface.h"
 #include "component/network.h"
 #include "component/object.h"
 #include "component/physics.h"
+#include "component/render.h"
 #include "component/script.h"
-#include "component/audio.h"
-#include "component/asset.h"
 #include "component/world.h"
 #include "util/math.h"
 
@@ -132,6 +133,7 @@ static auto to_message_widget(const ViewWidget& w) -> MessageViewWidget {
     MessageViewWidget out;
     out.kind = static_cast<uint8_t>(w.kind);
     out.layout = static_cast<uint8_t>(w.layout);
+    out.card = static_cast<uint8_t>(w.card ? 1 : 0);
     out.text = w.text;
     out.handler = w.handler;
     out.bind = w.bind;
@@ -146,6 +148,9 @@ static auto to_message_widget(const ViewWidget& w) -> MessageViewWidget {
     out.bg_b = w.bg_b;
     out.bg_a = w.bg_a;
     out.field = w.field;
+    for (const auto& b : w.blips) {
+        out.blips.push_back({.x = b.x, .y = b.y, .r = b.r, .g = b.g, .b = b.b});
+    }
     for (const auto& c : w.children) {
         out.children.push_back(to_message_widget(c));
     }
@@ -180,6 +185,29 @@ static void deliver_ui(flecs::world& world, const RequestView& req) {
             }
         }
     }
+}
+
+static auto view_center(flecs::entity tank) -> glm::vec2 {
+    glm::vec2 c{0};
+    if (!tank || !tank.is_alive()) {
+        return c;
+    }
+    if (const auto* p = tank.try_get<Position>()) {
+        c = p->value;
+    }
+    if (const auto* cam = tank.try_get<Camera>()) {
+        if (cam->target != 0) {
+            flecs::entity t = tank.world().entity(cam->target);
+            if (t.is_alive()) {
+                if (const auto* tp = t.try_get<Position>()) {
+                    c = tp->value;
+                }
+            }
+        } else if (cam->focus_x != 0.0F || cam->focus_y != 0.0F) {
+            c = {cam->focus_x, cam->focus_y};
+        }
+    }
+    return c;
 }
 
 struct ServerQueries {
@@ -228,6 +256,63 @@ NetworkServer::NetworkServer(flecs::world& world) {
         e.destruct();
     });
 
+    world.observer<const RequestBurst>("network::server::burst_fx").event(flecs::OnSet).each([](flecs::entity e, const RequestBurst& fx) -> void {
+        flecs::world world = e.world();
+        MessageEffect msg{.x = fx.x, .y = fx.y, .angle = 0, .r = fx.r, .g = fx.g, .b = fx.b};
+        serialize::Writer w = wire::message(Message::Effect);
+        serialize::encode(w, msg);
+        world.query_builder<Peer>().build().each([&](const Peer& pr) -> void {
+            if (pr.welcomed && (pr.peer != nullptr)) {
+                wire::send(pr.peer, w, CHANNEL_RELIABLE, true);
+            }
+        });
+        e.destruct();
+    });
+
+    world.observer("network::server::death_fx").with<Dying>().event(flecs::OnAdd).each([](flecs::entity e) -> void {
+        flecs::world world = e.world();
+        if (!world.has<NetworkHost>()) {
+            return;
+        }
+        glm::vec2 dp{0};
+        float da = 0;
+        glm::vec3 dc{255, 255, 255};
+        if (const auto* pp = e.try_get<Position>()) {
+            dp = pp->value;
+        }
+        if (const auto* rr = e.try_get<Rotation>()) {
+            da = rr->angle;
+        }
+        if (const auto* cc = e.try_get<Color>()) {
+            dc = cc->value;
+        }
+        e.set(VelocityLinear{}).set(VelocityAngular{});
+        MessageEffect fx{.x = dp.x, .y = dp.y, .angle = da, .r = static_cast<uint8_t>(dc.r), .g = static_cast<uint8_t>(dc.g), .b = static_cast<uint8_t>(dc.b)};
+        serialize::Writer w = wire::message(Message::Effect);
+        serialize::encode(w, fx);
+        world.query_builder<Peer>().build().each([&](const Peer& pr) -> void {
+            if (pr.welcomed && (pr.peer != nullptr)) {
+                wire::send(pr.peer, w, CHANNEL_RELIABLE, true);
+            }
+        });
+    });
+
+    world.system<const Dying>("network::server::respawn").kind(flecs::OnUpdate).each([](flecs::entity e, const Dying& d) -> void {
+        flecs::world world = e.world();
+        const auto* host = world.try_get<NetworkHost>();
+        if (host == nullptr || d.revive == 0 || host->tick < d.revive) {
+            return;
+        }
+        e.remove<Dying>();
+        if (const auto* o = e.try_get<Owner>()) {
+            uint32_t pid = o->peer;
+            e.set(Position{.value = {300.0F + (static_cast<float>(pid % 8) * 70.0F), 300.0F}}).set(Rotation{.angle = 0}).set(VelocityLinear{}).set(VelocityAngular{}).add<Teleport>();
+            if (auto* sp = e.try_get_mut<Spawn>()) {
+                sp->epoch++;
+            }
+        }
+    });
+
     world.system("network::server::interest").interval(0.25).kind(flecs::OnUpdate).run([](flecs::iter& it) -> void {
         flecs::world world = it.world();
         if (!world.has<NetworkHost>()) {
@@ -250,7 +335,19 @@ NetworkServer::NetworkServer(flecs::world& world) {
             const auto* interest = pe.try_get<Interest>();
             float radius = (interest != nullptr) ? interest->radius : 1200.0F;
             int chunks = std::max(1, static_cast<int>(std::ceil(radius / CHUNK_UNITS)));
-            auto [ccx, ccy] = WorldGrid::chunk_coord(static_cast<int>(std::floor(pos->value.x / TILE_SIZE)), static_cast<int>(std::floor(pos->value.y / TILE_SIZE)));
+            glm::vec2 vc = view_center(tank);
+            auto [ccx, ccy] = WorldGrid::chunk_coord(static_cast<int>(std::floor(vc.x / TILE_SIZE)), static_cast<int>(std::floor(vc.y / TILE_SIZE)));
+
+            if (p.grid_wipe != grid->wipe) {
+                for (int64_t key : p.known_chunks) {
+                    MessageTileUnload um{.cx = static_cast<int32_t>(key >> 32), .cy = static_cast<int32_t>(static_cast<uint32_t>(key))};
+                    serialize::Writer uw = wire::message(Message::TileUnload);
+                    serialize::encode(uw, um);
+                    wire::send(p.peer, uw, CHANNEL_RELIABLE, true);
+                }
+                p.known_chunks.clear();
+                p.grid_wipe = grid->wipe;
+            }
 
             for (auto kit = p.known_chunks.begin(); kit != p.known_chunks.end();) {
                 int32_t kcx = static_cast<int32_t>(*kit >> 32);
@@ -336,7 +433,7 @@ NetworkServer::NetworkServer(flecs::world& world) {
     });
     world.observer<const RequestSound>("network::server::sound").event(flecs::OnSet).each([](flecs::entity e, const RequestSound& s) -> void {
         flecs::world world = e.world();
-        MessageSound msg{.asset = s.asset, .x = s.x, .y = s.y, .volume = s.volume};
+        MessageSound msg{.asset = s.asset, .x = s.x, .y = s.y, .volume = s.volume, .global = s.global};
         serialize::Writer w = wire::message(Message::Sound);
         serialize::encode(w, msg);
         world.query_builder<Peer>().build().each([&](const Peer& p) -> void {
@@ -366,8 +463,8 @@ NetworkServer::NetworkServer(flecs::world& world) {
         .inputs = world.query_builder<Peer>().build(),
         .record = world.query_builder<const Position, const Rotation, History>().with<Tank>().build(),
         .bullets = world.query_builder<const Position, const Owner>().with<Bullet>().build(),
-        .tanks = world.query_builder<const History, const CollisionBox>().with<Tank>().build(),
-        .tanks_by_id = world.query_builder<const NetworkId, const History, const CollisionBox>().with<Tank>().build(),
+        .tanks = world.query_builder<const History, const CollisionBox>().with<Tank>().without<Dying>().build(),
+        .tanks_by_id = world.query_builder<const NetworkId, const History, const CollisionBox>().with<Tank>().without<Dying>().build(),
         .unassigned = world.query_builder().with<Replicated>().without<NetworkId>().build(),
         .replicated = world.query_builder<const NetworkId>().with<Replicated>().build(),
         .peers = world.query_builder<Peer, Interest, Replication>().build(),
@@ -752,7 +849,12 @@ void NetworkServer::hits(flecs::iter& it) {
         q.record.each([&](const Position& p, const Rotation& r, History& h) -> void { h.record(tick, p.value, r.angle); });
 
         std::vector<flecs::entity> dead_bullets;
-        std::vector<flecs::entity> dead_tanks;
+        struct Kill {
+            flecs::entity victim;
+            flecs::entity firer;
+            glm::vec2 point;
+        };
+        std::vector<Kill> kills;
 
         q.bullets.each([&](flecs::entity bullet, const Position& bp, const Owner& o) -> void {
             flecs::entity firer = bullet.parent();
@@ -819,7 +921,7 @@ void NetworkServer::hits(flecs::iter& it) {
             });
             if (victim) {
                 dead_bullets.push_back(bullet);
-                dead_tanks.push_back(victim);
+                kills.push_back({.victim = victim, .firer = firer, .point = bp.value});
             }
         });
 
@@ -828,39 +930,16 @@ void NetworkServer::hits(flecs::iter& it) {
                 e.destruct();
             }
         }
-        for (auto e : dead_tanks) {
+        for (const auto& kill : kills) {
+            flecs::entity e = kill.victim;
             if (!e.is_alive()) {
                 continue;
             }
-            {
-                glm::vec2 dp{0};
-                float da = 0;
-                glm::vec3 dc{255, 255, 255};
-                if (const auto* pp = e.try_get<Position>()) {
-                    dp = pp->value;
-                }
-                if (const auto* rr = e.try_get<Rotation>()) {
-                    da = rr->angle;
-                }
-                if (const auto* cc = e.try_get<Color>()) {
-                    dc = cc->value;
-                }
-                MessageEffect fx{.x = dp.x, .y = dp.y, .angle = da, .r = static_cast<uint8_t>(dc.r), .g = static_cast<uint8_t>(dc.g), .b = static_cast<uint8_t>(dc.b)};
-                serialize::Writer w = wire::message(Message::Effect);
-                serialize::encode(w, fx);
-                world.query_builder<Peer>().build().each([&](const Peer& pr) -> void {
-                    if (pr.welcomed && (pr.peer != nullptr)) {
-                        wire::send(pr.peer, w, CHANNEL_RELIABLE, true);
-                    }
-                });
-            }
-            if (const auto* o = e.try_get<Owner>()) {
-                uint32_t pid = o->peer;
-                e.set(Position{.value = {300.0F + (static_cast<float>(pid % 8) * 70.0F), 300.0F}}).set(Rotation{.angle = 0}).set(VelocityLinear{}).set(VelocityAngular{}).add<Teleport>();
-                if (auto* sp = e.try_get_mut<Spawn>()) {
-                    sp->epoch++;
-                }
-            } else {
+            world.entity().set<RequestHit>({.attacker = kill.firer.is_alive() ? kill.firer.id() : 0,
+                                            .victim = e.id(),
+                                            .x = kill.point.x,
+                                            .y = kill.point.y});
+            if (!e.has<Owner>() && !e.has<Dying>()) {
                 e.destruct();
             }
         }
@@ -919,13 +998,7 @@ void NetworkServer::replicate(flecs::iter& it) {
                 return;
             }
 
-            glm::vec2 center{0};
-            flecs::entity owned = pe.target<Controls>();
-            if (owned && owned.is_alive()) {
-                if (const auto* p = owned.try_get<Position>()) {
-                    center = p->value;
-                }
-            }
+            glm::vec2 center = view_center(pe.target<Controls>());
 
             float keep = interest.radius * 1.25F;
             int reach = static_cast<int>(std::ceil(keep / CELL));
@@ -955,7 +1028,15 @@ void NetworkServer::replicate(flecs::iter& it) {
                 }
             }
 
-            send_snapshot(world, reg, host, center, peer, repl, relevant);
+            uint64_t self_nid = 0;
+            if (flecs::entity own = pe.target<Controls>(); own.is_alive()) {
+                if (const auto* nid = own.try_get<NetworkId>()) {
+                    relevant[nid->value] = own;
+                    self_nid = nid->value;
+                }
+            }
+
+            send_snapshot(world, reg, host, center, peer, repl, relevant, self_nid);
         });
 
         enet_host_flush(host.host);
