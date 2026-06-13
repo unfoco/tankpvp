@@ -94,7 +94,7 @@ struct FieldCtx {
                 if (cfg.allowFormatting && cp == 0xA7) {
                     regular = true;
                 }
-                if (!regular || (state.font && !TTF_FontHasGlyph(state.font, cp))) {
+                if (!regular || (state.font && !format::has_glyph(state.font, cp))) {
                     ok = false;
                 }
             }
@@ -113,26 +113,15 @@ struct FieldCtx {
         return format::line_height(state.font, st.fontSize);
     }
     auto lineWidth(const char* lineData, size_t byteEnd) const -> float {
-        format::Text fmt;
-        for (const char* p = buf.data(); p < lineData;) {
-            if (format::is_escape(p, static_cast<size_t>(lineData - p))) {
-                p += 4;
-            } else if (format::is_code(p, static_cast<size_t>(lineData - p))) {
-                format::apply(p[2], fmt);
-                p += 3;
-            } else {
-                ++p;
-            }
+        if (cfg.allowFormatting) {
+            return static_cast<float>(format::measure_rich(state.font, state.fontItalic, lineData, byteEnd, st.fontSize, format::Mode::Edit));
         }
-        int h = 0;
-        return static_cast<float>(format::width(state.font, nullptr, lineData, byteEnd, st.fontSize, fmt, cfg.allowFormatting, &h));
+        return static_cast<float>(format::width(state.font, lineData, byteEnd, st.fontSize));
     }
     auto hitTest(float mx, float my) -> size_t {
         if (!state.font || buf.empty()) {
             return 0;
         }
-        TTF_SetFontSize(state.font, st.fontSize);
-
         int lh = measureLine();
         float relX = std::max(0.F, mx - f.bounds.x - static_cast<float>(st.padding.left) + f.scrollX);
         float relY = std::max(0.F, my - f.bounds.y - static_cast<float>(st.padding.top) + f.scrollY);
@@ -452,20 +441,26 @@ struct FieldCtx {
                     }) {}
                 }
             } else {
-                uint16_t textFontId = (cfg.allowFormatting && focused) ? format::FONT_EDIT : 0;
+                const bool richEdit = cfg.allowFormatting && focused;
                 if (cfg.multiline) {
                     float ww = (f.bounds.width > 0) ? f.bounds.width - static_cast<float>(st.padding.left) - static_cast<float>(st.padding.right) : 0;
                     const std::string& disp = state.intern(widget::wrap(state, buf, st.fontSize, ww));
-                    CLAY_TEXT(Str(disp), CLAY_TEXT_CONFIG({
-                                             .textColor = st.textColor,
-                                             .fontId = textFontId,
-                                             .fontSize = st.fontSize,
-                                             .wrapMode = CLAY_TEXT_WRAP_NEWLINES,
-                                         }));
+                    if (richEdit) {
+                        widget::rich(state, disp, st.fontSize, st.textColor, CLAY_ALIGN_X_LEFT, true);
+                    } else {
+                        CLAY_TEXT(Str(disp), CLAY_TEXT_CONFIG({
+                                                 .textColor = st.textColor,
+                                                 .fontId = format::FONT_NORMAL,
+                                                 .fontSize = st.fontSize,
+                                                 .wrapMode = CLAY_TEXT_WRAP_NEWLINES,
+                                             }));
+                    }
+                } else if (richEdit) {
+                    widget::rich(state, buf, st.fontSize, st.textColor, CLAY_ALIGN_X_LEFT, true);
                 } else {
                     CLAY_TEXT(Str(buf), CLAY_TEXT_CONFIG({
                                             .textColor = st.textColor,
-                                            .fontId = textFontId,
+                                            .fontId = format::FONT_NORMAL,
                                             .fontSize = st.fontSize,
                                             .wrapMode = CLAY_TEXT_WRAP_NONE,
                                         }));
@@ -494,10 +489,9 @@ struct FieldCtx {
                                     xStart = lineWidth(lineData, selS - pos);
                                 }
                                 size_t selEbytes = selE - pos;
-                                TTF_SetFontSize(state.font, st.fontSize);
                                 float bearing = 0;
-                                if (selEbytes > 0 && lineData[selEbytes - 1] != ' ' && lineData[selEbytes - 1] != '\t') {
-                                    bearing = static_cast<float>(format::trailing_bearing(state.font, lineData, selEbytes));
+                                if (!cfg.allowFormatting && selEbytes > 0 && lineData[selEbytes - 1] != ' ' && lineData[selEbytes - 1] != '\t') {
+                                    bearing = static_cast<float>(format::trailing_bearing(state.font, lineData, selEbytes, st.fontSize));
                                 }
                                 float wsel = lineWidth(lineData, selEbytes) - bearing;
                                 float selW = wsel - xStart;

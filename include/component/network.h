@@ -63,13 +63,6 @@ struct RequestChat {
 struct RequestBroadcast {
     std::string line;
 };
-struct RequestBurst {
-    float x = 0;
-    float y = 0;
-    uint8_t r = 255;
-    uint8_t g = 255;
-    uint8_t b = 255;
-};
 struct RequestReply {
     flecs::entity peer;
     std::string line;

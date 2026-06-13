@@ -47,7 +47,7 @@ void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Posi
             }
         }
         glm::vec2 fwd(glm::cos(aim), glm::sin(aim));
-        it.world()
+        flecs::entity bullet = it.world()
             .entity()
             .set(Position{.value = muzzle})
             .set(Rotation{.angle = aim})
@@ -58,6 +58,9 @@ void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Posi
             .set(Owner{.peer = peer, .prediction = prediction})
             .add<Replicated>()
             .child_of(tank);
+        if (const auto* ps = tank.try_get<ProjectileSprite>(); ps != nullptr && ps->texture != 0) {
+            bullet.set(Sprite{.texture = ps->texture});
+        }
 
         if (ammo != nullptr) {
             ammo->mag -= 1;
@@ -68,7 +71,7 @@ void Logic::input(flecs::iter& it, size_t i, const InputFlags& flags, const Posi
     }
 }
 
-void Logic::reload(flecs::iter& it, size_t /*i*/, Ammo& a) {
+void Logic::reload(flecs::iter& it, size_t, Ammo& a) {
     if (is_client(it.world()) || a.reloading <= 0.0F) {
         return;
     }
@@ -79,5 +82,25 @@ void Logic::reload(flecs::iter& it, size_t /*i*/, Ammo& a) {
         uint32_t take = (need < a.reserve) ? need : a.reserve;
         a.mag += take;
         a.reserve -= take;
+    }
+}
+
+void Logic::camera_decay(flecs::iter& it, size_t i, Camera& cam) {
+    if (is_client(it.world())) {
+        return;
+    }
+    if (cam.shake > 0.0F) {
+        cam.shake = std::max(0.0F, cam.shake - (it.delta_time() * 1.6F));
+        it.entity(i).modified<Camera>();
+    }
+}
+
+void Logic::flash_decay(flecs::iter& it, size_t i, PostStack& post) {
+    if (is_client(it.world())) {
+        return;
+    }
+    if (post.flash > 0.0F) {
+        post.flash = std::max(0.0F, post.flash - ((post.flash_fade > 0.0F ? post.flash_fade : 1.0F) * it.delta_time()));
+        it.entity(i).modified<PostStack>();
     }
 }

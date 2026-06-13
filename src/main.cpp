@@ -148,9 +148,14 @@ auto SDL_AppIterate(void* appstate) -> SDL_AppResult {
 
     uint64_t now = SDL_GetTicks();
     if (state->last_ticks == 0) state->last_ticks = now;
-    state->accumulator += static_cast<double>(now - state->last_ticks) / 1000.0;
+    double frame = static_cast<double>(now - state->last_ticks) / 1000.0;
     state->last_ticks = now;
-    state->accumulator = std::min(state->accumulator, 0.25);
+
+    if (frame > 0.35) {
+        state->accumulator = TICK_DT;
+    } else {
+        state->accumulator = std::min(state->accumulator + frame, 0.1);
+    }
 
     int ticks = static_cast<int>(state->accumulator / static_cast<double>(TICK_DT));
     for (int i = 0; i < ticks; ++i) {

@@ -147,6 +147,7 @@ void World::tileset(flecs::entity e, const RequestLoadTileset& req) {
     auto& tileset = e.world().get_mut<Tileset>();
     tileset.types = req.types;
     tileset.texture_names.assign(req.types.size(), std::string{});
+    ++tileset.version;
     e.destruct();
 }
 
@@ -251,16 +252,22 @@ void World::resolve(flecs::iter& it) {
         return;
     }
     bool pending = false;
+    bool resolved = false;
     for (size_t id = 1; id < tileset.types.size(); ++id) {
         const std::string& name = tileset.texture_names[id];
         if (tileset.types[id].texture == 0 && !name.empty()) {
             tileset.types[id].texture = catalog->hash_of(name);
             if (tileset.types[id].texture == 0) {
                 pending = true;
+            } else {
+                resolved = true;
             }
         }
     }
     tileset.needs_resolve = pending;
+    if (resolved) {
+        ++tileset.version;
+    }
 }
 
 void World::mesh(flecs::iter& it, size_t i, const TileChunk& chunk) {

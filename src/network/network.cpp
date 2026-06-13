@@ -5,9 +5,7 @@
 #include <cstdlib>
 #include <utility>
 
-#include "component/asset.h"
 #include "component/audio.h"
-#include "component/effect.h"
 #include "component/network.h"
 #include "component/interface.h"
 #include "component/input.h"
@@ -66,30 +64,63 @@ Network::Network(flecs::world& world) {
     world.component<MovementStats>().member<float>("speed").member<float>("turn");
     world.component<WeaponStats>().member<uint32_t>("cooldown").member<float>("speed").member<float>("muzzle").member<float>("life");
     world.component<Bullet>().member<float>("speed");
+    world.component<ProjectileSprite>().member<uint64_t>("texture");
     world.component<Spawn>().member<uint16_t>("epoch");
     world.component<Dying>().member<uint64_t>("revive");
     world.component<VisionKind>();
+    world.component<BlendMode>();
     world.component<Camera>()
         .member<uint64_t>("target").member<float>("focus_x").member<float>("focus_y").member<float>("offset_x").member<float>("offset_y")
-        .member<float>("zoom").member<float>("rotation").member<float>("follow").member<float>("shake").member<float>("ambient")
-        .member<VisionKind>("vision").member<float>("vision_range").member<float>("vision_angle").member<float>("shadow_solid")
+        .member<float>("zoom").member<float>("rotation").member<float>("follow").member<float>("shake");
+    world.component<Vision>()
+        .member<VisionKind>("kind").member<float>("range").member<float>("angle").member<bool>("solid")
+        .member<float>("ambient").member<float>("ambient_r").member<float>("ambient_g").member<float>("ambient_b");
+    world.component<PostStack>()
         .member<float>("tint_r").member<float>("tint_g").member<float>("tint_b").member<float>("tint_a")
-        .member<float>("flash").member<float>("flash_fade").member<float>("vignette").member<float>("blur").member<float>("chromatic");
-    world.component<Light>().member<float>("r").member<float>("g").member<float>("b").member<float>("radius").member<float>("intensity");
-    world.component<Environment>().member<float>("bg_r").member<float>("bg_g").member<float>("bg_b");
+        .member<float>("flash").member<float>("flash_fade").member<float>("vignette").member<float>("blur").member<float>("chromatic")
+        .member<float>("pixelate").member<float>("crt").member<float>("dither").member<float>("saturation").member<float>("distortion");
+    world.component<Light>()
+        .member<float>("r").member<float>("g").member<float>("b").member<float>("radius").member<float>("intensity")
+        .member<float>("cone").member<float>("softness").member<bool>("shadows").member<float>("flicker");
+    world.component<Occluder>().member<float>("half_x").member<float>("half_y").member<float>("opacity");
+    world.component<Environment>()
+        .member<float>("bg_r").member<float>("bg_g").member<float>("bg_b")
+        .member<uint64_t>("texture").member<float>("texture_size")
+        .member<float>("mod_r").member<float>("mod_g").member<float>("mod_b");
     world.component<Loading>().member<float>("active");
-    world.component<VisionBlocker>().member<float>("radius").member<float>("alpha").member<float>("r").member<float>("g").member<float>("b");
+    world.component<VisionBlocker>().member<float>("radius").member<float>("strength").member<float>("r").member<float>("g").member<float>("b");
+    world.component<RadarVisible>().member<float>("r").member<float>("g").member<float>("b").member<float>("radius").member<bool>("through_walls");
     world.component<Ammo>().member<uint32_t>("mag").member<uint32_t>("reserve").member<uint32_t>("mag_size").member<float>("reload_time").member<float>("reloading");
-    world.component<BlendMode>();
-    world.component<RenderLayer>();
     world.component<Blend>().member<float>("opacity").member<BlendMode>("mode");
-    world.component<Layer>().member<RenderLayer>("value");
+    world.component<RenderDepth>().member<int16_t>("plane").member<bool>("y_sort");
+    world.component<Attach>()
+        .member<uint64_t>("parent").member<float>("offset_x").member<float>("offset_y")
+        .member<float>("rotation").member<bool>("inherit_rotation");
+    world.component<SpritePart>().member<uint8_t>("index");
     world.component<Sprite>()
-        .member<uint64_t>("texture", SPRITE_LAYERS)
-        .member<float>("offset_x", SPRITE_LAYERS)
-        .member<float>("offset_y", SPRITE_LAYERS)
-        .member<float>("pivot_x", SPRITE_LAYERS)
-        .member<float>("pivot_y", SPRITE_LAYERS);
+        .member<uint64_t>("texture")
+        .member<float>("size_x").member<float>("size_y")
+        .member<float>("pivot_x").member<float>("pivot_y")
+        .member<float>("offset_x").member<float>("offset_y")
+        .member<float>("region", 4)
+        .member<bool>("flip_x").member<bool>("flip_y");
+    world.component<Material>()
+        .member<uint64_t>("shader").member<uint64_t>("normal_map")
+        .member<float>("emissive").member<float>("dissolve")
+        .member<float>("edge_r").member<float>("edge_g").member<float>("edge_b").member<float>("edge_a")
+        .member<float>("distortion").member<float>("params", 8);
+    world.component<ParticleEmitter>()
+        .member<float>("rate").member<uint16_t>("burst").member<uint64_t>("texture")
+        .member<float>("spawn_x").member<float>("spawn_y")
+        .member<float>("direction").member<float>("spread")
+        .member<float>("speed_min").member<float>("speed_max")
+        .member<float>("size_min").member<float>("size_max")
+        .member<float>("life_min").member<float>("life_max")
+        .member<float>("gravity").member<float>("drag").member<float>("spin").member<float>("grow")
+        .member<float>("begin_r").member<float>("begin_g").member<float>("begin_b").member<float>("begin_a")
+        .member<float>("end_r").member<float>("end_g").member<float>("end_b").member<float>("end_a")
+        .member<float>("emissive").member<float>("bounce")
+        .member<bool>("collide").member<bool>("local_space").member<BlendMode>("blend");
 
     world.component<Sprite>().add<Networked>();
     world.component<Position>().add<Networked>().set<Quantize>({.precision = 1.0F / 8192.0F, .bytes = 4});
@@ -98,16 +129,25 @@ Network::Network(flecs::world& world) {
     world.component<Owner>().add<Networked>();
     world.component<Tank>().add<Networked>();
     world.component<Decoration>().add<Networked>();
+    world.component<Hidden>().add<Networked>();
     world.component<Dying>().add<Networked>();
     world.component<Camera>().add<Networked>();
+    world.component<Vision>().add<Networked>();
+    world.component<PostStack>().add<Networked>();
     world.component<Light>().add<Networked>();
+    world.component<Occluder>().add<Networked>();
     world.component<Environment>().add<Networked>();
     world.component<Loading>().add<Networked>();
     world.component<VisionBlocker>().add<Networked>();
+    world.component<RadarVisible>().add<Networked>();
     world.component<Ammo>().add<Networked>();
     world.component<Blend>().add<Networked>();
-    world.component<Layer>().add<Networked>();
+    world.component<RenderDepth>().add<Networked>();
+    world.component<Attach>().add<Networked>();
+    world.component<Material>().add<Networked>();
+    world.component<ParticleEmitter>().add<Networked>();
     world.component<Bullet>().add<Networked>();
+    world.component<ProjectileSprite>().add<Networked>();
     world.component<Spawn>().add<Networked>();
     world.component<MovementStats>().add<Networked>();
     world.component<WeaponStats>().add<Networked>();
@@ -127,7 +167,6 @@ Network::Network(flecs::world& world) {
     world.observer<const RequestJoin>("network::join").event(flecs::OnSet).each(Network::join);
     world.observer().with<RequestQuit>().event(flecs::OnAdd).each([](flecs::entity e) -> void { Network::quit(e, RequestQuit{}); });
 
-    world.observer("network::tank_sprite").with<Tank>().without<Sprite>().event(flecs::OnAdd).each([](flecs::entity e) -> void { e.set<Sprite>(tank_default_sprite()); });
     world.observer("network::tank_spawn").with<Tank>().without<Spawn>().event(flecs::OnAdd).each([](flecs::entity e) -> void { e.set<Spawn>({}); });
 
     world.observer<const Position>("network::decoration_setup").with<Decoration>().without<Frozen>().event(flecs::OnSet).each([](flecs::entity e, const Position& pos) -> void {
@@ -136,16 +175,29 @@ Network::Network(flecs::world& world) {
             return;
         }
         e.add<Frozen>();
-        if (!e.has<Layer>()) {
+        if (!e.has<RenderDepth>()) {
             const auto* grid = w.try_get<WorldGrid>();
             const auto* tileset = w.try_get<Tileset>();
             bool over = grid != nullptr && tileset != nullptr && ballistics::solid(ballistics::tile_at(*grid, *tileset, pos.value.x, pos.value.y));
-            e.set<Layer>({over ? RenderLayer::Overlay : RenderLayer::Ground});
+            e.set<RenderDepth>({.plane = over ? plane::Overhead + 100 : plane::Entity - 100, .y_sort = false});
         }
     });
 
     world.system<const RequestSound>("network::sounds").kind(flecs::OnStore).each([](flecs::entity e, const RequestSound&) -> void { e.destruct(); });
     world.system<const RequestParticles>("network::particles_gc").kind(flecs::OnStore).each([](flecs::entity e, const RequestParticles&) -> void { e.destruct(); });
+
+    world.system<Attach>("network::attach_link").kind(flecs::OnStore).each([](flecs::entity e, Attach& attach) -> void {
+        if (attach.parent != 0 || !e.world().has<NetworkHost>()) {
+            return;
+        }
+        flecs::entity parent = e.parent();
+        if (parent && parent.is_alive()) {
+            if (const auto* nid = parent.try_get<NetworkId>()) {
+                attach.parent = nid->value;
+                e.modified<Attach>();
+            }
+        }
+    });
 
     world.import<NetworkServer>();
     world.import<NetworkClient>();
@@ -216,7 +268,7 @@ void Network::host(flecs::entity e, const RequestHost& req) {
     if (std::getenv("TANKPVP_BOTS") != nullptr) {
         for (int i = 0; i < 50; i++) {
             world.entity()
-                .set(Color{.value = {static_cast<float>(rand() % 255), static_cast<float>(rand() % 255), static_cast<float>(rand() % 255)}})
+                .set(Color{.value = {static_cast<float>(rand() % 255) / 255.0F, static_cast<float>(rand() % 255) / 255.0F, static_cast<float>(rand() % 255) / 255.0F}})
                 .set(Position{.value = {200.0F + static_cast<float>(rand() % 2000), 200.0F + static_cast<float>(rand() % 2000)}})
                 .set(Rotation{.angle = 0})
                 .set(VelocityLinear{})
@@ -234,7 +286,7 @@ void Network::host(flecs::entity e, const RequestHost& req) {
 
     if (!dedicated) {
         flecs::entity tank = world.entity()
-            .set(Color{.value = {255.0F, 50.0F, 50.0F}})
+            .set(Color{.value = {1.0F, 0.2F, 0.2F}})
             .set(Position{.value = {640.0F, 400.0F}})
             .set(Rotation{.angle = 0})
             .set(VelocityLinear{})

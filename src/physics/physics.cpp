@@ -2,6 +2,8 @@
 
 #include <box2d/box2d.h>
 
+#include <vector>
+
 struct B2Body {
     b2BodyId id = b2_nullBodyId;
 };
@@ -59,6 +61,7 @@ Physics::Physics(flecs::world& world) {
     world.component<Restitution>().member<float>("value");
     world.component<DampingLinear>().member<float>("value");
     world.component<DampingAngular>().member<float>("value");
+    world.component<CollisionLayers>().member<uint64_t>("memberships").member<uint64_t>("filter");
 
     world.component<B2Body>();
     world.component<PhysicsEngine>();
@@ -93,6 +96,7 @@ Physics::Physics(flecs::world& world) {
     world.observer<B2Body>("physics::cleanup").event(flecs::OnRemove).each(Physics::cleanup);
     world.observer<const B2Body, const DampingLinear>("physics::ldamp").event(flecs::OnSet).each(Physics::ldamp);
     world.observer<const B2Body, const DampingAngular>("physics::adamp").event(flecs::OnSet).each(Physics::adamp);
+    world.observer<const B2Body, const CollisionLayers>("physics::filter").event(flecs::OnSet).each(Physics::filter);
 }
 
 void Physics::init(flecs::iter& it, size_t i, const Position& pos, const Rotation& rot) {
@@ -363,6 +367,24 @@ void Physics::cleanup(B2Body& b) {
         b2DestroyBody(b.id);
     }
 }
+void Physics::filter(const B2Body& b, const CollisionLayers& cl) {
+    if (!b2Body_IsValid(b.id)) {
+        return;
+    }
+    b2Filter filter = b2DefaultFilter();
+    filter.categoryBits = cl.memberships;
+    filter.maskBits = cl.filter;
+    int n = b2Body_GetShapeCount(b.id);
+    if (n <= 0) {
+        return;
+    }
+    std::vector<b2ShapeId> shapes(static_cast<size_t>(n));
+    b2Body_GetShapes(b.id, shapes.data(), n);
+    for (b2ShapeId s : shapes) {
+        b2Shape_SetFilter(s, filter);
+    }
+}
+
 void Physics::ldamp(const B2Body& b, const DampingLinear& d) {
     b2Body_SetLinearDamping(b.id, d.value);
 }

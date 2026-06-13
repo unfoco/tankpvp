@@ -9,6 +9,8 @@
 #include <fstream>
 #include <iterator>
 
+#include "component/render.h"
+
 namespace fs = std::filesystem;
 
 static auto content_hash(const uint8_t* data, size_t len) -> uint64_t {
@@ -115,14 +117,19 @@ void Asset::scan(flecs::entity e) {
     world.set<AssetManifest>(std::move(manifest));
 
     if (!rehash.empty()) {
-        world.query_builder<Sprite>().build().each([&](Sprite& s) -> void {
-            for (auto& tex : s.texture) {
-                auto it = rehash.find(tex);
-                if (it != rehash.end()) {
-                    tex = it->second;
-                }
+        auto remap = [&](uint64_t& hash) -> void {
+            auto it = rehash.find(hash);
+            if (it != rehash.end()) {
+                hash = it->second;
             }
+        };
+        world.query_builder<Sprite>().build().each([&](Sprite& s) -> void { remap(s.texture); });
+        world.query_builder<Material>().build().each([&](Material& m) -> void {
+            remap(m.shader);
+            remap(m.normal_map);
         });
+        world.query_builder<ParticleEmitter>().build().each([&](ParticleEmitter& p) -> void { remap(p.texture); });
+        world.query_builder<Environment>().build().each([&](Environment& env) -> void { remap(env.texture); });
     }
 
     e.add<ResponseAssetScan>();
@@ -149,8 +156,12 @@ void Asset::adopt(flecs::entity e, const RequestAssetAdopt& r) {
         }
         std::string path = cache_path(desc.hash);
         if (fs::exists(path, ec)) {
-            store.ready[desc.hash] = path;
-            continue;
+            if (fs::file_size(path, ec) == desc.size && !ec) {
+                store.ready[desc.hash] = path;
+                continue;
+            }
+            SDL_Log("asset: cached '%s' is corrupt (size mismatch) — re-downloading", desc.name.c_str());
+            fs::remove(path, ec);
         }
         if (store.pending.contains(desc.hash) || store.downloaded + desc.size > ASSET_MAX_TOTAL) {
             continue;

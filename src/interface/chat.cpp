@@ -274,7 +274,7 @@ auto Interface::chat(flecs::iter& it, InterfaceState& state, InterfacePage& page
             if (suggesting) {
                 if (selectingName) {
                     if (matches.empty()) {
-                        CLAY_TEXT(Str("§8no matching command"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
+                        widget::rich(state, "§8no matching command", 32, {255, 255, 255, 255});
                     } else {
                         int sel = std::clamp(chatInput.complete, 0, static_cast<int>(matches.size()) - 1);
                         int shown = std::min(static_cast<int>(matches.size()), 12);
@@ -290,7 +290,7 @@ auto Interface::chat(flecs::iter& it, InterfaceState& state, InterfacePage& page
                             CLAY({.layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_FIT()}, .padding = {6, 6, 1, 1}},
                                   .backgroundColor = (m == sel) ? Clay_Color{70, 130, 255, 90} : Clay_Color{0, 0, 0, 0},
                                   .cornerRadius = CLAY_CORNER_RADIUS(3)}) {
-                                CLAY_TEXT(Str(state.intern(row)), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
+                                widget::rich(state, row, 32, {255, 255, 255, 255});
                             }
                         }
                     }
@@ -302,7 +302,7 @@ auto Interface::chat(flecs::iter& it, InterfaceState& state, InterfacePage& page
                             CLAY({.layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_FIT()}, .padding = {6, 6, 1, 1}},
                                   .backgroundColor = (m == sel) ? Clay_Color{70, 130, 255, 90} : Clay_Color{0, 0, 0, 0},
                                   .cornerRadius = CLAY_CORNER_RADIUS(3)}) {
-                                CLAY_TEXT(Str(state.intern("§f" + *valueMatches[m])), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
+                                widget::rich(state, "§f" + *valueMatches[m], 32, {255, 255, 255, 255});
                             }
                         }
                     }
@@ -316,15 +316,15 @@ auto Interface::chat(flecs::iter& it, InterfaceState& state, InterfacePage& page
                         std::string slot = arg.optional ? "[" + inner + "]" : "<" + inner + ">";
                         usage += (static_cast<int>(a) == argCurrent) ? " §e" + slot + "§7" : " " + slot;
                     }
-                    CLAY_TEXT(Str(state.intern(usage)), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
+                    widget::rich(state, usage, 32, {255, 255, 255, 255});
                     if (!node->description.empty()) {
-                        CLAY_TEXT(Str(state.intern("§8" + node->description)), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
+                        widget::rich(state, "§8" + node->description, 32, {255, 255, 255, 255});
                     }
                 }
             } else {
                 for (int i = 0; i < chatLog.count; ++i) {
-                    const std::string& wrapped = state.intern(widget::wrap(state, chatLog.at(i), 32, wrapWidth));
-                    CLAY_TEXT(Str(wrapped), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NEWLINES}));
+                    std::string wrapped = widget::wrap(state, chatLog.at(i), 32, wrapWidth);
+                    widget::rich(state, wrapped, 32, {255, 255, 255, 255});
                 }
             }
         }

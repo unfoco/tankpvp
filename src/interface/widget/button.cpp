@@ -27,11 +27,7 @@ auto widget::button(InterfaceState& state, Clay_ElementId id, const char* label,
                 clicked = true;
             }
         }
-        CLAY_TEXT(Str(label), CLAY_TEXT_CONFIG({
-                                  .textColor = st.textColor,
-                                  .fontSize = st.fontSize,
-                                  .wrapMode = CLAY_TEXT_WRAP_NONE,
-                              }));
+        widget::rich(state, label, st.fontSize, st.textColor, CLAY_ALIGN_X_CENTER);
     }
     return clicked;
 }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <SDL3_ttf/SDL_ttf.h>
 #include <clay.h>
 #include <flecs.h>
 
@@ -14,6 +13,7 @@
 
 #include "component/event.h"
 #include "util/fixed_buffer.h"
+#include "util/format.h"
 
 inline auto Str(const char* s) -> Clay_String {
     return {.length = static_cast<int32_t>(strlen(s)), .chars = s};
@@ -161,7 +161,8 @@ struct InterfaceState {
     uint32_t prevFocusedId = 0;
     bool focusConsumed = false;
 
-    TTF_Font* font = nullptr;
+    const format::Font* font = nullptr;
+    const format::Font* fontItalic = nullptr;
 
     std::deque<std::string> textPool;
 
@@ -202,6 +203,8 @@ template <typename T = std::string>
 auto input(InterfaceState& state, const WindowEvents& events, Clay_ElementId id, T& value, InputConfig cfg = {}, InputStyle st = {}) -> bool;
 
 auto wrap(InterfaceState& state, const std::string& text, uint16_t fontSize, float maxWidth) -> std::string;
+
+void rich(InterfaceState& state, const std::string& text, uint16_t fontSize, Clay_Color base, Clay_LayoutAlignmentX align = CLAY_ALIGN_X_LEFT, bool edit = false);
 
 void view(flecs::world world, InterfaceState& state, const WindowEvents& events);
 void view_dispatch(flecs::world world);

@@ -1,26 +1,466 @@
 #pragma once
 
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_clay.h>
-#include <clay.h>
-#include <flecs.h>
 
-#include <cmath>
+#include <SDL3/SDL.h>
+
+#include <webgpu/webgpu.hpp>
+#include <webgpu/webgpu-raii.hpp>
+#include <clay/clay_renderer_webgpu.h>
+
+#include <flecs.h>
 
 #include <glm/glm.hpp>
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
-#include "component/asset.h"
-#include "component/effect.h"
 #include "component/interface.h"
+#include "component/network.h"
 #include "component/object.h"
 #include "component/render.h"
-#include "component/world.h"
+
 
 constexpr auto WIDTH = 1280;
 constexpr auto HEIGHT = 720;
+
+constexpr uint32_t PARTICLE_CAP = 1U << 16;
+constexpr uint32_t MAX_EMITTERS = 256;
+constexpr uint32_t MAX_LIGHTS = 1024;
+constexpr uint32_t MAX_OCCLUDERS = 4096;
+constexpr uint32_t BLOOM_MIPS = 6;
+constexpr uint32_t TILE_TEXELS = 32;
+constexpr uint32_t PARTICLE_TEXELS = 64;
+constexpr float OCCLUDER_PAD = 320.0F;
+
+
+constexpr wgpu::TextureFormat FORMAT_SCENE = wgpu::TextureFormat::RGBA16Float;
+constexpr wgpu::TextureFormat FORMAT_AUX = wgpu::TextureFormat::RGBA8Unorm;
+constexpr wgpu::TextureFormat FORMAT_OCCLUDER = wgpu::TextureFormat::R8Unorm;
+constexpr wgpu::TextureFormat FORMAT_LIGHT = wgpu::TextureFormat::RGBA16Float;
+constexpr wgpu::TextureFormat FORMAT_DISTORTION = wgpu::TextureFormat::RG16Float;
+constexpr wgpu::TextureFormat FORMAT_LDR = wgpu::TextureFormat::RGBA8Unorm;
+
+
+struct GpuCamera {
+    glm::vec2 center;
+    glm::vec2 extent;
+    glm::vec2 screen;
+    glm::vec2 shake;
+    float zoom;
+    float rotation;
+    float time;
+    float dpi;
+};
+static_assert(sizeof(GpuCamera) == 48);
+
+namespace instance_flags {
+constexpr uint32_t FLIP_X = 1U << 0;
+constexpr uint32_t FLIP_Y = 1U << 1;
+constexpr uint32_t NEAREST = 1U << 2;
+constexpr uint32_t NORMAL_MAP = 1U << 3;
+constexpr uint32_t MASKABLE = 1U << 4;
+}
+
+struct GpuInstance {
+    glm::vec2 position;
+    glm::vec2 size;
+    glm::vec2 pivot;
+    glm::vec2 offset;
+    glm::vec4 uv;
+    glm::vec4 tint;
+    float rotation;
+    float emissive;
+    float dissolve;
+    float distortion;
+    uint32_t flags;
+    uint32_t slot;
+    uint32_t _pad0;
+    uint32_t _pad1;
+    glm::vec4 param0;
+    glm::vec4 param1;
+};
+static_assert(sizeof(GpuInstance) == 128);
+static_assert(offsetof(GpuInstance, uv) == 32 && offsetof(GpuInstance, tint) == 48 && offsetof(GpuInstance, param0) == 96);
+
+struct GpuTile {
+    glm::vec2 position;
+    glm::vec4 uv;
+    uint32_t flags;
+    float _pad0;
+};
+static_assert(sizeof(GpuTile) == 32);
+
+namespace light_flags {
+constexpr uint32_t SHADOWS = 1U << 0;
+constexpr uint32_t CONE = 1U << 1;
+constexpr uint32_t VISION = 1U << 2;
+constexpr uint32_t SMOKE = 1U << 3;
+}
+
+struct GpuLight {
+    glm::vec2 position;
+    float radius;
+    float softness;
+    glm::vec4 color;
+    float cone;
+    float direction;
+    float flags;
+    float falloff;
+};
+static_assert(sizeof(GpuLight) == 48);
+
+struct GpuOccluder {
+    glm::vec2 position;
+    glm::vec2 half;
+    float rotation;
+    float opacity;
+    glm::vec2 _pad0;
+};
+static_assert(sizeof(GpuOccluder) == 32);
+
+namespace particle_flags {
+constexpr uint32_t COLLIDE = 1U << 0;
+constexpr uint32_t LOCAL_SPACE = 1U << 1;
+constexpr uint32_t SOFT = 1U << 2;
+constexpr uint32_t BLEND_SHIFT = 8;
+constexpr uint32_t EMITTER_SHIFT = 16;
+}
+
+struct GpuParticle {
+    glm::vec2 position;
+    glm::vec2 velocity;
+    glm::vec4 color_begin;
+    glm::vec4 color_end;
+    float life;
+    float max_life;
+    float size;
+    float grow;
+    float rotation;
+    float spin;
+    float drag;
+    float gravity;
+    float bounce;
+    float emissive;
+    uint32_t flags;
+    uint32_t texture_slot;
+};
+static_assert(sizeof(GpuParticle) == 96);
+static_assert(offsetof(GpuParticle, color_begin) == 16);
+
+struct GpuEmitter {
+    glm::vec2 origin;
+    glm::vec2 spawn_half;
+    glm::vec2 speed;
+    glm::vec2 size;
+    glm::vec2 life;
+    float direction;
+    float spread;
+    glm::vec4 color_begin;
+    glm::vec4 color_end;
+    float gravity;
+    float drag;
+    float spin;
+    float grow;
+    float bounce;
+    float emissive;
+    uint32_t flags;
+    uint32_t texture_slot;
+    uint32_t spawn_count;
+    uint32_t seed;
+    uint32_t emitter_index;
+    uint32_t _pad0;
+};
+static_assert(sizeof(GpuEmitter) == 128);
+
+struct GpuParticleCounters {
+    uint32_t spawn_total;
+    uint32_t dt_bits;
+    uint32_t capacity;
+};
+static_assert(sizeof(GpuParticleCounters) == 12);
+
+struct GpuDrawIndirect {
+    uint32_t vertex_count;
+    uint32_t instance_count;
+    uint32_t first_vertex;
+    uint32_t first_instance;
+};
+static_assert(sizeof(GpuDrawIndirect) == 16);
+
+struct GpuComposite {
+    glm::vec4 ambient;
+    float bloom;
+    float pad0;
+    float exposure;
+    float visibility;
+};
+static_assert(sizeof(GpuComposite) == 32);
+
+struct GpuPost {
+    glm::vec4 tint;
+    float flash;
+    float vignette;
+    float pad0;
+    float chromatic;
+    float pixelate;
+    float crt;
+    float dither;
+    float saturation;
+    glm::vec2 screen;
+    float time;
+    float distortion;
+};
+static_assert(sizeof(GpuPost) == 64);
+
+struct GpuTransition {
+    glm::vec4 color;
+    glm::vec2 center;
+    float t;
+    uint32_t kind;
+    float direction;
+    float aspect;
+    uint32_t slide;
+    uint32_t scope;
+};
+static_assert(sizeof(GpuTransition) == 48);
+
+
+using SortKey = uint64_t;
+
+inline auto sort_key(const RenderDepth& depth, float y_relative, uint8_t pipeline, uint32_t slot) -> SortKey {
+    SortKey key = static_cast<uint64_t>(static_cast<uint16_t>(static_cast<int32_t>(depth.plane.value) + 32768)) << 45;
+    if (depth.y_sort) {
+        auto y = static_cast<int64_t>(y_relative * 4.0F) + (1LL << 19);
+        key |= static_cast<uint64_t>(std::clamp<int64_t>(y, 0, (1LL << 20) - 1)) << 25;
+    }
+    key |= static_cast<uint64_t>(pipeline & 0x1FU) << 20;
+    key |= slot & 0xFFFFFU;
+    return key;
+}
+
+
+struct GpuBuffer {
+    wgpu::raii::Buffer buffer;
+    uint64_t capacity = 0;
+};
+
+struct RenderTarget {
+    wgpu::raii::Texture texture;
+    wgpu::raii::TextureView view;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    wgpu::TextureFormat format = wgpu::TextureFormat::Undefined;
+};
+
+struct GpuTexture {
+    wgpu::raii::Texture texture;
+    wgpu::raii::TextureView view;
+    glm::vec2 size{0.0F};
+};
+
+struct Targets {
+    RenderTarget scene;
+    RenderTarget aux;
+    RenderTarget occluder;
+    RenderTarget light;
+    RenderTarget light_one;
+    RenderTarget light_pong;
+    RenderTarget distortion;
+    RenderTarget entities;
+    RenderTarget overhead;
+    RenderTarget lit;
+    std::array<RenderTarget, BLOOM_MIPS> bloom;
+    RenderTarget ldr_a, ldr_b;
+    RenderTarget composed;
+    RenderTarget ui;
+    RenderTarget snapshot;
+    RenderTarget minimap;
+};
+
+struct Samplers {
+    wgpu::raii::Sampler linear;
+    wgpu::raii::Sampler nearest;
+};
+
+struct BindLayouts {
+    wgpu::raii::BindGroupLayout frame;
+    wgpu::raii::BindGroupLayout material;
+    wgpu::raii::BindGroupLayout tile;
+    wgpu::raii::BindGroupLayout light;
+    wgpu::raii::BindGroupLayout composite;
+    wgpu::raii::BindGroupLayout post;
+    wgpu::raii::BindGroupLayout transition;
+    wgpu::raii::BindGroupLayout compose;
+    wgpu::raii::BindGroupLayout particles;
+    wgpu::raii::BindGroupLayout particle_draw;
+    wgpu::raii::BindGroupLayout blit;
+};
+
+struct Pipelines {
+    std::array<wgpu::raii::RenderPipeline, BLEND_MODES> sprite;
+    std::array<wgpu::raii::RenderPipeline, BLEND_MODES> sprite_fallback;
+    wgpu::raii::RenderPipeline sprite_distort;
+    wgpu::raii::RenderPipeline background;
+    wgpu::raii::RenderPipeline tile;
+    wgpu::raii::RenderPipeline tile_mask;
+    wgpu::raii::RenderPipeline tile_silhouette;
+    wgpu::raii::RenderPipeline sprite_flat;
+    wgpu::raii::RenderPipeline occluder;
+    wgpu::raii::RenderPipeline light;
+    wgpu::raii::RenderPipeline light_solid;
+    wgpu::raii::RenderPipeline shadow_geom;
+    wgpu::raii::RenderPipeline light_accum;
+    wgpu::raii::RenderPipeline blur_light;
+    wgpu::raii::RenderPipeline smoke;
+    wgpu::raii::RenderPipeline lit;
+    wgpu::raii::RenderPipeline composite;
+    wgpu::raii::RenderPipeline bloom_threshold, bloom_down, bloom_up;
+    wgpu::raii::RenderPipeline blur;
+    wgpu::raii::RenderPipeline post;
+    wgpu::raii::RenderPipeline transition;
+    wgpu::raii::RenderPipeline compose;
+    wgpu::raii::RenderPipeline blit;
+    wgpu::raii::ComputePipeline particle_emit, particle_sim;
+    wgpu::raii::RenderPipeline particle_draw;
+    wgpu::raii::RenderPipeline particle_distort;
+};
+
+struct MaterialPipeline {
+    std::array<wgpu::raii::RenderPipeline, BLEND_MODES> blend;
+    bool valid = false;
+    bool compiled = false;
+};
+
+struct MaterialCache {
+    std::unordered_map<uint64_t, MaterialPipeline> by_shader;
+};
+
+struct TextureCache {
+    std::unordered_map<uint64_t, GpuTexture> by_hash;
+    std::unordered_map<uint64_t, wgpu::raii::BindGroup> binds;
+    std::vector<wgpu::raii::BindGroup> transient;
+    std::unordered_set<uint64_t> decode_failed;
+};
+
+struct TextureAtlas {
+    wgpu::raii::Texture array;
+    wgpu::raii::TextureView view;
+    wgpu::raii::BindGroup bind;
+    std::unordered_map<uint64_t, uint32_t> layer_of;
+    uint32_t layers = 0;
+    uint32_t capacity = 0;
+    uint32_t texels = TILE_TEXELS;
+};
+
+struct TileMeshCache {
+    struct ChunkMesh {
+        GpuBuffer floor;
+        GpuBuffer solid;
+        uint32_t floor_count = 0;
+        uint32_t solid_count = 0;
+    };
+    std::unordered_map<int64_t, ChunkMesh> chunks;
+    uint16_t tileset_version = 0xFFFF;
+};
+
+struct ParticleSystem {
+    GpuBuffer particles;
+    GpuBuffer emitters;
+    GpuBuffer counters;
+    GpuBuffer alive;
+    GpuBuffer indirect;
+    wgpu::raii::BindGroup sim_bind;
+    wgpu::raii::BindGroup draw_bind;
+    WGPUTextureView bound_atlas = nullptr;
+    uint32_t capacity = PARTICLE_CAP;
+};
+
+
+struct DrawItem {
+    SortKey key;
+    uint32_t instance;
+};
+
+struct DrawRun {
+    uint32_t first = 0;
+    uint32_t count = 0;
+    uint64_t texture = 0;
+    uint64_t normal_map = 0;
+    uint64_t shader = 0;
+    uint8_t blend = 0;
+    bool nearest = false;
+    int16_t plane = 0;
+};
+
+struct SlotInfo {
+    uint64_t texture = 0;
+    uint64_t normal_map = 0;
+    uint64_t shader = 0;
+    bool nearest = false;
+};
+
+struct ShadowedLight {
+    GpuLight light;
+    uint32_t vert_first = 0;
+    uint32_t vert_count = 0;
+};
+
+struct FrameScratch {
+    std::vector<GpuInstance> instances;
+    std::vector<DrawItem> items;
+    std::vector<DrawRun> runs;
+    std::vector<SlotInfo> slots;
+    std::vector<GpuLight> lights;
+    std::vector<ShadowedLight> shadowed;
+    std::vector<glm::vec2> shadow_verts;
+    std::vector<GpuLight> smoke;
+    std::vector<GpuOccluder> occluders;
+    std::vector<GpuEmitter> emitters;
+    std::vector<GpuInstance> minimap;
+
+    std::unordered_map<uint64_t, uint64_t> by_nid;
+    std::vector<GpuLight> light_upload;
+    std::vector<GpuLight> shadow_upload;
+
+    void clear() {
+        instances.clear();
+        items.clear();
+        runs.clear();
+        slots.clear();
+        lights.clear();
+        shadowed.clear();
+        shadow_verts.clear();
+        smoke.clear();
+        occluders.clear();
+        emitters.clear();
+        minimap.clear();
+        by_nid.clear();
+        light_upload.clear();
+        shadow_upload.clear();
+    }
+};
+
+struct FrameParams {
+    GpuComposite composite{};
+    GpuPost post{};
+    float blur = 0.0F;
+    bool vision = false;
+    bool vision_solid = false;
+    float dt = 1.0F / 60.0F;
+    size_t runs_floor = 0;
+    size_t runs_entities = 0;
+    size_t runs_overhead = 0;
+    glm::vec2 minimap_center{0.0F};
+    float minimap_range = 1700.0F;
+    bool minimap_active = false;
+};
+
 
 struct Viewport {
     glm::vec2 position{0};
@@ -29,8 +469,8 @@ struct Viewport {
     glm::vec2 offset{0};
     glm::vec2 shakeOffset{0};
 
-    [[nodiscard]] auto worldToScreen(const glm::vec2& worldPos, int windowW, int windowH) const -> glm::vec2 {
-        glm::vec2 d = (worldPos - position) * zoom;
+    [[nodiscard]] auto worldToScreen(const glm::vec2& world, int windowW, int windowH) const -> glm::vec2 {
+        glm::vec2 d = (world - position) * zoom;
         if (rotation != 0.0F) {
             float c = std::cos(rotation);
             float s = std::sin(rotation);
@@ -39,8 +479,8 @@ struct Viewport {
         return {d.x + (static_cast<float>(windowW) / 2.0F) + offset.x + shakeOffset.x, d.y + (static_cast<float>(windowH) / 2.0F) + offset.y + shakeOffset.y};
     }
 
-    [[nodiscard]] auto screenToWorld(const glm::vec2& screenPos, int windowW, int windowH) const -> glm::vec2 {
-        glm::vec2 d = {screenPos.x - (static_cast<float>(windowW) / 2.0F) - offset.x - shakeOffset.x, screenPos.y - (static_cast<float>(windowH) / 2.0F) - offset.y - shakeOffset.y};
+    [[nodiscard]] auto screenToWorld(const glm::vec2& screen, int windowW, int windowH) const -> glm::vec2 {
+        glm::vec2 d = {screen.x - (static_cast<float>(windowW) / 2.0F) - offset.x - shakeOffset.x, screen.y - (static_cast<float>(windowH) / 2.0F) - offset.y - shakeOffset.y};
         if (rotation != 0.0F) {
             float c = std::cos(-rotation);
             float s = std::sin(-rotation);
@@ -50,70 +490,134 @@ struct Viewport {
     }
 };
 
-struct RenderState {
-    SDL_Window* window;
-    SDL_Renderer* target;
 
-    SDL_Clay_RendererData clay;
+struct Quality {
+    float internal_scale = 1.0F;
+    float light_scale = 1.0F;
+    uint32_t particle_cap = PARTICLE_CAP;
+    uint32_t max_lights = 256;
+    uint32_t max_shadow_lights = 32;
+    uint32_t shadow_taps = 3;
+    bool bloom = true;
+};
+
+struct TransitionState {
+    ScreenTransitionKind kind = ScreenTransitionKind::Fade;
+    double start = -1.0;
+    float duration = 0.25F;
+    glm::vec4 color{0.0F, 0.0F, 0.0F, 1.0F};
+    glm::vec2 center{0.5F, 0.5F};
+    uint8_t direction = 0;
+    TransitionScope scope = TransitionScope::Frame;
+    SlideMode slide = SlideMode::Push;
+    bool capture_pending = false;
+};
+
+struct FrameCtx {
+    wgpu::raii::CommandEncoder encoder;
+    WGPUSurfaceTexture surface{};
+    wgpu::raii::TextureView backbuffer;
+    bool ok = false;
+};
+
+struct PassBinds {
+    wgpu::raii::BindGroup frame;
+    wgpu::raii::BindGroup frame_occluder;
+    wgpu::raii::BindGroup frame_minimap;
+    wgpu::raii::BindGroup light;
+    wgpu::raii::BindGroup lit;
+    wgpu::raii::BindGroup composite;
+    wgpu::raii::BindGroup lit_src;
+    std::array<wgpu::raii::BindGroup, BLOOM_MIPS> bloom_src;
+    wgpu::raii::BindGroup post_a, post_b;
+    wgpu::raii::BindGroup blur_a, blur_b;
+    wgpu::raii::BindGroup transition;
+    wgpu::raii::BindGroup compose;
+    wgpu::raii::BindGroup light_one_src;
+    wgpu::raii::BindGroup light_pong_src;
+};
+
+struct EmitterState {
+    float accumulator = 0.0F;
+    uint16_t pending_burst = 0;
+};
+
+struct RenderQueries {
+    flecs::query<const Sprite> sprites;
+    flecs::query<const Position, const Light> lights;
+    flecs::query<const Position, const Occluder> occluders;
+    flecs::query<const Position, const VisionBlocker> smoke;
+    flecs::query<const Position, ParticleEmitter, EmitterState> emitters;
+    flecs::query<const NetworkId> nids;
+    flecs::query<const Environment> environment;
+    flecs::query<const Position> local_view;
+    flecs::query<const Position, const RadarVisible> radar;
+};
+
+
+struct RenderState {
+    SDL_Window* window = nullptr;
+    float dpi = 1.0F;
+    bool vsync = true;
+
+    wgpu::raii::Instance instance;
+    wgpu::raii::Surface surface;
+    wgpu::raii::Adapter adapter;
+    wgpu::raii::Device device;
+    wgpu::raii::Queue queue;
+    wgpu::TextureFormat surface_format = wgpu::TextureFormat::BGRA8Unorm;
+
+    Quality quality;
+    Samplers samplers;
+    BindLayouts layouts;
+    Pipelines pipelines;
+    Targets targets;
+
+    GpuBuffer frame_ubo;
+    GpuBuffer occluder_ubo;
+    GpuBuffer minimap_ubo;
+    GpuBuffer composite_ubo;
+    GpuBuffer post_ubo;
+    GpuBuffer transition_ubo;
+
+    GpuBuffer sprite_instances;
+    GpuBuffer minimap_instances;
+    GpuBuffer light_instances;
+    GpuBuffer shadow_light_instances;
+    GpuBuffer shadow_verts;
+    GpuBuffer occluder_instances;
+
+    TextureCache textures;
+    MaterialCache materials;
+    TextureAtlas tile_atlas;
+    TextureAtlas particle_atlas;
+    TileMeshCache tiles;
+    ParticleSystem particles;
+    FrameScratch scratch;
+    FrameParams params;
+    PassBinds binds;
+    RenderQueries queries;
+    std::vector<GpuEmitter> pending_bursts;
+    std::vector<GpuEmitter> emitter_upload;
 
     Viewport camera;
+    TransitionState transition;
+    FrameCtx frame;
 
-    SDL_Texture* tankBaseTexture;
-    SDL_Texture* tankTurretTexture;
-    SDL_Texture* weaponBulletTexture;
-    SDL_Texture* smokeTexture = nullptr;
-    SDL_Texture* occlusionTexture = nullptr;
-    SDL_Texture* aoTexture = nullptr;
-    SDL_Texture* radarTexture = nullptr;
-    int aoW = 0;
-    int aoH = 0;
-    SDL_Texture* fragmentTextures[10] = {};
-    int fragmentCount = 0;
+    Clay_WebGPU_Context clay = nullptr;
+    Clay_WebGPU_Font clay_fonts[2] = {};
+    Clay_WebGPU_MeasureData clay_measure{};
+    Clay_WebGPU_Image minimap_clay = {};
 
-    SDL_Texture* frameA = nullptr;
-    SDL_Texture* frameB = nullptr;
-    SDL_Texture* snapshot = nullptr;
-    int frameW = 0;
-    int frameH = 0;
-    bool curIsA = true;
-    double lastStart = -1;
-    float shakeTime = 0;
-    bool shadowSolid = false;
-    SDL_Texture* lightTexture = nullptr;
-    SDL_Texture* lightBlur = nullptr;
-    SDL_Texture* maskTexture = nullptr;
-    SDL_Texture* entityTexture = nullptr;
-    SDL_Texture* effectsTexture = nullptr;
-    SDL_Texture* effectsHalf = nullptr;
-    SDL_Texture* vignetteTexture = nullptr;
+    float shake_time = 0.0F;
+    uint64_t frame_index = 0;
+    double time = 0.0;
 };
 
 struct RenderPipeline {
     flecs::entity_t value = 0;
 };
 
-struct SpriteCache {
-    std::unordered_map<uint64_t, SDL_Texture*> textures;
-};
-
-struct Particle {
-    glm::vec2 pos{0};
-    glm::vec2 vel{0};
-    float angle = 0;
-    float spin = 0;
-    float life = 0;
-    float max_life = 1;
-    float size = 16;
-    int fragment = 0;
-    Uint8 r = 255, g = 255, b = 255;
-    bool smoke = false;
-    uint64_t texture = 0;
-    bool additive = false;
-    float alpha = 1.0F;
-    float grow = 0;
-    float gravity = 0;
-    float drag = 3.0F;
-};
 
 struct Render {
     Render(flecs::world& world);
@@ -121,32 +625,43 @@ struct Render {
    private:
     static void init(flecs::iter& it, size_t i);
 
-    static void start(flecs::iter& it, size_t i, RenderState& render);
-    static void finish(flecs::iter& it, size_t i, RenderState& render);
-
-    static void interface(flecs::iter& it, size_t i, const RenderState& render, InterfaceCommands& commands);
     static void camera(flecs::iter& it, size_t i, RenderState& render, const Position& pos);
 
-    static void bullet(flecs::iter& it, size_t i, RenderState& render, const Position& pos);
-    static void sprite(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col, const Blend* blend);
-    static void prop_under(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col, const Blend* blend, const Layer* layer);
-    static void prop_below(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col, const Blend* blend, const Layer* layer);
-    static void prop_above(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col, const Blend* blend, const Layer* layer);
-    static void floor(flecs::iter& it, size_t i, const RenderState& render, const TileChunk& chunk);
-    static void shadow(flecs::iter& it);
-    static void solid(flecs::iter& it, size_t i, const RenderState& render, const TileChunk& chunk);
-    static void walls_top(flecs::iter& it, size_t i, const RenderState& render, const TileChunk& chunk);
-    static void overhead_top(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const Rotation& rot, const Sprite& sprite, const Color* col, const Blend* blend, const Layer* layer);
+    static void begin(flecs::iter& it);
+    static void collect(flecs::iter& it);
+    static void compute(flecs::iter& it);
+    static void pass_occluder(flecs::iter& it);
+    static void pass_world(flecs::iter& it);
+    static void pass_distortion(flecs::iter& it);
+    static void pass_light(flecs::iter& it);
+    static void pass_composite(flecs::iter& it);
+    static void pass_post(flecs::iter& it);
+    static void pass_minimap(flecs::iter& it);
+    static void interface(flecs::iter& it, size_t i, RenderState& render, InterfaceCommands& commands);
+    static void pass_transition(flecs::iter& it);
+    static void present(flecs::iter& it);
 
-    static void burst(flecs::entity e, const RequestEffect& req);
     static void emit(flecs::entity e, const RequestParticles& req);
-    static void age(flecs::iter& it, size_t i, Particle& p);
-    static void particles(flecs::iter& it, size_t i, const RenderState& render, const Particle& p);
+    static void transition(flecs::entity e, const RequestTransition& req);
 
-    static void smoke(flecs::iter& it, size_t i, const RenderState& render, const Position& pos, const VisionBlocker& vb);
-    static void radar(flecs::iter& it, size_t i, RenderState& render);
-    static void entities_begin(flecs::iter& it, size_t i, RenderState& render);
-    static void entities_end(flecs::iter& it, size_t i, RenderState& render);
-    static void postprocess(flecs::iter& it, size_t i, RenderState& render);
-    static auto effects(RenderState& render, SDL_Texture* cur, const Camera& cam, int w, int h) -> SDL_Texture*;
+    static auto grow_buffer(RenderState& r, GpuBuffer& buf, uint64_t size, WGPUBufferUsage usage) -> WGPUBuffer;
+    static void write_buffer(RenderState& r, GpuBuffer& buf, const void* data, uint64_t size, WGPUBufferUsage usage);
+    static auto texture(flecs::world world, RenderState& r, uint64_t hash) -> GpuTexture*;
+    static auto bind_material(flecs::world world, RenderState& r, uint64_t albedo, uint64_t normal, bool nearest) -> WGPUBindGroup;
+    static auto atlas_layer(flecs::world world, RenderState& r, TextureAtlas& atlas, uint64_t hash, bool* pending = nullptr) -> uint32_t;
+    static auto material_pipeline(flecs::world world, RenderState& r, uint64_t shader, uint8_t blend) -> WGPURenderPipeline;
+    static void resize_targets(RenderState& r, uint32_t width, uint32_t height);
+    static void resize_minimap(RenderState& r, uint32_t pixels);
+    static auto camera_uniform(const RenderState& r, glm::vec2 center, glm::vec2 extent_px, float zoom, float rotation, glm::vec2 shake) -> GpuCamera;
+
+    static void draw_runs(flecs::world world, RenderState& r, WGPURenderPassEncoder pass, size_t first_run, size_t last_run, bool distortion);
+    static void mesh_chunks(flecs::world world, RenderState& r);
+
+    static void particles_setup(RenderState& r);
+    static void particles_rebind(RenderState& r);
+    static void particles_upload(RenderState& r, float dt);
+    static void particles_simulate(RenderState& r, WGPUCommandEncoder encoder);
+    static void particles_draw(RenderState& r, WGPURenderPassEncoder pass, bool distortion);
+
+    static void clay_setup(flecs::world world, RenderState& r);
 };

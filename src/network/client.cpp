@@ -13,6 +13,7 @@
 #include "component/network.h"
 #include "component/object.h"
 #include "component/physics.h"
+#include "component/render.h"
 #include "component/script.h"
 #include "component/settings.h"
 #include "component/world.h"
@@ -166,17 +167,23 @@ struct Shot {
     float speed;
     uint32_t prediction;
     float life;
+    uint64_t sprite;
 };
 
 void ghosts_advance(flecs::world& world, const ClientQueries& q, const std::vector<Shot>& shots, float dt) {
     for (const auto& s : shots) {
         glm::vec2 fwd = math::heading(s.angle);
-        world.entity()
+        flecs::entity ghost = world.entity()
             .set(Position{.value = s.muzzle})
             .set(Rotation{.angle = s.angle})
             .set(VelocityLinear{.value = fwd * s.speed})
             .set(Predicted{.life = s.life, .id = s.prediction})
             .set(Bullet{.speed = s.speed});
+        if (s.sprite != 0) {
+            ghost.set(Sprite{.texture = s.sprite});
+        } else {
+            ghost.set(Sprite{.texture = builtin::DISC, .size = {7.0F, 7.0F}});
+        }
     }
     const auto* grid = world.try_get<WorldGrid>();
     const auto* tileset = world.try_get<Tileset>();
@@ -624,7 +631,9 @@ void NetworkClient::predict(flecs::iter& it) {
             if (fire) {
                 glm::vec2 fwd = math::heading(rot.angle);
                 glm::vec2 muzzle = pos.value + weapon.muzzle * fwd;
-                shots.push_back({.muzzle = muzzle, .angle = rot.angle, .speed = weapon.speed, .prediction = prediction, .life = weapon.life});
+                const auto* ps = self.try_get<ProjectileSprite>();
+                shots.push_back({.muzzle = muzzle, .angle = rot.angle, .speed = weapon.speed, .prediction = prediction, .life = weapon.life,
+                                 .sprite = ps != nullptr ? ps->texture : 0});
                 if (!conn.commands.empty()) {
                     conn.commands.back().muzzle = muzzle;
                     conn.commands.back().aim = rot.angle;

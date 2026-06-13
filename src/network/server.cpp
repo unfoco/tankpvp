@@ -13,7 +13,6 @@
 
 #include "component/asset.h"
 #include "component/audio.h"
-#include "component/effect.h"
 #include "component/input.h"
 #include "component/interface.h"
 #include "component/network.h"
@@ -204,8 +203,8 @@ static auto view_center(flecs::entity tank) -> glm::vec2 {
                     c = tp->value;
                 }
             }
-        } else if (cam->focus_x != 0.0F || cam->focus_y != 0.0F) {
-            c = {cam->focus_x, cam->focus_y};
+        } else if (cam->focus.x != 0.0F || cam->focus.y != 0.0F) {
+            c = cam->focus;
         }
     }
     return c;
@@ -263,10 +262,14 @@ NetworkServer::NetworkServer(flecs::world& world) {
             return;
         }
         MessageParticles msg{
-            .x = fx.position.x, .y = fx.position.y, .dir = fx.dir, .spread = fx.spread, .count = fx.count, .texture = fx.texture,
-            .speed_min = fx.speed_min, .speed_max = fx.speed_max, .size_min = fx.size_min, .size_max = fx.size_max,
-            .life_min = fx.life_min, .life_max = fx.life_max, .gravity = fx.gravity, .drag = fx.drag, .spin = fx.spin, .grow = fx.grow,
-            .r = fx.r, .g = fx.g, .b = fx.b, .alpha = fx.alpha, .additive = static_cast<uint8_t>(fx.additive ? 1 : 0),
+            .x = fx.position.x, .y = fx.position.y, .count = fx.count, .texture = fx.texture,
+            .direction = fx.direction, .spread = fx.spread,
+            .speed_min = fx.speed.x, .speed_max = fx.speed.y, .size_min = fx.size.x, .size_max = fx.size.y,
+            .life_min = fx.life.x, .life_max = fx.life.y, .gravity = fx.gravity, .drag = fx.drag, .spin = fx.spin, .grow = fx.grow,
+            .cb_r = fx.color_begin.r, .cb_g = fx.color_begin.g, .cb_b = fx.color_begin.b, .cb_a = fx.color_begin.a,
+            .ce_r = fx.color_end.r, .ce_g = fx.color_end.g, .ce_b = fx.color_end.b, .ce_a = fx.color_end.a,
+            .emissive = fx.emissive, .bounce = fx.bounce,
+            .collide = static_cast<uint8_t>(fx.collide ? 1 : 0), .blend = static_cast<uint8_t>(fx.blend),
         };
         serialize::Writer w = wire::message(Message::Particles);
         serialize::encode(w, msg);
@@ -277,40 +280,24 @@ NetworkServer::NetworkServer(flecs::world& world) {
         });
     });
 
-    world.observer<const RequestBurst>("network::server::burst_fx").event(flecs::OnSet).each([](flecs::entity e, const RequestBurst& fx) -> void {
-        flecs::world world = e.world();
-        MessageEffect msg{.x = fx.x, .y = fx.y, .angle = 0, .r = fx.r, .g = fx.g, .b = fx.b};
-        serialize::Writer w = wire::message(Message::Effect);
-        serialize::encode(w, msg);
-        world.query_builder<Peer>().build().each([&](const Peer& pr) -> void {
-            if (pr.welcomed && (pr.peer != nullptr)) {
-                wire::send(pr.peer, w, CHANNEL_RELIABLE, true);
-            }
-        });
-        e.destruct();
+    world.observer("network::server::death_stop").with<Dying>().event(flecs::OnAdd).each([](flecs::entity e) -> void {
+        if (e.world().has<NetworkHost>() && e.has<VelocityLinear>()) {
+            e.set(VelocityLinear{}).set(VelocityAngular{});
+        }
     });
 
-    world.observer("network::server::death_fx").with<Dying>().event(flecs::OnAdd).each([](flecs::entity e) -> void {
+    world.observer<const RequestTransition>("network::server::transition_fx").event(flecs::OnSet).each([](flecs::entity e, const RequestTransition& tr) -> void {
         flecs::world world = e.world();
         if (!world.has<NetworkHost>()) {
             return;
         }
-        glm::vec2 dp{0};
-        float da = 0;
-        glm::vec3 dc{255, 255, 255};
-        if (const auto* pp = e.try_get<Position>()) {
-            dp = pp->value;
-        }
-        if (const auto* rr = e.try_get<Rotation>()) {
-            da = rr->angle;
-        }
-        if (const auto* cc = e.try_get<Color>()) {
-            dc = cc->value;
-        }
-        e.set(VelocityLinear{}).set(VelocityAngular{});
-        MessageEffect fx{.x = dp.x, .y = dp.y, .angle = da, .r = static_cast<uint8_t>(dc.r), .g = static_cast<uint8_t>(dc.g), .b = static_cast<uint8_t>(dc.b)};
-        serialize::Writer w = wire::message(Message::Effect);
-        serialize::encode(w, fx);
+        MessageTransition msg{
+            .kind = static_cast<uint8_t>(tr.kind), .duration = tr.duration,
+            .r = tr.color.r, .g = tr.color.g, .b = tr.color.b, .a = tr.color.a,
+            .center_x = tr.center.x, .center_y = tr.center.y, .direction = tr.direction,
+        };
+        serialize::Writer w = wire::message(Message::Transition);
+        serialize::encode(w, msg);
         world.query_builder<Peer>().build().each([&](const Peer& pr) -> void {
             if (pr.welcomed && (pr.peer != nullptr)) {
                 wire::send(pr.peer, w, CHANNEL_RELIABLE, true);
@@ -325,9 +312,8 @@ NetworkServer::NetworkServer(flecs::world& world) {
         flecs::entity t = e.world().entity(cam.target);
         if (t.is_alive()) {
             if (const auto* p = t.try_get<Position>()) {
-                if (cam.focus_x != p->value.x || cam.focus_y != p->value.y) {
-                    cam.focus_x = p->value.x;
-                    cam.focus_y = p->value.y;
+                if (cam.focus != p->value) {
+                    cam.focus = p->value;
                     e.modified<Camera>();
                 }
                 return;
@@ -626,7 +612,8 @@ static void on_hello(flecs::world& world, NetworkHost& host, ENetPeer* epeer, co
     uint32_t pid = host.next_peer++;
 
     flecs::entity tank = world.entity()
-                             .set(Color{.value = {50 + ((pid * 53) % 205), 50 + ((pid * 97) % 205), 50 + ((pid * 151) % 205)}})
+                             .set(Color{.value = {static_cast<float>(50 + ((pid * 53) % 205)) / 255.0F, static_cast<float>(50 + ((pid * 97) % 205)) / 255.0F,
+                                                  static_cast<float>(50 + ((pid * 151) % 205)) / 255.0F}})
                              .set(Position{.value = {300.0F + (static_cast<float>(pid % 8) * 70.0F), 300.0F}})
                              .set(Rotation{.angle = 0})
                              .set(VelocityLinear{})

@@ -18,25 +18,24 @@ enum class InterfacePage : std::uint8_t {
     Server,
     Connect,
     Settings,
+    Content,
     Status,
-    Assets,
 };
 
 struct InterfacePrevious {
     InterfacePage page;
 };
 
-enum class TransitionKind : std::uint8_t { Crossfade, Slide };
-enum class TransitionDir : std::uint8_t { Left, Right, Up, Down };
-
 struct InterfaceTransition {
     InterfacePage shown = InterfacePage::None;
-    double start = 0;
-    double duration = 0.18;
-    TransitionKind kind = TransitionKind::Crossfade;
-    TransitionDir dir = TransitionDir::Left;
-    InterfacePage last_from = InterfacePage::None;
-    InterfacePage last_to = InterfacePage::None;
+    std::vector<InterfacePage> history;
+};
+
+struct ContentLoad {
+    bool showing = false;
+    bool in_session = false;
+    double shown_since = 0;
+    double busy_since = 0;
 };
 
 struct InterfaceCommands {
@@ -77,6 +76,12 @@ struct ChatInput {
 
 struct InputCapture {
     bool active = false;
+};
+
+struct MinimapHandle {
+    void* image = nullptr;
+    float size = 0;
+    float range = 0;
 };
 
 struct ServerEntry {

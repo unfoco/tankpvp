@@ -27,4 +27,5 @@ struct Physics {
     static void cleanup(B2Body& body);
     static void ldamp(const B2Body& body, const DampingLinear& d);
     static void adamp(const B2Body& body, const DampingAngular& d);
+    static void filter(const B2Body& b, const CollisionLayers& cl);
 };

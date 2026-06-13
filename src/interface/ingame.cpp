@@ -44,14 +44,14 @@ auto Interface::ingame(flecs::iter& it, InterfaceState& state, InterfacePage& pa
                     continue;
                 }
                 float fade = std::clamp(age <= CHAT_FADE_HOLD ? 1.0F : static_cast<float>((CHAT_FADE_END - age) / (CHAT_FADE_END - CHAT_FADE_HOLD)), 0.0F, 1.0F);
-                const std::string& wrapped = state.intern(widget::wrap(state, chatLog.at(i), 32, 492));
+                std::string wrapped = widget::wrap(state, chatLog.at(i), 32, 492);
                 Clay_Sizing bubbleSizing = {.width = CLAY_SIZING_FIT(), .height = CLAY_SIZING_FIT()};
                 bubbleSizing.width.size.minMax.max = 520;
                 CLAY({.layout = {.sizing = bubbleSizing, .padding = {14, 14, 6, 6}, .childAlignment = {.y = CLAY_ALIGN_Y_CENTER}},
                       .backgroundColor = {15, 15, 20, fade * 150.0F},
                       .cornerRadius = CLAY_CORNER_RADIUS(6),
                       .clip = {.horizontal = true}}) {
-                    CLAY_TEXT(Str(wrapped), CLAY_TEXT_CONFIG({.textColor = {.r = 255, .g = 255, .b = 255, .a = fade * 200.0F}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NEWLINES}));
+                    widget::rich(state, wrapped, 32, {.r = 255, .g = 255, .b = 255, .a = fade * 200.0F});
                 }
             }
         }

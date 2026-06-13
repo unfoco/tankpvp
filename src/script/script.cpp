@@ -23,7 +23,6 @@
 #include "component/world.h"
 #include "component/audio.h"
 #include "component/network.h"
-#include "component/effect.h"
 #include "component/render.h"
 #include "component/object.h"
 #include "component/physics.h"
@@ -625,48 +624,39 @@ static void setup_api(flecs::world world, lua_State* lua) {
             .damage = static_cast<float>(Lua::ref_number(spec, "damage", 0.0)),
         });
     });
-    api_fn(worldns, state, "world", "effect", "({ at: Vec, color: { r: number, g: number, b: number }? }) -> ()", [world](const LuaRef& spec) -> void {
-        LuaRef at = spec["at"];
-        LuaRef col = spec["color"];
-        world.entity().set(RequestBurst{
-            .x = static_cast<float>(Lua::ref_number(at, "x", 0.0)),
-            .y = static_cast<float>(Lua::ref_number(at, "y", 0.0)),
-            .r = static_cast<uint8_t>(Lua::ref_number(col, "r", 255.0)),
-            .g = static_cast<uint8_t>(Lua::ref_number(col, "g", 255.0)),
-            .b = static_cast<uint8_t>(Lua::ref_number(col, "b", 255.0)),
-        });
-    });
     api_fn(worldns, state, "world", "particles",
-           "({ at: Vec, count: number?, asset: string?, soft: boolean?, direction: number?, spread: number?, speed: { min: number, max: number }?, size: { min: number, max: number }?, life: { min: number, max: number }?, color: { r: number, g: number, b: number }?, alpha: number?, additive: boolean?, gravity: number?, drag: number?, spin: number?, grow: number? }) -> ()",
+           "({ at: Vec, count: number?, asset: string?, direction: number?, spread: number?, speed: { min: number, max: number }?, size: { min: number, max: number }?, life: { min: number, max: number }?, color: { r: number, g: number, b: number, a: number? }?, color_end: { r: number, g: number, b: number, a: number? }?, emissive: number?, bounce: number?, collide: boolean?, additive: boolean?, blend: BlendMode?, gravity: number?, drag: number?, spin: number?, grow: number? }) -> ()",
            [world](const LuaRef& spec) -> void {
         LuaRef at = spec["at"];
         LuaRef col = spec["color"];
+        LuaRef col_end = spec["color_end"];
         LuaRef speed = spec["speed"];
         LuaRef size = spec["size"];
         LuaRef life = spec["life"];
         RequestParticles rp{};
         rp.position = {static_cast<float>(Lua::ref_number(at, "x", 0.0)), static_cast<float>(Lua::ref_number(at, "y", 0.0))};
-        rp.count = static_cast<uint16_t>(std::clamp(static_cast<int>(Lua::ref_number(spec, "count", 12.0)), 1, 512));
-        rp.dir = static_cast<float>(Lua::ref_number(spec, "direction", 0.0));
+        rp.count = static_cast<uint16_t>(std::clamp(static_cast<int>(Lua::ref_number(spec, "count", 12.0)), 1, 4096));
+        rp.direction = static_cast<float>(Lua::ref_number(spec, "direction", 0.0));
         rp.spread = static_cast<float>(Lua::ref_number(spec, "spread", 6.2832));
-        rp.speed_min = static_cast<float>(Lua::ref_number(speed, "min", 40.0));
-        rp.speed_max = static_cast<float>(Lua::ref_number(speed, "max", 120.0));
-        rp.size_min = static_cast<float>(Lua::ref_number(size, "min", 8.0));
-        rp.size_max = static_cast<float>(Lua::ref_number(size, "max", 18.0));
-        rp.life_min = static_cast<float>(Lua::ref_number(life, "min", 0.5));
-        rp.life_max = static_cast<float>(Lua::ref_number(life, "max", 1.0));
+        rp.speed = {static_cast<float>(Lua::ref_number(speed, "min", 40.0)), static_cast<float>(Lua::ref_number(speed, "max", 120.0))};
+        rp.size = {static_cast<float>(Lua::ref_number(size, "min", 8.0)), static_cast<float>(Lua::ref_number(size, "max", 18.0))};
+        rp.life = {static_cast<float>(Lua::ref_number(life, "min", 0.5)), static_cast<float>(Lua::ref_number(life, "max", 1.0))};
         rp.gravity = static_cast<float>(Lua::ref_number(spec, "gravity", 0.0));
         rp.drag = static_cast<float>(Lua::ref_number(spec, "drag", 1.5));
         rp.spin = static_cast<float>(Lua::ref_number(spec, "spin", 9.0));
         rp.grow = static_cast<float>(Lua::ref_number(spec, "grow", 0.0));
-        rp.r = static_cast<uint8_t>(Lua::ref_number(col, "r", 255.0));
-        rp.g = static_cast<uint8_t>(Lua::ref_number(col, "g", 255.0));
-        rp.b = static_cast<uint8_t>(Lua::ref_number(col, "b", 255.0));
-        rp.alpha = static_cast<uint8_t>(std::clamp(Lua::ref_number(spec, "alpha", 1.0), 0.0, 1.0) * 255.0);
-        rp.additive = Lua::ref_bool(spec, "additive", false);
-        if (Lua::ref_bool(spec, "soft", false)) {
-            rp.texture = 1;
+        rp.color_begin = {static_cast<float>(Lua::ref_number(col, "r", 1.0)), static_cast<float>(Lua::ref_number(col, "g", 1.0)),
+                          static_cast<float>(Lua::ref_number(col, "b", 1.0)), static_cast<float>(Lua::ref_number(col, "a", 1.0))};
+        if (col_end.isTable()) {
+            rp.color_end = {static_cast<float>(Lua::ref_number(col_end, "r", 1.0)), static_cast<float>(Lua::ref_number(col_end, "g", 1.0)),
+                            static_cast<float>(Lua::ref_number(col_end, "b", 1.0)), static_cast<float>(Lua::ref_number(col_end, "a", 0.0))};
+        } else {
+            rp.color_end = {rp.color_begin.r, rp.color_begin.g, rp.color_begin.b, 0.0F};
         }
+        rp.emissive = static_cast<float>(Lua::ref_number(spec, "emissive", 0.0));
+        rp.bounce = static_cast<float>(Lua::ref_number(spec, "bounce", 0.0));
+        rp.collide = Lua::ref_bool(spec, "collide", false);
+        rp.blend = static_cast<BlendMode>(static_cast<int>(Lua::ref_number(spec, "blend", Lua::ref_bool(spec, "additive", false) ? 1.0 : 0.0)));
         std::string asset = Lua::ref_string(spec, "asset", "");
         if (!asset.empty()) {
             if (const auto* catalog = world.try_get<AssetCatalog>()) {
@@ -675,6 +665,22 @@ static void setup_api(flecs::world world, lua_State* lua) {
         }
         world.entity().set(rp);
     });
+    api_fn(worldns, state, "world", "transition",
+           "({ kind: ScreenTransition?, duration: number?, color: { r: number, g: number, b: number, a: number? }?, center: Vec?, direction: number? }) -> ()",
+           [world](const LuaRef& spec) -> void {
+        LuaRef col = spec["color"];
+        LuaRef center = spec["center"];
+        RequestTransition tr{};
+        tr.kind = static_cast<ScreenTransitionKind>(std::clamp(static_cast<int>(Lua::ref_number(spec, "kind", 0.0)), 0, 4));
+        tr.duration = static_cast<float>(Lua::ref_number(spec, "duration", 0.25));
+        tr.color = {static_cast<float>(Lua::ref_number(col, "r", 0.0)), static_cast<float>(Lua::ref_number(col, "g", 0.0)),
+                    static_cast<float>(Lua::ref_number(col, "b", 0.0)), static_cast<float>(Lua::ref_number(col, "a", 1.0))};
+        if (center.isTable()) {
+            tr.center = {static_cast<float>(Lua::ref_number(center, "x", 0.5)), static_cast<float>(Lua::ref_number(center, "y", 0.5))};
+        }
+        tr.direction = static_cast<uint8_t>(std::clamp(static_cast<int>(Lua::ref_number(spec, "direction", 0.0)), 0, 3));
+        world.entity().set(tr);
+    });
     api_fn(worldns, state, "world", "loading", "(boolean) -> ()", [world](bool active) -> void {
         flecs::entity holder = world.query_builder<Loading>().build().first();
         if (!holder) {
@@ -682,12 +688,24 @@ static void setup_api(flecs::world world, lua_State* lua) {
         }
         holder.set<Loading>({.active = active ? 1.0F : 0.0F});
     });
-    api_fn(worldns, state, "world", "background", "({ r: number, g: number, b: number }) -> ()", [world](const LuaRef& spec) -> void {
-        Environment env{
-            .bg_r = static_cast<float>(Lua::ref_number(spec, "r", 230.0)),
-            .bg_g = static_cast<float>(Lua::ref_number(spec, "g", 230.0)),
-            .bg_b = static_cast<float>(Lua::ref_number(spec, "b", 230.0)),
-        };
+    api_fn(worldns, state, "world", "background", "({ r: number?, g: number?, b: number?, texture: string?, size: number? }) -> ()", [world](const LuaRef& spec) -> void {
+        Environment env{};
+        env.background = {static_cast<float>(Lua::ref_number(spec, "r", 0.9)), static_cast<float>(Lua::ref_number(spec, "g", 0.9)),
+                          static_cast<float>(Lua::ref_number(spec, "b", 0.9))};
+        env.modulate = env.background;
+        std::string texture = Lua::ref_string(spec, "texture", "");
+        if (!texture.empty()) {
+            if (const auto* catalog = world.try_get<AssetCatalog>()) {
+                env.texture = catalog->hash_of(texture);
+            }
+            env.texture_size = static_cast<float>(Lua::ref_number(spec, "size", 0.0));
+            env.modulate = {1.0F, 1.0F, 1.0F};
+            LuaRef mod = spec["modulate"];
+            if (mod.isTable()) {
+                env.modulate = {static_cast<float>(Lua::ref_number(mod, "r", 1.0)), static_cast<float>(Lua::ref_number(mod, "g", 1.0)),
+                                static_cast<float>(Lua::ref_number(mod, "b", 1.0))};
+            }
+        }
         flecs::entity holder = world.query_builder<Environment>().build().first();
         if (holder) {
             holder.set(env);
@@ -982,8 +1000,38 @@ static void setup_api(flecs::world world, lua_State* lua) {
         }
     });
 
-    auto set_layer = [](const ScriptEntity* self, int index, const std::string& name) -> void {
-        if (index < 0 || index >= SPRITE_LAYERS) {
+    auto sprite_part = [](flecs::entity owner, uint8_t index) -> flecs::entity {
+        flecs::entity found;
+        owner.children([&](flecs::entity child) -> void {
+            if (!found && child.has<SpritePart>() && child.get<SpritePart>().index == index) {
+                found = child;
+            }
+        });
+        if (found) {
+            return found;
+        }
+        RenderDepth base = owner.has<RenderDepth>() ? owner.get<RenderDepth>() : RenderDepth{};
+        return owner.world()
+            .entity()
+            .child_of(owner)
+            .set(SpritePart{.index = index})
+            .set(Attach{})
+            .set(RenderDepth{.plane = base.plane + index, .y_sort = base.y_sort})
+            .add<Replicated>();
+    };
+    auto clear_parts = [](flecs::entity owner, uint8_t keep_above) -> void {
+        std::vector<flecs::entity> doomed;
+        owner.children([&](flecs::entity child) -> void {
+            if (child.has<SpritePart>() && child.get<SpritePart>().index >= keep_above) {
+                doomed.push_back(child);
+            }
+        });
+        for (flecs::entity e : doomed) {
+            e.destruct();
+        }
+    };
+    auto set_layer = [sprite_part](const ScriptEntity* self, int index, const std::string& name) -> void {
+        if (index < 0 || index > 250 || !self->entity.is_alive()) {
             return;
         }
         flecs::world world = self->entity.world();
@@ -995,13 +1043,18 @@ static void setup_api(flecs::world world, lua_State* lua) {
         if (hash == 0) {
             return;
         }
-        Sprite s = self->entity.has<Sprite>() ? self->entity.get<Sprite>() : Sprite{};
-        s.texture[index] = hash;
-        self->entity.set<Sprite>(s);
+        flecs::entity target = index == 0 ? self->entity : sprite_part(self->entity, static_cast<uint8_t>(index));
+        Sprite s = target.has<Sprite>() ? target.get<Sprite>() : Sprite{};
+        s.texture = hash;
+        target.set<Sprite>(s);
     };
 
-    api_method(entity, state, "Entity", "sprite", "(self: Entity, string | { { tex: string, pivot: { number }?, offset: { number }? } }) -> ()", [set_layer](const ScriptEntity* self, const LuaRef& spec) -> void {
+    api_method(entity, state, "Entity", "sprite", "(self: Entity, string | { { tex: string, pivot: { number }?, offset: { number }? } }) -> ()", [sprite_part, clear_parts, set_layer](const ScriptEntity* self, const LuaRef& spec) -> void {
+        if (!self->entity.is_alive()) {
+            return;
+        }
         if (spec.isString()) {
+            clear_parts(self->entity, 1);
             set_layer(self, 0, spec.unsafe_cast<std::string>());
             return;
         }
@@ -1012,9 +1065,9 @@ static void setup_api(flecs::world world, lua_State* lua) {
         if (catalog == nullptr) {
             return;
         }
-        Sprite s{};
         int count = spec.length();
-        for (int i = 1; i <= count && i <= SPRITE_LAYERS; ++i) {
+        clear_parts(self->entity, static_cast<uint8_t>(std::max(count, 1)));
+        for (int i = 1; i <= count; ++i) {
             LuaRef layer = spec[i];
             if (!layer.isTable()) {
                 continue;
@@ -1027,19 +1080,41 @@ static void setup_api(flecs::world world, lua_State* lua) {
             if (hash == 0) {
                 continue;
             }
-            s.texture[i - 1] = hash;
-            if (LuaRef pivot = layer["pivot"]; pivot.isTable() && pivot.length() >= 2) {
-                s.pivot_x[i - 1] = static_cast<float>(pivot[1].unsafe_cast<double>()) - 0.5F;
-                s.pivot_y[i - 1] = static_cast<float>(pivot[2].unsafe_cast<double>()) - 0.5F;
+            glm::vec2 pivot{0.5F, 0.5F};
+            glm::vec2 offset{0.0F};
+            if (LuaRef p = layer["pivot"]; p.isTable() && p.length() >= 2) {
+                pivot = {static_cast<float>(p[1].unsafe_cast<double>()), static_cast<float>(p[2].unsafe_cast<double>())};
             }
-            if (LuaRef offset = layer["offset"]; offset.isTable() && offset.length() >= 2) {
-                s.offset_x[i - 1] = static_cast<float>(offset[1].unsafe_cast<double>());
-                s.offset_y[i - 1] = static_cast<float>(offset[2].unsafe_cast<double>());
+            if (LuaRef o = layer["offset"]; o.isTable() && o.length() >= 2) {
+                offset = {static_cast<float>(o[1].unsafe_cast<double>()), static_cast<float>(o[2].unsafe_cast<double>())};
+            }
+            if (i == 1) {
+                Sprite s = self->entity.has<Sprite>() ? self->entity.get<Sprite>() : Sprite{};
+                s.texture = hash;
+                s.pivot = pivot;
+                s.offset = offset;
+                self->entity.set<Sprite>(s);
+            } else {
+                flecs::entity part = sprite_part(self->entity, static_cast<uint8_t>(i - 1));
+                part.set(Sprite{.texture = hash, .pivot = pivot});
+                part.set(Attach{.parent = 0, .offset = offset, .rotation = 0.0F, .inherit_rotation = true});
             }
         }
-        self->entity.set<Sprite>(s);
     });
     api_method(entity, state, "Entity", "layer", "(self: Entity, number, string) -> ()", [set_layer](const ScriptEntity* self, int index, const std::string& name) -> void { set_layer(self, index - 1, name); });
+    api_method(entity, state, "Entity", "projectile", "(self: Entity, string) -> ()", [](const ScriptEntity* self, const std::string& name) -> void {
+        if (!self->entity.is_alive()) {
+            return;
+        }
+        const auto* catalog = self->entity.world().try_get<AssetCatalog>();
+        if (catalog == nullptr) {
+            return;
+        }
+        uint64_t hash = catalog->hash_of(name);
+        if (hash != 0) {
+            self->entity.set(ProjectileSprite{.texture = hash});
+        }
+    });
     api_method(entity, state, "Entity", "apply", "(self: Entity, any) -> ()", [](const ScriptEntity* self, const LuaRef& def) -> void {
         if (!def.isTable()) {
             return;
@@ -1064,6 +1139,7 @@ static void setup_api(flecs::world world, lua_State* lua) {
             }
             return {s};
         })
+        .addFunction("__eq", [](const ScriptEntity* self, const ScriptEntity* other) -> bool { return other != nullptr && self->entity == other->entity; })
         .endClass();
 
     auto scene = luabridge::getGlobalNamespace(lua).beginClass<ScriptScene>("Scene");

@@ -14,7 +14,7 @@
 #include "component/physics.h"
 #include "component/script.h"
 #include "component/audio.h"
-#include "component/effect.h"
+#include "component/render.h"
 #include "util/math.h"
 #include "util/time.h"
 #include "component/asset.h"
@@ -423,18 +423,24 @@ void apply_packet(flecs::world& world, NetworkConnection& conn, ENetPacket* pack
             auto msg = serialize::decode<MessageParticles>(r);
             if (r.valid()) {
                 world.entity().set<RequestParticles>({
-                    .position = {msg.x, msg.y}, .dir = msg.dir, .spread = msg.spread, .count = msg.count, .texture = msg.texture,
-                    .speed_min = msg.speed_min, .speed_max = msg.speed_max, .size_min = msg.size_min, .size_max = msg.size_max,
-                    .life_min = msg.life_min, .life_max = msg.life_max, .gravity = msg.gravity, .drag = msg.drag, .spin = msg.spin, .grow = msg.grow,
-                    .r = msg.r, .g = msg.g, .b = msg.b, .alpha = msg.alpha, .additive = msg.additive != 0,
+                    .position = {msg.x, msg.y}, .count = msg.count, .texture = msg.texture,
+                    .direction = msg.direction, .spread = msg.spread,
+                    .speed = {msg.speed_min, msg.speed_max}, .size = {msg.size_min, msg.size_max}, .life = {msg.life_min, msg.life_max},
+                    .gravity = msg.gravity, .drag = msg.drag, .spin = msg.spin, .grow = msg.grow,
+                    .color_begin = {msg.cb_r, msg.cb_g, msg.cb_b, msg.cb_a}, .color_end = {msg.ce_r, msg.ce_g, msg.ce_b, msg.ce_a},
+                    .emissive = msg.emissive, .bounce = msg.bounce, .collide = msg.collide != 0,
+                    .blend = static_cast<BlendMode>(msg.blend),
                 });
             }
             break;
         }
-        case Message::Effect: {
-            auto msg = serialize::decode<MessageEffect>(r);
+        case Message::Transition: {
+            auto msg = serialize::decode<MessageTransition>(r);
             if (r.valid()) {
-                world.entity().set<RequestEffect>({.position = {msg.x, msg.y}, .angle = msg.angle, .r = msg.r, .g = msg.g, .b = msg.b});
+                world.entity().set<RequestTransition>({
+                    .kind = static_cast<ScreenTransitionKind>(msg.kind), .duration = msg.duration,
+                    .color = {msg.r, msg.g, msg.b, msg.a}, .center = {msg.center_x, msg.center_y}, .direction = msg.direction,
+                });
             }
             break;
         }

@@ -3,7 +3,7 @@
 #include "component/network.h"
 
 auto Interface::status(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
-    prev.page = InterfacePage::Main;
+    prev.page = InterfacePage::Connect;
 
     const auto* status = it.world().try_get<ConnectionStatus>();
     bool connecting = (status == nullptr) || status->state != ConnectionState::Disconnected;
@@ -29,10 +29,10 @@ auto Interface::status(flecs::iter& it, InterfaceState& state, InterfacePage& pa
                   .layoutDirection = CLAY_TOP_TO_BOTTOM,
               },
           .backgroundColor = {20, 20, 25, 255}}) {
-        CLAY_TEXT(Str(title), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 64}));
+        widget::rich(state, title, 64, {255, 255, 255, 255}, CLAY_ALIGN_X_CENTER);
 
         if (reason != nullptr) {
-            CLAY_TEXT(Str(reason), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
+            widget::rich(state, reason, 32, {200, 200, 200, 255}, CLAY_ALIGN_X_CENTER);
         }
 
         CLAY({.layout = {.sizing = {CLAY_SIZING_FIXED(0), CLAY_SIZING_FIXED(40)}}}) {}
@@ -49,7 +49,7 @@ auto Interface::status(flecs::iter& it, InterfaceState& state, InterfacePage& pa
 
     if (leave) {
         it.world().entity().add<RequestQuit>();
-        page = InterfacePage::Main;
+        page = InterfacePage::Connect;
     }
     return commands;
 }

@@ -972,7 +972,10 @@ void Clay_WebGPU_Prepare(Clay_WebGPU_Context ctx, Clay_RenderCommandArray cmds, 
                 float scale = stbtt_ScaleForMappingEmToPixels(fi, fs);
                 int asc, dsc, lg;
                 stbtt_GetFontVMetrics(fi, &asc, &dsc, &lg);
-                float ascent = (float)asc * scale, pen_x = bb.x;
+                int cx0, cy0, cx1, cy1;
+                float cap = stbtt_GetCodepointBox(fi, 'H', &cx0, &cy0, &cx1, &cy1) ? (float)cy1 * scale : (float)asc * scale * 0.72f;
+                float ascent = bb.height * ds * 0.5f + cap * 0.5f;
+                float pen_x = bb.x;
                 int pos = 0, prev_cp = 0;
                 while (pos < (int)d->stringContents.length) {
                     int bytes, cp = _cwg_utf8(d->stringContents.chars + pos, (int)d->stringContents.length - pos, &bytes);
@@ -1083,8 +1086,6 @@ void Clay_WebGPU_Render(Clay_WebGPU_Context ctx, WGPURenderPassEncoder pass) {
     for (uint32_t i = 0; i < ctx->cmd_count; i++) {
         _cwg_Cmd *c = &ctx->cmds[i];
         if (c->type == _CWG_CMD_SCISSOR) {
-            /* clamp to the framebuffer: during a live window resize the target
-               can be a few pixels smaller than the laid-out scissor */
             float ds = ctx->dpi_scale;
             uint32_t fbw = (uint32_t)(ctx->size.width * ds + 0.5f);
             uint32_t fbh = (uint32_t)(ctx->size.height * ds + 0.5f);

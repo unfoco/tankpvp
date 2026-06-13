@@ -8,19 +8,13 @@ auto widget::wrap(InterfaceState& state, const std::string& text, uint16_t fontS
     if (state.font == nullptr || maxWidth <= 0) {
         return text;
     }
-    auto measure = [&](const std::string& s, format::Text start) -> float {
-        int h = 0;
-        return static_cast<float>(format::width(state.font, nullptr, s.data(), s.size(), fontSize, start, false, &h));
-    };
-    auto advance = [&](const std::string& s, format::Text& fmt) -> void {
-        format::width(state.font, nullptr, s.data(), s.size(), fontSize, fmt, false, nullptr);
+    auto measure = [&](const std::string& s) -> float {
+        return static_cast<float>(format::measure_rich(state.font, state.fontItalic, s.data(), s.size(), fontSize, format::Mode::Display));
     };
 
     std::string out;
     std::string line;
-    format::Text lineStart;
     auto commit = [&]() -> void {
-        advance(line, lineStart);
         out += line;
         out += '\n';
         line.clear();
@@ -38,7 +32,7 @@ auto widget::wrap(InterfaceState& state, const std::string& text, uint16_t fontS
 
         if (text[i] == ' ') {
             if (!line.empty()) {
-                if (measure(line + " ", lineStart) <= maxWidth) {
+                if (measure(line + " ") <= maxWidth) {
                     line += ' ';
                 } else {
                     commit();
@@ -57,15 +51,13 @@ auto widget::wrap(InterfaceState& state, const std::string& text, uint16_t fontS
         }
         std::string word = text.substr(i, j - i);
 
-        if (measure(line + word, lineStart) <= maxWidth) {
+        if (measure(line + word) <= maxWidth) {
             line += word;
             i = j;
             continue;
         }
 
-        format::Text afterLine = lineStart;
-        advance(line, afterLine);
-        if (measure(word, afterLine) <= maxWidth && !line.empty() && measure(line, lineStart) >= maxWidth * 0.5F) {
+        if (measure(word) <= maxWidth && !line.empty() && measure(line) >= maxWidth * 0.5F) {
             commit();
             line = word;
             i = j;
@@ -77,7 +69,7 @@ auto widget::wrap(InterfaceState& state, const std::string& text, uint16_t fontS
                 SDL_StepUTF8(&q, &rem);
                 size_t cb = static_cast<size_t>(q - &text[k]);
                 std::string cp = text.substr(k, cb);
-                if (line.empty() || measure(line + cp, lineStart) <= maxWidth) {
+                if (line.empty() || measure(line + cp) <= maxWidth) {
                     line += cp;
                     k += cb;
                 } else {

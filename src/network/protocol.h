@@ -53,7 +53,7 @@ enum class Message : uint8_t {
     ViewOpen = 21,
     ViewClose = 22,
     ViewEvent = 23,
-    Effect = 24,
+    Transition = 24,
     Particles = 25,
 };
 
@@ -483,54 +483,50 @@ struct MessageSound {
     }
 };
 
-struct MessageEffect {
-    float x = 0;
-    float y = 0;
-    float angle = 0;
-    uint8_t r = 255;
-    uint8_t g = 255;
-    uint8_t b = 255;
+struct MessageTransition {
+    uint8_t kind = 0;
+    float duration = 0.25F;
+    float r = 0, g = 0, b = 0, a = 1;
+    float center_x = 0.5F, center_y = 0.5F;
+    uint8_t direction = 0;
     template <class Archive>
-    void serialize(Archive& a) {
-        a & x;
-        a & y;
-        a & angle;
-        a & r;
-        a & g;
-        a & b;
+    void serialize(Archive& ar) {
+        ar & kind;
+        ar & duration;
+        ar & r;
+        ar & g;
+        ar & b;
+        ar & a;
+        ar & center_x;
+        ar & center_y;
+        ar & direction;
     }
 };
 
 struct MessageParticles {
     float x = 0;
     float y = 0;
-    float dir = 0;
-    float spread = 6.2832F;
     uint16_t count = 12;
     uint64_t texture = 0;
-    float speed_min = 40;
-    float speed_max = 120;
-    float size_min = 8;
-    float size_max = 18;
-    float life_min = 0.5F;
-    float life_max = 1.0F;
-    float gravity = 0;
-    float drag = 1.5F;
-    float spin = 9.0F;
-    float grow = 0;
-    uint8_t r = 255;
-    uint8_t g = 255;
-    uint8_t b = 255;
-    uint8_t alpha = 255;
-    uint8_t additive = 0;
+    float direction = 0;
+    float spread = 6.2832F;
+    float speed_min = 40, speed_max = 120;
+    float size_min = 8, size_max = 18;
+    float life_min = 0.5F, life_max = 1.0F;
+    float gravity = 0, drag = 1.5F, spin = 9.0F, grow = 0;
+    float cb_r = 1, cb_g = 1, cb_b = 1, cb_a = 1;
+    float ce_r = 1, ce_g = 1, ce_b = 1, ce_a = 0;
+    float emissive = 0, bounce = 0;
+    uint8_t collide = 0;
+    uint8_t blend = 0;
     template <class Archive>
     void serialize(Archive& a) {
         a & x;
         a & y;
-        a & dir;
-        a & spread;
         a & count;
         a & texture;
+        a & direction;
+        a & spread;
         a & speed_min;
         a & speed_max;
         a & size_min;
@@ -541,11 +537,18 @@ struct MessageParticles {
         a & drag;
         a & spin;
         a & grow;
-        a & r;
-        a & g;
-        a & b;
-        a & alpha;
-        a & additive;
+        a & cb_r;
+        a & cb_g;
+        a & cb_b;
+        a & cb_a;
+        a & ce_r;
+        a & ce_g;
+        a & ce_b;
+        a & ce_a;
+        a & emissive;
+        a & bounce;
+        a & collide;
+        a & blend;
     }
 };
 

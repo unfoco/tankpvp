@@ -6,7 +6,7 @@
 #include "component/asset.h"
 #include "component/network.h"
 
-auto Interface::assets(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
+auto Interface::content(flecs::iter& it, InterfaceState& state, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) -> Clay_RenderCommandArray {
     prev.page = InterfacePage::Main;
 
     const auto* store = it.world().try_get<AssetStore>();

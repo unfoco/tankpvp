@@ -38,6 +38,10 @@ struct WeaponStats {
     float life = 5.0F;
 };
 
+struct ProjectileSprite {
+    uint64_t texture = 0;
+};
+
 struct Ammo {
     uint32_t mag = 30;
     uint32_t reserve = 90;

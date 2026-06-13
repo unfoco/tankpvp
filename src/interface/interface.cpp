@@ -4,6 +4,7 @@
 #include "component/render.h"
 #include "component/network.h"
 #include "component/script.h"
+#include "component/world.h"
 #include "util/time.h"
 
 Interface::Interface(flecs::world& world) {
@@ -12,16 +13,22 @@ Interface::Interface(flecs::world& world) {
     world.component<InterfacePrevious>().add(flecs::Singleton);
     world.component<InterfaceCommands>().add(flecs::Singleton);
     world.component<InterfaceTransition>().add(flecs::Singleton);
+    world.component<ContentLoad>().add(flecs::Singleton);
 
-    TTF_Init();
-    auto* font = TTF_OpenFont("asset/font/normal.ttf", 16);
-    if (font == nullptr) {
-        SDL_Log("Failed to load font: %s", SDL_GetError());
+    static format::Font font;
+    if (!font.load("asset/font/normal.ttf")) {
+        SDL_Log("Failed to load asset/font/normal.ttf");
         exit(EXIT_FAILURE);
     }
-    TTF_SetFontHinting(font, TTF_HINTING_MONO);
 
-    world.set<InterfaceState>({.font = font});
+    static format::Font fontItalic;
+    if (!fontItalic.load("asset/font/italic.ttf")) {
+        SDL_Log("Failed to load asset/font/italic.ttf");
+        exit(EXIT_FAILURE);
+    }
+
+    world.set<InterfaceState>({.font = &font, .fontItalic = &fontItalic});
+    world.set<MinimapHandle>({});
     world.set<InterfaceCommands>({});
     world.set(InterfacePage::Main);
     world.set<InterfacePrevious>({.page = InterfacePage::Main});
@@ -30,6 +37,7 @@ Interface::Interface(flecs::world& world) {
     world.set<ViewState>({});
     world.set<InputCapture>({});
     world.set<InterfaceTransition>({});
+    world.set<ContentLoad>({});
     world.set<ServerList>({.entries = {{.name = "Localhost", .address = "127.0.0.1", .port = 5000}}});
 
     world.system<InterfaceState>("interface::frame").kind(flecs::PreFrame).each(Interface::frame);
@@ -62,42 +70,41 @@ void Interface::event(flecs::iter&, size_t, InterfaceState& state, const WindowE
     }
 }
 
-static auto opposite_dir(TransitionDir d) -> TransitionDir {
-    switch (d) {
-        case TransitionDir::Left:
-            return TransitionDir::Right;
-        case TransitionDir::Right:
-            return TransitionDir::Left;
-        case TransitionDir::Up:
-            return TransitionDir::Down;
-        case TransitionDir::Down:
-            return TransitionDir::Up;
-    }
-    return d;
+static auto reverse_dir(uint8_t d) -> uint8_t {
+    return d ^ 1U;
 }
 
-static void pick_transition(InterfacePage from, InterfacePage to, TransitionKind& kind, TransitionDir& dir, double& duration) {
-    (void)from;
-    switch (to) {
-        case InterfacePage::Host:
-        case InterfacePage::Connect:
-        case InterfacePage::Server:
-        case InterfacePage::Settings:
-            kind = TransitionKind::Slide;
-            dir = TransitionDir::Left;
-            duration = 0.3;
-            break;
-        case InterfacePage::Main:
-            kind = TransitionKind::Slide;
-            dir = TransitionDir::Right;
-            duration = 0.3;
-            break;
-        default:
-            kind = TransitionKind::Crossfade;
-            dir = TransitionDir::Left;
-            duration = 0.1;
-            break;
+static auto reverse_slide(SlideMode s) -> SlideMode {
+    if (s == SlideMode::Cover) {
+        return SlideMode::Reveal;
     }
+    if (s == SlideMode::Reveal) {
+        return SlideMode::Cover;
+    }
+    return SlideMode::Push;
+}
+
+static auto pick_transition(InterfacePage from, InterfacePage to, glm::vec2 cursor) -> RequestTransition {
+    if (to == InterfacePage::Ingame && from != InterfacePage::Pause && from != InterfacePage::Chat)
+        return {.kind = ScreenTransitionKind::Circle, .duration = 1.0F, .color = {0, 0, 0, 1}, .center = cursor};
+
+    if (to == InterfacePage::Chat || from == InterfacePage::Chat)
+        return {.kind = ScreenTransitionKind::Slide, .duration = 0.16F, .color = {0, 0, 0, 0}, .direction = 2, .scope = TransitionScope::Interface, .slide = SlideMode::Cover};
+
+    if ((to == InterfacePage::Pause && from == InterfacePage::Ingame) ||
+        (to == InterfacePage::Ingame && from == InterfacePage::Pause))
+        return {.kind = ScreenTransitionKind::Fade, .duration = 0.12F, .color = {0, 0, 0, 0}, .scope = TransitionScope::Interface};
+
+    if (to == InterfacePage::Main && (from == InterfacePage::Pause || from == InterfacePage::Ingame))
+        return {.kind = ScreenTransitionKind::Pixelate, .duration = 0.5F, .color = {0, 0, 0, 0}};
+
+    if (to == InterfacePage::Content || from == InterfacePage::Content)
+        return {.kind = ScreenTransitionKind::Fade, .duration = 0.30F, .color = {0, 0, 0, 0}};
+
+    if (to == InterfacePage::Status || from == InterfacePage::Status)
+        return {.kind = ScreenTransitionKind::Dissolve, .duration = 0.30F, .color = {0, 0, 0, 0}};
+
+    return {.kind = ScreenTransitionKind::Slide, .duration = 0.26F, .color = {0, 0, 0, 0}, .direction = 1};
 }
 
 void Interface::build(flecs::iter& it, size_t, InterfaceState& state, InterfaceCommands& cmds, InterfacePage& page, InterfacePrevious& prev, const WindowEvents& events) {
@@ -107,36 +114,81 @@ void Interface::build(flecs::iter& it, size_t, InterfaceState& state, InterfaceC
         state.cursors[static_cast<int>(InterfaceCursor::Text)] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_TEXT);
     }
 
+    if (auto* minimap = it.world().try_get_mut<MinimapHandle>()) {
+        minimap->size = 0;
+    }
+
     InterfacePage effective = page;
     {
         const auto* store = it.world().try_get<AssetStore>();
         const auto* conn = it.world().try_get<ConnectionStatus>();
-        const bool in_session = (conn != nullptr) && conn->state != ConnectionState::Disconnected;
-        bool downloading = store != nullptr && store->downloading();
-        bool loading = false;
-        it.world().query<const Loading>().each([&](const Loading& l) -> void { loading = loading || l.active > 0.5F; });
-        if (in_session && (downloading || loading)) {
-            effective = InterfacePage::Assets;
+        const bool in_session = (conn != nullptr) && conn->state == ConnectionState::Connected;
+        bool busy = false;
+        if (in_session) {
+            bool downloading = store != nullptr && store->downloading();
+            bool mod_loading = false;
+            it.world().query<const Loading>().each([&](const Loading& l) -> void { mod_loading = mod_loading || l.active > 0.5F; });
+            bool chunks_meshing = it.world().count<ChunkDirty>() > 0;
+            busy = downloading || mod_loading || chunks_meshing;
+        }
+
+        constexpr double READY_DEBOUNCE = 0.4;
+        constexpr double MIN_SHOW = 0.5;
+        auto& cl = it.world().get_mut<ContentLoad>();
+        double now = util::now();
+        if (!in_session) {
+            cl.showing = false;
+        } else {
+            if (!cl.in_session) {
+                cl.showing = true;
+                cl.shown_since = now;
+                cl.busy_since = now;
+            }
+            if (busy) {
+                cl.busy_since = now;
+            }
+            if (cl.showing && (now - cl.busy_since) > READY_DEBOUNCE && (now - cl.shown_since) > MIN_SHOW) {
+                cl.showing = false;
+            }
+        }
+        cl.in_session = in_session;
+        if (cl.showing) {
+            effective = InterfacePage::Content;
         }
     }
 
     InterfacePage shown = effective;
     if (auto& tr = it.world().get_mut<InterfaceTransition>(); shown != tr.shown) {
         InterfacePage from = tr.shown;
-        if (from == tr.last_to && shown == tr.last_from) {
-            tr.dir = opposite_dir(tr.dir);
+        const bool back = tr.history.size() >= 2 && tr.history[tr.history.size() - 2] == shown;
+        if (back) {
+            tr.history.pop_back();
         } else {
-            pick_transition(from, shown, tr.kind, tr.dir, tr.duration);
+            tr.history.push_back(shown);
+            if (tr.history.size() > 32) {
+                tr.history.erase(tr.history.begin());
+            }
         }
-        tr.last_from = from;
-        tr.last_to = shown;
         tr.shown = shown;
-        tr.start = util::now();
+
+        if (from != InterfacePage::None) {
+            int ww = 0;
+            int wh = 0;
+            SDL_GetWindowSize(events.target, &ww, &wh);
+            glm::vec2 cursor = {ww > 0 ? state.mouseX / static_cast<float>(ww) : 0.5F,
+                                wh > 0 ? state.mouseY / static_cast<float>(wh) : 0.5F};
+            RequestTransition req = pick_transition(from, shown, cursor);
+            if (back) {
+                req.direction = reverse_dir(req.direction);
+                req.slide = reverse_slide(req.slide);
+            }
+            it.world().entity().set(req);
+        }
     }
 
     switch (effective) {
-        case InterfacePage::Assets:
-            cmds.list = Interface::assets(it, state, page, prev, events);
+        case InterfacePage::Content:
+            cmds.list = Interface::content(it, state, page, prev, events);
             break;
         case InterfacePage::Main:
             cmds.list = Interface::main(it, state, page, prev, events);

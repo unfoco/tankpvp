@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "component/interface.h"
 #include "component/network.h"
 #include "component/object.h"
 #include "component/script.h"
@@ -119,7 +120,7 @@ static void render_widget(RenderContext& rc, const ViewWidget& node, int& index)
                   .backgroundColor = bg,
                   .cornerRadius = CLAY_CORNER_RADIUS(node.card ? 8.0F : 0.0F)}) {
                 if (!node.text.empty()) {
-                    CLAY_TEXT(Str(rc.state.intern("§l" + node.text)), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
+                    widget::rich(rc.state, "§l" + node.text, 32, {255, 255, 255, 255});
                 }
                 for (const auto& child : node.children) {
                     render_widget(rc, child, index);
@@ -146,10 +147,11 @@ static void render_widget(RenderContext& rc, const ViewWidget& node, int& index)
                 open += std::strlen(tmp);
             }
             const bool fixed = node.number > 0.0F;
+            const Clay_LayoutAlignmentX align = fixed ? CLAY_ALIGN_X_LEFT : CLAY_ALIGN_X_CENTER;
             CLAY({.id = CLAY_IDI("ViewNode", self),
                   .layout = {.sizing = {fixed ? CLAY_SIZING_FIXED(node.number) : CLAY_SIZING_GROW(), CLAY_SIZING_FIT()},
-                             .childAlignment = {.x = fixed ? CLAY_ALIGN_X_LEFT : CLAY_ALIGN_X_CENTER}}}) {
-                CLAY_TEXT(Str(rc.state.intern(text)), CLAY_TEXT_CONFIG({.textColor = {235, 235, 235, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
+                             .childAlignment = {.x = align}}}) {
+                widget::rich(rc.state, text, 32, {235, 235, 235, 255}, align);
             }
             break;
         }
@@ -171,8 +173,22 @@ static void render_widget(RenderContext& rc, const ViewWidget& node, int& index)
         }
         case ViewKind::Minimap: {
             const float box = node.number > 0.0F ? node.number : 200.0F;
-            CLAY({.id = CLAY_IDI("ViewMinimap", self),
-                  .layout = {.sizing = {CLAY_SIZING_FIXED(box), CLAY_SIZING_FIXED(box)}}}) {}
+            auto* handle = rc.world.try_get_mut<MinimapHandle>();
+            void* image = nullptr;
+            if (handle != nullptr) {
+                handle->size = box;
+                handle->range = node.number_max > 1.0F ? node.number_max : 1700.0F;
+                image = handle->image;
+            }
+            if (image != nullptr) {
+                CLAY({.id = CLAY_IDI("ViewMinimap", self),
+                      .layout = {.sizing = {CLAY_SIZING_FIXED(box), CLAY_SIZING_FIXED(box)}},
+                      .cornerRadius = CLAY_CORNER_RADIUS(9.0F),
+                      .image = {.imageData = image}}) {}
+            } else {
+                CLAY({.id = CLAY_IDI("ViewMinimap", self),
+                      .layout = {.sizing = {CLAY_SIZING_FIXED(box), CLAY_SIZING_FIXED(box)}}}) {}
+            }
             break;
         }
         case ViewKind::Input: {
@@ -214,7 +230,7 @@ static void render_widget(RenderContext& rc, const ViewWidget& node, int& index)
                   .layout = {.childGap = 10, .childAlignment = {.y = CLAY_ALIGN_Y_CENTER}, .layoutDirection = CLAY_LEFT_TO_RIGHT}}) {
                 widget::toggle(rc.state, CLAY_IDI("ViewToggle", self), on);
                 if (!node.text.empty()) {
-                    CLAY_TEXT(Str(rc.state.intern(node.text)), CLAY_TEXT_CONFIG({.textColor = {235, 235, 235, 255}, .fontSize = 32, .wrapMode = CLAY_TEXT_WRAP_NONE}));
+                    widget::rich(rc.state, node.text, 32, {235, 235, 235, 255});
                 }
             }
             value = on ? "true" : "false";
@@ -233,13 +249,32 @@ static void render_widget(RenderContext& rc, const ViewWidget& node, int& index)
     }
 }
 
+static auto placement_z(ViewPlacement p) -> int {
+    switch (p) {
+        case ViewPlacement::Center:
+            return 3;
+        case ViewPlacement::Bottom:
+            return 2;
+        default:
+            return 1;
+    }
+}
+
 void widget::view(flecs::world world, InterfaceState& state, const WindowEvents& events) {
     auto* views = world.try_get_mut<ViewState>();
     if (views == nullptr || views->views.empty()) {
         return;
     }
+    std::vector<int> order(views->views.size());
+    for (int i = 0; i < static_cast<int>(order.size()); ++i) {
+        order[i] = i;
+    }
+    std::stable_sort(order.begin(), order.end(), [&](int a, int b) -> bool {
+        return placement_z(views->views[a].placement) < placement_z(views->views[b].placement);
+    });
     int index = 0;
-    for (auto& active : views->views) {
+    for (int oi : order) {
+        auto& active = views->views[oi];
         Clay_ChildAlignment align{.x = CLAY_ALIGN_X_CENTER, .y = CLAY_ALIGN_Y_CENTER};
         bool modal = false;
         switch (active.placement) {

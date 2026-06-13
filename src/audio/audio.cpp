@@ -157,6 +157,7 @@ void Audio::music(flecs::iter& it, size_t, AudioState& audio) {
         case InterfacePage::Host:
         case InterfacePage::Server:
         case InterfacePage::Settings:
+        case InterfacePage::Content:
         case InterfacePage::Status:
             menuTarget = volume * MUSIC_DAMPEN;
             break;
