@@ -6,17 +6,29 @@
 #include <Luau/Lexer.h>
 #include <Luau/Parser.h>
 
+#include <glaze/glaze.hpp>
+
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <SDL3/SDL.h>
 
 #include "reflect.h"
 
 namespace fs = std::filesystem;
+
+struct ModManifest {
+    std::string name;
+    std::string version;
+    std::string description;
+    std::vector<std::string> depends;
+    bool enabled = true;
+};
 
 static auto annotation_type(Luau::AstType* annotation, CommandArgument& info) -> void {
     if (annotation == nullptr) {
@@ -299,15 +311,9 @@ void Mods::load(flecs::world world) {
         }
         SDL_Log("[script] loaded %s", path.string().c_str());
     };
+    std::vector<fs::path> ordered = resolve_order(world);
     auto run_stage = [&](const char* stem) -> void {
-        std::vector<fs::path> dirs;
-        for (const auto& entry : fs::directory_iterator("mods")) {
-            if (entry.is_directory()) {
-                dirs.push_back(entry.path());
-            }
-        }
-        std::sort(dirs.begin(), dirs.end());
-        for (const auto& dir : dirs) {
+        for (const auto& dir : ordered) {
             fs::path luau = dir / (std::string(stem) + ".luau");
             fs::path lua_path = dir / (std::string(stem) + ".lua");
             if (fs::exists(luau)) {
@@ -320,4 +326,131 @@ void Mods::load(flecs::world world) {
     run_stage("data");
     run_stage("runtime");
     run_stage("commands");
+}
+
+auto Mods::resolve_order(flecs::world world) -> std::vector<fs::path> {
+    struct Entry {
+        fs::path dir;
+        ModInfo info;
+    };
+    std::vector<Entry> entries;
+    std::unordered_set<std::string> disabled;
+    for (const auto& item : fs::directory_iterator("mods")) {
+        if (!item.is_directory()) {
+            continue;
+        }
+        Entry entry;
+        entry.dir = item.path();
+        entry.info.id = item.path().filename().string();
+        entry.info.name = entry.info.id;
+        fs::path manifest_path = item.path() / "mod.json";
+        if (fs::exists(manifest_path)) {
+            ModManifest manifest;
+            std::string buffer;
+            auto error = glz::read_file_json<glz::opts{.error_on_unknown_keys = false}>(manifest, manifest_path.string(), buffer);
+            if (error) {
+                SDL_Log("[script] mod '%s': invalid mod.json (%s), using defaults", entry.info.id.c_str(), glz::format_error(error, buffer).c_str());
+            } else {
+                if (!manifest.name.empty()) {
+                    entry.info.name = manifest.name;
+                }
+                entry.info.version = manifest.version;
+                entry.info.description = manifest.description;
+                entry.info.depends = manifest.depends;
+                if (!manifest.enabled) {
+                    SDL_Log("[script] mod '%s' is disabled via mod.json", entry.info.id.c_str());
+                    disabled.insert(entry.info.id);
+                    disabled.insert(entry.info.name);
+                    continue;
+                }
+            }
+        }
+        entries.push_back(std::move(entry));
+    }
+    std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) -> bool { return a.dir < b.dir; });
+
+    std::unordered_map<std::string, size_t> by_id;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        by_id[entries[i].info.id] = i;
+        by_id[entries[i].info.name] = i;
+    }
+    std::vector<int> missing_dep(entries.size(), 0);
+    std::vector<std::vector<size_t>> dependents(entries.size());
+    std::vector<int> pending(entries.size(), 0);
+    for (size_t i = 0; i < entries.size(); ++i) {
+        for (const std::string& dep : entries[i].info.depends) {
+            auto it = by_id.find(dep);
+            if (it == by_id.end()) {
+                const char* why = disabled.contains(dep) ? "disabled" : "not installed";
+                SDL_Log("[script] mod '%s' depends on '%s' which is %s; skipping '%s'", entries[i].info.id.c_str(), dep.c_str(), why, entries[i].info.id.c_str());
+                missing_dep[i] = 1;
+                continue;
+            }
+            dependents[it->second].push_back(i);
+            ++pending[i];
+        }
+    }
+
+    std::vector<size_t> queue;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        if (pending[i] == 0) {
+            queue.push_back(i);
+        }
+    }
+    std::vector<size_t> sorted;
+    for (size_t head = 0; head < queue.size(); ++head) {
+        size_t i = queue[head];
+        sorted.push_back(i);
+        for (size_t d : dependents[i]) {
+            if (--pending[d] == 0) {
+                queue.push_back(d);
+            }
+        }
+    }
+    if (sorted.size() < entries.size()) {
+        for (size_t i = 0; i < entries.size(); ++i) {
+            if (pending[i] > 0) {
+                SDL_Log("[script] mod '%s' is part of a dependency cycle; loading in directory order", entries[i].info.id.c_str());
+                sorted.push_back(i);
+            }
+        }
+    }
+
+    ModBook book;
+    std::vector<fs::path> ordered;
+    for (size_t i : sorted) {
+        if (missing_dep[i] != 0) {
+            continue;
+        }
+        bool dropped_parent = false;
+        for (const std::string& dep : entries[i].info.depends) {
+            auto it = by_id.find(dep);
+            if (it != by_id.end() && missing_dep[it->second] != 0) {
+                SDL_Log("[script] mod '%s' depends on skipped mod '%s'; skipping too", entries[i].info.id.c_str(), dep.c_str());
+                missing_dep[i] = 1;
+                dropped_parent = true;
+                break;
+            }
+        }
+        if (dropped_parent) {
+            continue;
+        }
+        ordered.push_back(entries[i].dir);
+        book.mods.push_back(entries[i].info);
+    }
+    if (!book.mods.empty()) {
+        std::string summary;
+        for (const auto& info : book.mods) {
+            if (!summary.empty()) {
+                summary += ", ";
+            }
+            summary += info.id;
+            if (!info.version.empty()) {
+                summary += " " + info.version;
+            }
+        }
+        SDL_Log("[script] mods loaded in order: %s", summary.c_str());
+    }
+    world.set<ModBook>(std::move(book));
+    return ordered;
 }

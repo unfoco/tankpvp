@@ -29,46 +29,66 @@ Built from scratch, tuned until two side-by-side clients match almost 1:1:
 
 ## What a mod looks like
 
-The engine spawns no player avatar. The mod declares the game-facing shape and hands the player control; the engine fills in input, physics, the firing clock, lag-comp history, ownership, and replication:
+Real code from CS-mode, lightly trimmed.
+
+**Components are type declarations.** Exporting a type registers the component; `Replicated<>` streams it to clients automatically, `Component<>` stays server-side. Prototypes bundle components into named, spawnable definitions:
+
+```lua
+-- data.luau: runs once at load, declares what exists
+export type Health = Replicated<{ current: number, max: number }>  -- clients need it for the HUD bar
+export type Team = Component<{ side: number }>                     -- server-only state
+export type Munition = Component<{ damage: number }>               -- read on EventHit
+
+export type GunProto = Prototype<{ ProjectileWeapon: ProjectileWeapon, Munition: Munition, Ammo: Ammo? }>
+
+GunProto:define("pistol", { ProjectileWeapon = { cooldown = 16, speed = 440, muzzle = 26, life = 3.0 },
+                            Munition = { damage = 26 }, Ammo = { mag = 12, reserve = 36, mag_size = 12, reload_time = 1.4 } })
+GunProto:define("awp",    { ProjectileWeapon = { cooldown = 78, speed = 820, muzzle = 30, life = 5.0 },
+                            Munition = { damage = 120 }, Ammo = { mag = 5, reserve = 20, mag_size = 5, reload_time = 2.8 } })
+```
+
+**The engine spawns no player avatar.** The mod declares the body and hands the player control; the engine fills in the input buffer, prediction, firing clock, lag-comp history, ownership, and replication from the components it sees:
 
 ```lua
 events.on(function(e: EventPlayerJoin)
+    local side = (#M.players_on(M.CT) <= #M.players_on(M.T)) and M.CT or M.T
+    local sp = M.pick_spawn(side)
     local body = world.spawn{
-        Position = { x = 0, y = 0 },
+        Position = { x = sp.x, y = sp.y },
+        Rotation = { angle = 0 },
         CollisionBox = { width = 40, height = 30 },
+        DifferentialStats = { speed = 160, turn = 3.4 },
         Controller = { scheme = ControlScheme.Differential },
         Dynamic = {},
         HitBox = {},
     }
     e.player:control(body)
+    body:sprite({ { tex = "core/tank.png" }, { tex = "core/turret.png", pivot = { 0.25, 0.5 } } })
     body.Health = { current = 100, max = 100 }
-    body:sprite("core/ct.png")
+    body.Money = { amount = M.START_MONEY }
     M.give(body, "pistol")
-
-    -- a server-driven HUD; the bar binds to the live component
-    e.player:open_view("hud", view.column{
-        placement = ViewPlacement.TopRight,
-        view.bar{ value = Health.current, max = Health.max },
-    })
 end)
 ```
 
-Weapons are just data: an engine `ProjectileWeapon` for how it fires, plus mod components for damage and magazine:
+**Chat commands are declarative.** Argument types come from the handler's annotations; a union of string literals becomes client-side autocomplete, and `§` codes color the reply:
 
 ```lua
-GunProto:define("awp", {
-    ProjectileWeapon = { cooldown = 78, speed = 820, muzzle = 30, life = 5.0 },
-    Munition = { damage = 120 },
-    Ammo = { mag = 5, reserve = 20, mag_size = 5, reload_time = 2.8 },
+command.register("team", {
+    description = "Switch sides (ct or t)",
+    run = function(ctx, side: "ct" | "t")
+        local e = ctx.player and ctx.player:entity()
+        if not e then return end
+        e.Team = { side = (side == "ct") and M.CT or M.T }
+        if not e:has(Dying) then e:add(Dying) end   -- sit out until next round
+        ctx:reply("§aMoved to " .. side .. " §7(respawn next round)")
+    end,
 })
 ```
 
-Chat commands are typed and autocomplete on the client, with argument types inferred from the handler:
+**Manifests declare identity and dependencies.** Load order is resolved topologically, and a mod can be parked with `enabled` without deleting it:
 
-```lua
-command.register("give", function(sender, target: Player, gun: string)
-    M.give(target.body, gun)
-end)
+```json
+{ "name": "dust2", "version": "1.0.0", "description": "Bomb defusal map", "depends": ["core"] }
 ```
 
 ## Build & run
@@ -81,8 +101,8 @@ xmake run tankpvp -- --connect 127.0.0.1:5000  # connect directly
 xmake run tankpvp -- --connect 127.0.0.1:5000 --netgraph   # with live net telemetry
 ```
 
-The engine loads mods from `mods/` at startup. The CS-mode gamemode and its dust2 map shown above are not part of this repository yet; they will ship as reference mods once the mod ecosystem work (manifests, dependencies) lands.
+The engine loads mods from `mods/` at startup, ordered by their manifest dependencies. The CS-mode gamemode and its dust2 map shown above are not part of this repository yet; they will be published as reference mods.
 
 ## Status
 
-The core engine is feature-complete and the netcode is stable and measured. In progress: the moddable interface framework with mobile touch controls, and the mod ecosystem (manifests, dependencies, and the reference gamemodes seen above, which will be published alongside it). After that, TankPvP itself becomes just another mod.
+The engine is feature-complete across its planned phases: netcode (stable and measured), renderer, physics and control schemes, asset pipeline, server-driven UI, graphics settings, touch controls, and the mod manifest system. What remains is content and polish: publishing the reference mods, mod-driven menu branding, and playtesting the touch overlay on real touch hardware. TankPvP itself becomes just another mod.

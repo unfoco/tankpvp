@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "component/input.h"
 #include "util/time.h"
 
 static constexpr double CHAT_FADE_HOLD = 10.0;
@@ -57,6 +58,43 @@ auto Interface::ingame(flecs::iter& it, InterfaceState& state, InterfacePage& pa
         }
 
         CLAY({.layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_GROW()}}}) {}
+    }
+
+    if (const auto* overlay = it.world().try_get<TouchOverlay>(); overlay != nullptr && overlay->active) {
+        Clay_Dimensions screen{0, 0};
+        int window_count = 0;
+        if (SDL_Window** windows = SDL_GetWindows(&window_count); windows != nullptr) {
+            if (window_count > 0) {
+                int pw = 0;
+                int ph = 0;
+                SDL_GetWindowSizeInPixels(windows[0], &pw, &ph);
+                screen = {static_cast<float>(pw), static_cast<float>(ph)};
+            }
+            SDL_free(windows);
+        }
+        float radius = 0.09F * screen.width;
+        if (overlay->stick_held) {
+            glm::vec2 base{overlay->stick_center.x * screen.width, overlay->stick_center.y * screen.height};
+            CLAY({.id = CLAY_ID("TouchStickBase"),
+                  .layout = {.sizing = {CLAY_SIZING_FIXED(radius * 2.0F), CLAY_SIZING_FIXED(radius * 2.0F)}},
+                  .backgroundColor = {255, 255, 255, 24},
+                  .cornerRadius = CLAY_CORNER_RADIUS(radius),
+                  .floating = {.offset = {base.x - radius, base.y - radius}, .attachTo = CLAY_ATTACH_TO_ROOT}}) {}
+            float nub = radius * 0.4F;
+            glm::vec2 tip = base + (overlay->stick_vector * radius);
+            CLAY({.id = CLAY_ID("TouchStickNub"),
+                  .layout = {.sizing = {CLAY_SIZING_FIXED(nub * 2.0F), CLAY_SIZING_FIXED(nub * 2.0F)}},
+                  .backgroundColor = {255, 255, 255, 70},
+                  .cornerRadius = CLAY_CORNER_RADIUS(nub),
+                  .floating = {.offset = {tip.x - nub, tip.y - nub}, .attachTo = CLAY_ATTACH_TO_ROOT}}) {}
+        }
+        float fire = radius * 0.7F;
+        Clay_Color fire_color = overlay->fire_held ? Clay_Color{255, 120, 90, 90} : Clay_Color{255, 255, 255, 24};
+        CLAY({.id = CLAY_ID("TouchFire"),
+              .layout = {.sizing = {CLAY_SIZING_FIXED(fire * 2.0F), CLAY_SIZING_FIXED(fire * 2.0F)}},
+              .backgroundColor = fire_color,
+              .cornerRadius = CLAY_CORNER_RADIUS(fire),
+              .floating = {.offset = {screen.width - (fire * 2.0F) - 40.0F, screen.height - (fire * 2.0F) - 40.0F}, .attachTo = CLAY_ATTACH_TO_ROOT}}) {}
     }
 
     widget::view(it.world(), state, events);

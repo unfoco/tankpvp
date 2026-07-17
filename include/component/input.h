@@ -34,3 +34,14 @@ struct Pointer {
     glm::vec2 world{0.0F};
     bool valid = false;
 };
+
+struct TouchOverlay {
+    bool active = false;
+    bool stick_held = false;
+    uint64_t stick_finger = 0;
+    glm::vec2 stick_center{0.0F};
+    glm::vec2 stick_vector{0.0F};
+    bool fire_held = false;
+    bool fire_pressed = false;
+    uint64_t fire_finger = 0;
+};

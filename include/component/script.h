@@ -38,6 +38,18 @@ struct CommandBook {
     std::vector<CommandInfo> commands;
 };
 
+struct ModInfo {
+    std::string id;
+    std::string name;
+    std::string version;
+    std::string description;
+    std::vector<std::string> depends;
+};
+
+struct ModBook {
+    std::vector<ModInfo> mods;
+};
+
 enum class ViewKind : uint8_t {
     Panel,
     Label,

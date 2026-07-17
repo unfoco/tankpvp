@@ -15,6 +15,9 @@ static auto snapshot(flecs::world& world) -> PersistConfig {
         config.username = settings->username;
         config.volume = settings->volume;
         config.music = settings->music;
+        config.render_scale = settings->render_scale;
+        config.light_scale = settings->light_scale;
+        config.bloom = settings->bloom;
     }
     if (const auto* list = world.try_get<ServerList>()) {
         config.servers = list->entries;
@@ -41,6 +44,9 @@ Persist::Persist(flecs::world& world) {
         settings.username = config.username;
         settings.volume = config.volume;
         settings.music = config.music;
+        settings.render_scale = config.render_scale;
+        settings.light_scale = config.light_scale;
+        settings.bloom = config.bloom;
         if (world.try_get<ServerList>() != nullptr) {
             world.get_mut<ServerList>().entries = config.servers;
         }

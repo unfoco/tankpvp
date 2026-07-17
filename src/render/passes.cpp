@@ -1,10 +1,12 @@
 
 #include "render.h"
 
+#include <algorithm>
 #include <functional>
 
 #include "component/object.h"
 #include "component/script.h"
+#include "component/settings.h"
 #include "component/world.h"
 #include "util/ballistics.h"
 #include "util/time.h"
@@ -105,7 +107,16 @@ void Render::begin(flecs::iter& it) {
         if (pw <= 0 || ph <= 0) {
             return;
         }
-        if (static_cast<uint32_t>(pw) != r.targets.composed.width || static_cast<uint32_t>(ph) != r.targets.composed.height) {
+        bool quality_changed = false;
+        if (const auto* settings = world.try_get<Settings>()) {
+            float internal = std::clamp(settings->render_scale, 0.25F, 1.0F);
+            float light = std::clamp(settings->light_scale, 0.125F, 1.0F);
+            quality_changed = internal != r.quality.internal_scale || light != r.quality.light_scale;
+            r.quality.internal_scale = internal;
+            r.quality.light_scale = light;
+            r.quality.bloom = settings->bloom;
+        }
+        if (quality_changed || static_cast<uint32_t>(pw) != r.targets.composed.width || static_cast<uint32_t>(ph) != r.targets.composed.height) {
             r.surface->configure(WGPUSurfaceConfiguration{
                 .device = *r.device,
                 .format = r.surface_format,

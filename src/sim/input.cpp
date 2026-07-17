@@ -1,11 +1,10 @@
-#include <cmath>
-
 #include "component/network.h"
 #include "component/object.h"
-#include "sim.h"
 #include "util/ballistics.h"
 #include "util/controller.h"
 #include "util/math.h"
+
+#include "sim.h"
 
 void Sim::input(flecs::iter& it, size_t i, const InputState& in, const Position& pos, const Rotation& rot, VelocityLinear& vel, VelocityAngular& ang) {
     if (is_client(it.world())) {
@@ -114,4 +113,3 @@ void Sim::reload(flecs::iter& it, size_t, Ammo& a) {
         a.reserve -= take;
     }
 }
-

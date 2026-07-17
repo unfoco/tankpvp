@@ -54,6 +54,21 @@ auto Interface::settings(flecs::iter& it, InterfaceState& state, InterfacePage& 
                 widget::slider(state, CLAY_ID("MusicSlider"), settings.music, 0.0F, 1.0F, {});
             }
 
+            SETTING_FIELD() {
+                CLAY_TEXT(Str("Render Scale"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
+                widget::slider(state, CLAY_ID("RenderScaleSlider"), settings.render_scale, 0.5F, 1.0F, {});
+            }
+
+            SETTING_FIELD() {
+                CLAY_TEXT(Str("Lighting Quality"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
+                widget::slider(state, CLAY_ID("LightScaleSlider"), settings.light_scale, 0.25F, 1.0F, {});
+            }
+
+            SETTING_FIELD() {
+                CLAY_TEXT(Str("Bloom"), CLAY_TEXT_CONFIG({.textColor = {200, 200, 200, 255}, .fontSize = 32}));
+                widget::toggle(state, CLAY_ID("BloomToggle"), settings.bloom);
+            }
+
             CLAY({.layout = {.sizing = {CLAY_SIZING_GROW(), CLAY_SIZING_FIXED(20)}}}) {}
             if (widget::button(state, CLAY_ID("BtnBackSettings"), "Back")) {
                 page = prev.page;
