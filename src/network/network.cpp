@@ -61,13 +61,20 @@ Network::Network(flecs::world& world) {
     world.component<Rotation>().member<float>("angle");
     world.component<Color>().member<float>("r").member<float>("g").member<float>("b");
     world.component<Owner>().member<uint32_t>("peer").member<uint32_t>("prediction");
-    world.component<MovementStats>().member<float>("speed").member<float>("turn");
-    world.component<WeaponStats>().member<uint32_t>("cooldown").member<float>("speed").member<float>("muzzle").member<float>("life");
-    world.component<Bullet>().member<float>("speed");
+    world.component<DifferentialStats>().member<float>("speed").member<float>("turn");
+    world.component<TopDownStats>().member<float>("speed").member<float>("accel").member<float>("face_rate");
+    world.component<PlatformerStats>().member<float>("speed").member<float>("accel").member<float>("air_control").member<float>("jump");
+    world.component<GravityScale>().member<float>("value");
+    world.component<Gravity>().member<float>("x").member<float>("y");
+    world.component<Soundtrack>().member<uint64_t>("hash");
+    world.component<Controller>().member<ControlScheme>("scheme");
+    world.component<ProjectileWeapon>().member<uint32_t>("cooldown").member<float>("speed").member<float>("muzzle").member<float>("life").member<uint64_t>("sound");
+    world.component<Projectile>().member<float>("speed").member<float>("gravity_scale").member<uint8_t>("bounces").member<uint8_t>("pierce").member<uint64_t>("sound");
     world.component<ProjectileSprite>().member<uint64_t>("texture");
     world.component<Spawn>().member<uint16_t>("epoch");
     world.component<Dying>().member<uint64_t>("revive");
     world.component<VisionKind>();
+    world.component<ControlScheme>();
     world.component<BlendMode>();
     world.component<Camera>()
         .member<uint64_t>("target").member<float>("focus_x").member<float>("focus_y").member<float>("offset_x").member<float>("offset_y")
@@ -127,7 +134,6 @@ Network::Network(flecs::world& world) {
     world.component<Rotation>().add<Networked>().set<Quantize>({.precision = 0.0001F, .bytes = 2});
     world.component<Color>().add<Networked>();
     world.component<Owner>().add<Networked>();
-    world.component<Tank>().add<Networked>();
     world.component<Decoration>().add<Networked>();
     world.component<Hidden>().add<Networked>();
     world.component<Dying>().add<Networked>();
@@ -146,11 +152,18 @@ Network::Network(flecs::world& world) {
     world.component<Attach>().add<Networked>();
     world.component<Material>().add<Networked>();
     world.component<ParticleEmitter>().add<Networked>();
-    world.component<Bullet>().add<Networked>();
+    world.component<Projectile>().add<Networked>();
     world.component<ProjectileSprite>().add<Networked>();
     world.component<Spawn>().add<Networked>();
-    world.component<MovementStats>().add<Networked>();
-    world.component<WeaponStats>().add<Networked>();
+    world.component<DifferentialStats>().add<Networked>();
+    world.component<TopDownStats>().add<Networked>();
+    world.component<PlatformerStats>().add<Networked>();
+    world.component<GravityScale>().add<Networked>();
+    world.component<Gravity>().add<Networked>();
+    world.component<Soundtrack>().add<Networked>();
+    world.component<VelocityLinear>().add<Networked>().set<Quantize>({.precision = 1.0F / 16.0F, .bytes = 2});
+    world.component<Controller>().add<Networked>();
+    world.component<ProjectileWeapon>().add<Networked>();
     world.component<CollisionBox>().add<Networked>();
     world.component<DampingLinear>().add<Networked>();
     world.component<DampingAngular>().add<Networked>();
@@ -167,7 +180,34 @@ Network::Network(flecs::world& world) {
     world.observer<const RequestJoin>("network::join").event(flecs::OnSet).each(Network::join);
     world.observer().with<RequestQuit>().event(flecs::OnAdd).each([](flecs::entity e) -> void { Network::quit(e, RequestQuit{}); });
 
-    world.observer("network::tank_spawn").with<Tank>().without<Spawn>().event(flecs::OnAdd).each([](flecs::entity e) -> void { e.set<Spawn>({}); });
+    world.observer("network::hitbox_setup").with<HitBox>().event(flecs::OnAdd).each([](flecs::entity e) -> void {
+        if (!e.has<History>()) {
+            e.add<History>();
+        }
+        if (!e.has<ViewLag>()) {
+            e.add<ViewLag>();
+        }
+        if (!e.has<Spawn>()) {
+            e.set<Spawn>({});
+        }
+    });
+
+    world.observer("network::controllable_setup").with<Controller>().event(flecs::OnAdd).each([](flecs::entity e) -> void {
+        if (!e.has<InputState>()) {
+            e.set<InputState>({});
+        }
+        if (!e.has<VelocityLinear>()) {
+            e.set<VelocityLinear>({});
+        }
+        if (!e.has<VelocityAngular>()) {
+            e.set<VelocityAngular>({});
+        }
+    });
+    world.observer("network::weapon_setup").with<ProjectileWeapon>().event(flecs::OnAdd).each([](flecs::entity e) -> void {
+        if (!e.has<Firing>()) {
+            e.set<Firing>({});
+        }
+    });
 
     world.observer<const Position>("network::decoration_setup").with<Decoration>().without<Frozen>().event(flecs::OnSet).each([](flecs::entity e, const Position& pos) -> void {
         flecs::world w = e.world();
@@ -265,44 +305,9 @@ void Network::host(flecs::entity e, const RequestHost& req) {
     world.set<NetworkHost>({.host = host, .tickrate = tickrate});
     SDL_Log("network: hosting on port %u", req.port);
 
-    if (std::getenv("TANKPVP_BOTS") != nullptr) {
-        for (int i = 0; i < 50; i++) {
-            world.entity()
-                .set(Color{.value = {static_cast<float>(rand() % 255) / 255.0F, static_cast<float>(rand() % 255) / 255.0F, static_cast<float>(rand() % 255) / 255.0F}})
-                .set(Position{.value = {200.0F + static_cast<float>(rand() % 2000), 200.0F + static_cast<float>(rand() % 2000)}})
-                .set(Rotation{.angle = 0})
-                .set(VelocityLinear{})
-                .set(VelocityAngular{})
-                .set(CollisionBox{.height = 30, .width = 40})
-                .set(DampingLinear{.value = 8.0F})
-                .set(DampingAngular{.value = 1.0F})
-                .set<InputFlags>(i % 5 == 0 ? InputFlags::Left | InputFlags::Forward : InputFlags::None)
-                .add<Dynamic>()
-                .add<Tank>()
-                .add<History>()
-                .add<Replicated>();
-        }
-    }
-
     if (!dedicated) {
-        flecs::entity tank = world.entity()
-            .set(Color{.value = {1.0F, 0.2F, 0.2F}})
-            .set(Position{.value = {640.0F, 400.0F}})
-            .set(Rotation{.angle = 0})
-            .set(VelocityLinear{})
-            .set(VelocityAngular{})
-            .set(CollisionBox{.height = 30, .width = 40})
-            .set(Owner{.peer = 0})
-            .set(Firing{})
-            .add<InputFlags>()
-            .add<Dynamic>()
-            .add<Tank>()
-            .add<Local>()
-            .add<History>()
-            .add<ViewLag>()
-            .add<Replicated>();
 
-        flecs::entity host_peer = world.entity().set<Peer>({.peer = nullptr, .id = 0, .welcomed = true}).add<Controls>(tank);
+        flecs::entity host_peer = world.entity().set<Peer>({.peer = nullptr, .id = 0, .welcomed = true});
 
         std::string uname = world.has<Settings>() ? world.get<Settings>().username : std::string();
         world.entity().set(RequestPlayerJoin{.peer = host_peer, .username = uname.empty() ? "host" : uname});

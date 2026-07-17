@@ -16,13 +16,14 @@ struct Prediction {
         float angle = 0;
     };
 
-    struct Tank {
+    struct Body {
         uint64_t id;
         glm::vec2 pos;
         float angle;
         CollisionBox box;
         float ldamp;
         float adamp;
+        float gravity_scale;
         bool self;
     };
 
@@ -52,10 +53,11 @@ struct Prediction {
     auto operator=(Prediction&&) noexcept -> Prediction&;
 
     [[nodiscard]] auto has_self() const -> bool;
-    void sync(std::span<const Tank> tanks);
+    void gravity(glm::vec2 g);
+    void sync(std::span<const Body> bodies);
     void boxes(std::span<const StaticBox> boxes);
     void zones(std::span<const FieldZone> zones);
-    auto run(glm::vec2 self_pos, float self_angle, int steps, float dt, const std::function<Velocity(int step, float heading)>& velocity, bool record_contacts) -> Pose;
+    auto run(glm::vec2 self_pos, float self_angle, glm::vec2 self_velocity, int steps, float dt, const std::function<Velocity(int step, float heading, glm::vec2 pos, glm::vec2 current_linear)>& velocity, bool record_contacts) -> Pose;
     [[nodiscard]] auto shoved() const -> const std::unordered_map<uint64_t, Pose>&;
     void reset();
 

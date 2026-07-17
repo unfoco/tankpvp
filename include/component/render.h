@@ -36,7 +36,6 @@ struct Blend {
     BlendMode mode = BlendMode::Normal;
 };
 
-
 struct RenderPlane {
     int16_t value = 0;
 

@@ -1,8 +1,6 @@
 #pragma once
 
-
 namespace shader {
-
 
 inline constexpr const char* FRAME = R"(
 struct Frame {

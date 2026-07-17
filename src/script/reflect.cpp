@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "component/network.h"
+#include "component/object.h"
 #include "component/render.h"
 #include "component/script.h"
 
@@ -348,6 +349,9 @@ auto Reflect::engine_enums() -> const std::vector<EngineEnum>& {
         {"VisionKind", {{"None", static_cast<int>(VisionKind::None)},
                         {"Radial", static_cast<int>(VisionKind::Radial)},
                         {"Cone", static_cast<int>(VisionKind::Cone)}}},
+        {"ControlScheme", {{"Differential", static_cast<int>(ControlScheme::Differential)},
+                           {"TopDown", static_cast<int>(ControlScheme::TopDown)},
+                           {"Platformer", static_cast<int>(ControlScheme::Platformer)}}},
     };
     return ENUMS;
 }

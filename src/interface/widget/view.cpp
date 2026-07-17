@@ -15,9 +15,9 @@
 #include "component/script.h"
 
 static auto local_player(flecs::world world) -> flecs::entity {
-    flecs::entity tank;
-    world.query_builder().with<Local>().with<Tank>().build().each([&](flecs::entity e) -> void { tank = e; });
-    return tank;
+    flecs::entity body;
+    world.query_builder().with<Local>().build().each([&](flecs::entity e) -> void { body = e; });
+    return body;
 }
 
 static auto read_field(ecs_primitive_kind_t kind, const void* ptr) -> float {

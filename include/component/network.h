@@ -109,16 +109,11 @@ struct Predicted {
 struct Firing {
     uint32_t prediction = 0;
     uint32_t view = 0;
-    glm::vec2 muzzle{};
-    float aim = 0;
-    bool aimed = false;
 };
 
 struct ViewLag {
     uint32_t ticks = 0;
 };
-
-struct Latent {};
 
 struct Teleported {};
 

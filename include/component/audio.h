@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 struct RequestSound {
@@ -8,4 +9,8 @@ struct RequestSound {
     float y = 0;
     float volume = 1.0F;
     bool global = false;
+};
+
+struct Soundtrack {
+    uint64_t hash = 0;
 };

@@ -24,10 +24,6 @@ constexpr uint32_t VIEW_MAX = 60;
 
 constexpr float HIT_MARGIN_SERVER = 4.0F;
 
-constexpr float CLAIM_MARGIN = 12.0F;
-
-constexpr int CLAIM_REDUNDANCY = 10;
-
 enum class Message : uint8_t {
     Ping = 0,
     Pong = 1,
@@ -134,34 +130,24 @@ struct MessageEntity {
 
 struct MessageInputCommand {
     uint16_t tick_delta = 0;
-    uint32_t flags = 0;
+    int8_t move_x = 0, move_y = 0;
+    uint16_t buttons = 0;
+    uint16_t pressed = 0;
     uint32_t prediction = 0;
     uint32_t view = 0;
-    float muzzle_x = 0, muzzle_y = 0, aim = 0;
+    int16_t face = 0;
     template <class Archive>
     void serialize(Archive& a) {
         a & tick_delta;
-        a & flags;
-        if (flags & static_cast<uint32_t>(InputFlags::Shoot)) {
+        a & move_x;
+        a & move_y;
+        a & buttons;
+        a & pressed;
+        a & face;
+        if (pressed & button::Primary) {
             a & prediction;
             a & view;
-            a & muzzle_x;
-            a & muzzle_y;
-            a & aim;
         }
-    }
-};
-
-struct MessageHitClaim {
-    uint32_t prediction = 0;
-    uint64_t target = 0;
-    float x = 0, y = 0;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a & prediction;
-        a & target;
-        a & x;
-        a & y;
     }
 };
 
@@ -324,7 +310,6 @@ struct MessageHello {
 struct MessageWelcome {
     uint32_t protocol = 0;
     uint32_t peer_id = 0;
-    uint64_t controlled_entity = 0;
     uint64_t tick = 0;
     uint16_t tickrate = 0;
     uint16_t registry_version = 0;
@@ -333,7 +318,6 @@ struct MessageWelcome {
     void serialize(Archive& a) {
         a & protocol;
         a & peer_id;
-        a & controlled_entity;
         a & tick;
         a & tickrate;
         a & registry_version;
@@ -549,14 +533,6 @@ struct MessageParticles {
         a & bounce;
         a & collide;
         a & blend;
-    }
-};
-
-struct MessageHit {
-    std::vector<MessageHitClaim> claims;
-    template <class Archive>
-    void serialize(Archive& a) {
-        a.template vector<uint8_t>(claims);
     }
 };
 

@@ -30,6 +30,14 @@ inline auto solid(const TileType* t) -> bool {
     return t != nullptr && t->solid;
 }
 
+inline auto grounded(const WorldGrid& grid, const Tileset& tileset, glm::vec2 pos, float half_w, float half_h) -> bool {
+    float feet = pos.y + half_h + 2.0F;
+    float ox = half_w * 0.8F;
+    return solid(tile_at(grid, tileset, pos.x - ox, feet)) ||
+           solid(tile_at(grid, tileset, pos.x, feet)) ||
+           solid(tile_at(grid, tileset, pos.x + ox, feet));
+}
+
 inline auto step(const WorldGrid& grid, const Tileset& tileset, glm::vec2& pos, glm::vec2& vel, float dt, const TileType*& hit, glm::vec2& hit_at) -> Step {
     hit = nullptr;
 

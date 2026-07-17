@@ -146,7 +146,6 @@ static void player_join(flecs::world world, flecs::entity peer, const std::strin
     });
 }
 
-
 static auto add_timer(flecs::world world, double seconds, const LuaRef& fn, bool repeat) -> int {
     ScriptState& state = ScriptState::of(world);
     const auto* clock = world.try_get<ServerClock>();
@@ -401,9 +400,9 @@ static void generate_types(flecs::world world) {
     file << out.str();
 }
 
-static auto find_peer(flecs::entity tank) -> flecs::entity {
+static auto find_peer(flecs::entity body) -> flecs::entity {
     flecs::entity found;
-    tank.world().query_builder().with<Controls>(tank).build().each([&](flecs::entity peer) -> void {
+    body.world().query_builder().with<Controls>(body).build().each([&](flecs::entity peer) -> void {
         if (!found) {
             found = peer;
         }
@@ -591,11 +590,9 @@ static void setup_api(flecs::world world, lua_State* lua) {
     api_fn(worldns, state, "world", "players", "() -> { Player }", [world](lua_State* s) -> LuaRef {
         LuaRef out = luabridge::newTable(s);
         int index = 1;
-        world.query_builder().with<Tank>().with<Owner>().build().each([&](flecs::entity tank) -> void {
-            flecs::entity peer = find_peer(tank);
-            if (peer) {
-                out[index++] = ScriptPlayer{.peer = peer};
-            }
+
+        world.query_builder().with<Controls>(flecs::Wildcard).build().each([&](flecs::entity peer) -> void {
+            out[index++] = ScriptPlayer{.peer = peer};
         });
         return out;
     });
@@ -687,6 +684,16 @@ static void setup_api(flecs::world world, lua_State* lua) {
             holder = world.entity().add<Replicated>();
         }
         holder.set<Loading>({.active = active ? 1.0F : 0.0F});
+    });
+    api_fn(worldns, state, "world", "gravity", "(number, number) -> ()", [world](double x, double y) -> void {
+        PhysicsConfig cfg = world.has<PhysicsConfig>() ? world.get<PhysicsConfig>() : PhysicsConfig{};
+        cfg.gravity = {static_cast<float>(x), static_cast<float>(y)};
+        world.set<PhysicsConfig>(cfg);
+        flecs::entity holder = world.query_builder<Gravity>().build().first();
+        if (!holder) {
+            holder = world.entity().add<Replicated>();
+        }
+        holder.set<Gravity>({.x = static_cast<float>(x), .y = static_cast<float>(y)});
     });
     api_fn(worldns, state, "world", "background", "({ r: number?, g: number?, b: number?, texture: string?, size: number? }) -> ()", [world](const LuaRef& spec) -> void {
         Environment env{};
@@ -783,6 +790,19 @@ static void setup_api(flecs::world world, lua_State* lua) {
             sound.volume = static_cast<float>(Lua::ref_number(opts, "volume", 1.0));
         }
         world.entity().set(sound);
+    });
+    api_fn(audions, state, "audio", "music", "(string?) -> ()", [world](const LuaRef& name) -> void {
+        uint64_t hash = 0;
+        if (name.isString()) {
+            if (const auto* catalog = world.try_get<AssetCatalog>()) {
+                hash = catalog->hash_of(name.unsafe_cast<std::string>());
+            }
+        }
+        flecs::entity holder = world.query_builder<Soundtrack>().build().first();
+        if (!holder) {
+            holder = world.entity().add<Replicated>();
+        }
+        holder.set<Soundtrack>({.hash = hash});
     });
     audions.endNamespace();
 
@@ -1199,8 +1219,16 @@ static void setup_api(flecs::world world, lua_State* lua) {
     api_method(player, state, "Player", "open_view", "(self: Player, string, Widget) -> ()", [](const ScriptPlayer* self, const std::string& id, const LuaRef& tree) -> void { Command::open_view(self->peer.world(), self->peer, id, tree); });
     api_method(player, state, "Player", "close_view", "(self: Player, string) -> ()", [](const ScriptPlayer* self, const std::string& id) -> void { Command::close_view(self->peer.world(), self->peer, id); });
     api_method(player, state, "Player", "entity", "(self: Player) -> Entity?", [](const ScriptPlayer* self, lua_State* s) -> LuaRef {
-        flecs::entity tank = self->peer.target<Controls>();
-        return (tank && tank.is_alive()) ? LuaRef(s, ScriptEntity{.entity = tank}) : LuaRef(s);
+        flecs::entity body = self->peer.target<Controls>();
+        return (body && body.is_alive()) ? LuaRef(s, ScriptEntity{.entity = body}) : LuaRef(s);
+    });
+    api_method(player, state, "Player", "control", "(self: Player, Entity) -> ()", [](const ScriptPlayer* self, const ScriptEntity& target) -> void {
+
+        if (!self->peer || !target.entity.is_alive()) {
+            return;
+        }
+        self->peer.remove<Controls>(flecs::Wildcard);
+        self->peer.add<Controls>(target.entity);
     });
     api_method(player, state, "Player", "name", "(self: Player) -> string", [](const ScriptPlayer* self) -> std::string {
         auto& names = ScriptState::of(self->peer.world()).usernames;

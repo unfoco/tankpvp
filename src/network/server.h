@@ -22,11 +22,12 @@ struct NetworkHost {
 
 struct PendingInput {
     uint64_t tick = 0;
-    uint32_t flags = 0;
+    glm::vec2 move{};
+    uint16_t buttons = 0;
+    uint16_t pressed = 0;
     uint32_t prediction = 0;
     uint32_t view = 0;
-    glm::vec2 muzzle{};
-    float aim = 0;
+    float face = 0;
     double sent = 0;
 };
 

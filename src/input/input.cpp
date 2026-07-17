@@ -4,54 +4,72 @@
 
 #include "component/interface.h"
 #include "component/network.h"
+#include "component/object.h"
 
 Input::Input(flecs::world& world) {
-    world.component<InputFlags>()
-        .bit("Left", InputFlags::Left)
-        .bit("Right", InputFlags::Right)
-        .bit("Backward", InputFlags::Backward)
-        .bit("Forward", InputFlags::Forward)
-        .bit("Shoot", InputFlags::Shoot);
-
-    world.system<InputFlags>("input::tank").kind(flecs::PreUpdate).with<Local>().each(Input::tank);
+    world.system<InputState>("input::gather").kind(flecs::PreUpdate).with<Local>().each(Input::gather);
     world.system<InterfacePrevious, InterfacePage, WindowEvents>("input::screen").kind(flecs::PostUpdate).each(Input::screen);
 }
 
-void Input::tank(flecs::iter& it, size_t i, InputFlags& flags) {
+void Input::gather(flecs::iter& it, size_t i, InputState& in) {
     const auto& page = it.world().get<InterfacePage>();
     const auto* capture = it.world().try_get<InputCapture>();
     bool typing = (capture != nullptr) && capture->active;
     bool ingame = page == InterfacePage::Ingame && !typing;
 
-    flags.value = InputFlags::None;
+    in = InputState{};
 
     if (ingame) {
         const bool* keys = SDL_GetKeyboardState(nullptr);
-
         if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]) {
-            flags.value |= InputFlags::Forward;
+            in.move.y += 1.0F;
         }
         if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN]) {
-            flags.value |= InputFlags::Backward;
-        }
-        if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT]) {
-            flags.value |= InputFlags::Left;
+            in.move.y -= 1.0F;
         }
         if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) {
-            flags.value |= InputFlags::Right;
+            in.move.x += 1.0F;
+        }
+        if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT]) {
+            in.move.x -= 1.0F;
+        }
+
+        float mx = 0.0F;
+        float my = 0.0F;
+        uint32_t mouse = SDL_GetMouseState(&mx, &my);
+        if ((mouse & SDL_BUTTON_RMASK) != 0U) {
+            in.buttons |= button::Secondary;
+        }
+
+        if (keys[SDL_SCANCODE_E]) {
+            in.buttons |= button::Action0;
+        }
+        if (keys[SDL_SCANCODE_R]) {
+            in.buttons |= button::Action1;
+        }
+        if (keys[SDL_SCANCODE_F]) {
+            in.buttons |= button::Action2;
+        }
+        if (keys[SDL_SCANCODE_Q]) {
+            in.buttons |= button::Action3;
+        }
+
+        const auto* ptr = it.world().try_get<Pointer>();
+        const auto* self_pos = it.entity(i).try_get<Position>();
+        if (ptr != nullptr && ptr->valid && self_pos != nullptr) {
+            glm::vec2 d = ptr->world - self_pos->value;
+            if (glm::dot(d, d) > 1e-6F) {
+                in.aim = glm::normalize(d);
+            }
         }
     }
 
     const auto& events = it.world().get<WindowEvents>();
     for (const auto& event : events) {
-        switch (event.type) {
-            case SDL_EVENT_KEY_DOWN:
-                if (ingame && event.key.key == SDLK_SPACE && !event.key.repeat) {
-                    flags.value |= InputFlags::Shoot;
-                }
-                break;
-            default:
-                break;
+        bool primary_down = event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_SPACE && !event.key.repeat;
+        if (ingame && primary_down) {
+            in.buttons |= button::Primary;
+            in.pressed |= button::Primary;
         }
     }
 }

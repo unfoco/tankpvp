@@ -27,7 +27,6 @@
 #include "registry.h"
 #include "snapshot.h"
 
-
 static auto peer_entity(flecs::world& world, ENetPeer* peer) -> flecs::entity {
     if (peer == nullptr || peer->data == nullptr) {
         return {};
@@ -187,17 +186,17 @@ static void deliver_ui(flecs::world& world, const RequestView& req) {
     }
 }
 
-static auto view_center(flecs::entity tank) -> glm::vec2 {
+static auto view_center(flecs::entity body) -> glm::vec2 {
     glm::vec2 c{0};
-    if (!tank || !tank.is_alive()) {
+    if (!body || !body.is_alive()) {
         return c;
     }
-    if (const auto* p = tank.try_get<Position>()) {
+    if (const auto* p = body.try_get<Position>()) {
         c = p->value;
     }
-    if (const auto* cam = tank.try_get<Camera>()) {
+    if (const auto* cam = body.try_get<Camera>()) {
         if (cam->target != 0) {
-            flecs::entity t = tank.world().entity(cam->target);
+            flecs::entity t = body.world().entity(cam->target);
             if (t.is_alive()) {
                 if (const auto* tp = t.try_get<Position>()) {
                     c = tp->value;
@@ -214,8 +213,8 @@ struct ServerQueries {
     flecs::query<Peer> inputs;
     flecs::query<const Position, const Rotation, History> record;
     flecs::query<const Position, const Owner> bullets;
-    flecs::query<const History, const CollisionBox> tanks;
-    flecs::query<const NetworkId, const History, const CollisionBox> tanks_by_id;
+    flecs::query<const History, const CollisionBox> bodies;
+    flecs::query<const NetworkId, const History, const CollisionBox> bodies_by_id;
     flecs::query<> unassigned;
     flecs::query<const NetworkId> replicated;
     flecs::query<Peer, Interest, Replication> peers;
@@ -223,6 +222,21 @@ struct ServerQueries {
 
 NetworkServer::NetworkServer(flecs::world& world) {
     world.system("network::server::pump").kind(flecs::OnLoad).immediate().run(NetworkServer::pump);
+
+    world.observer("network::server::control_wire").with<Controls>(flecs::Wildcard).event(flecs::OnAdd).each([](flecs::entity peer) -> void {
+        flecs::entity controlled = peer.target<Controls>();
+        if (!controlled || !controlled.is_alive()) {
+            return;
+        }
+        bool host = peer.has<Peer>() && peer.get<Peer>().peer == nullptr;
+        uint32_t pid = peer.has<Peer>() ? peer.get<Peer>().id : 0U;
+        controlled.set<Owner>({.peer = pid});
+        controlled.add<Replicated>();
+
+        if (host && !controlled.has<Local>()) {
+            controlled.add<Local>();
+        }
+    });
     flecs::entity post_physics = world.lookup("physics::Post");
     flecs::entity hits_phase = world.entity("network::Hits").add(flecs::Phase).depends_on(post_physics ? post_physics : world.entity(flecs::PostUpdate));
     world.system("network::server::hits").kind(hits_phase).immediate().run(NetworkServer::hits);
@@ -329,13 +343,11 @@ NetworkServer::NetworkServer(flecs::world& world) {
         if (host == nullptr || d.revive == 0 || host->tick < d.revive) {
             return;
         }
+
         e.remove<Dying>();
-        if (const auto* o = e.try_get<Owner>()) {
-            uint32_t pid = o->peer;
-            e.set(Position{.value = {300.0F + (static_cast<float>(pid % 8) * 70.0F), 300.0F}}).set(Rotation{.angle = 0}).set(VelocityLinear{}).set(VelocityAngular{}).add<Teleport>();
-            if (auto* sp = e.try_get_mut<Spawn>()) {
-                sp->epoch++;
-            }
+        e.set(VelocityLinear{}).set(VelocityAngular{}).add<Teleport>();
+        if (auto* sp = e.try_get_mut<Spawn>()) {
+            sp->epoch++;
         }
     });
 
@@ -353,15 +365,15 @@ NetworkServer::NetworkServer(flecs::world& world) {
             if (!p.welcomed || p.peer == nullptr) {
                 return;
             }
-            flecs::entity tank = pe.target<Controls>();
-            const auto* pos = tank.is_alive() ? tank.try_get<Position>() : nullptr;
+            flecs::entity body = pe.target<Controls>();
+            const auto* pos = body.is_alive() ? body.try_get<Position>() : nullptr;
             if (pos == nullptr) {
                 return;
             }
             const auto* interest = pe.try_get<Interest>();
             float radius = (interest != nullptr) ? interest->radius : 1200.0F;
             int chunks = std::max(1, static_cast<int>(std::ceil(radius / CHUNK_UNITS)));
-            glm::vec2 vc = view_center(tank);
+            glm::vec2 vc = view_center(body);
             auto [ccx, ccy] = WorldGrid::chunk_coord(static_cast<int>(std::floor(vc.x / TILE_SIZE)), static_cast<int>(std::floor(vc.y / TILE_SIZE)));
 
             if (p.grid_wipe != grid->wipe) {
@@ -487,10 +499,10 @@ NetworkServer::NetworkServer(flecs::world& world) {
 
     world.set<ServerQueries>({
         .inputs = world.query_builder<Peer>().build(),
-        .record = world.query_builder<const Position, const Rotation, History>().with<Tank>().build(),
-        .bullets = world.query_builder<const Position, const Owner>().with<Bullet>().build(),
-        .tanks = world.query_builder<const History, const CollisionBox>().with<Tank>().without<Dying>().build(),
-        .tanks_by_id = world.query_builder<const NetworkId, const History, const CollisionBox>().with<Tank>().without<Dying>().build(),
+        .record = world.query_builder<const Position, const Rotation, History>().with<HitBox>().build(),
+        .bullets = world.query_builder<const Position, const Owner>().with<Projectile>().build(),
+        .bodies = world.query_builder<const History, const CollisionBox>().with<HitBox>().without<Dying>().build(),
+        .bodies_by_id = world.query_builder<const NetworkId, const History, const CollisionBox>().with<HitBox>().without<Dying>().build(),
         .unassigned = world.query_builder().with<Replicated>().without<NetworkId>().build(),
         .replicated = world.query_builder<const NetworkId>().with<Replicated>().build(),
         .peers = world.query_builder<Peer, Interest, Replication>().build(),
@@ -514,11 +526,10 @@ static auto to_message_command(const CommandInfo& info) -> MessageCommandInfo {
     return entry;
 }
 
-static void send_welcome(flecs::world& world, NetworkHost& host, ENetPeer* peer, uint32_t pid, uint64_t entity) {
+static void send_welcome(flecs::world& world, NetworkHost& host, ENetPeer* peer, uint32_t pid) {
     MessageWelcome msg;
     msg.protocol = NETWORK_PROTOCOL;
     msg.peer_id = pid;
-    msg.controlled_entity = entity;
     msg.tick = host.tick;
     msg.tickrate = host.tickrate;
     msg.registry_version = world.get<NetworkRegistry>().version;
@@ -611,32 +622,11 @@ static void on_hello(flecs::world& world, NetworkHost& host, ENetPeer* epeer, co
 
     uint32_t pid = host.next_peer++;
 
-    flecs::entity tank = world.entity()
-                             .set(Color{.value = {static_cast<float>(50 + ((pid * 53) % 205)) / 255.0F, static_cast<float>(50 + ((pid * 97) % 205)) / 255.0F,
-                                                  static_cast<float>(50 + ((pid * 151) % 205)) / 255.0F}})
-                             .set(Position{.value = {300.0F + (static_cast<float>(pid % 8) * 70.0F), 300.0F}})
-                             .set(Rotation{.angle = 0})
-                             .set(VelocityLinear{})
-                             .set(VelocityAngular{})
-                             .set(CollisionBox{.height = 30, .width = 40})
-                             .set(MovementStats{})
-                             .set(WeaponStats{})
-                             .add<InputFlags>()
-                             .add<Dynamic>()
-                             .add<Tank>()
-                             .set(Firing{})
-                             .add<History>()
-                             .add<ViewLag>()
-                             .set(Owner{.peer = pid});
-    uint64_t nid = host.next_id++;
-    tank.set<NetworkId>({nid}).add<Replicated>();
-
     flecs::entity pe = world.entity().set<Peer>({.peer = epeer, .id = pid, .username = name}).add<Interest>().add<Replication>();
-    pe.add<Controls>(tank);
 
     epeer->data = reinterpret_cast<void*>(static_cast<uintptr_t>(pe.id()));
-    send_welcome(world, host, epeer, pid, nid);
-    SDL_Log("network: peer %u ('%s') connected (entity %llu)", pid, name.c_str(), static_cast<unsigned long long>(nid));
+    send_welcome(world, host, epeer, pid);
+    SDL_Log("network: peer %u ('%s') connected", pid, name.c_str());
 }
 
 static void on_disconnect(flecs::world& world, ENetPeer* epeer) {
@@ -644,9 +634,9 @@ static void on_disconnect(flecs::world& world, ENetPeer* epeer) {
     if (pe && pe.is_alive()) {
         std::string username = pe.has<Peer>() ? pe.get<Peer>().username : std::string();
         world.entity().set(RequestPlayerLeave{.peer = pe, .username = username});
-        flecs::entity tank = pe.target<Controls>();
-        if (tank && tank.is_alive()) {
-            tank.destruct();
+        flecs::entity body = pe.target<Controls>();
+        if (body && body.is_alive()) {
+            body.destruct();
         }
         SDL_Log("network: peer %u disconnected", pe.has<Peer>() ? pe.get<Peer>().id : 0);
         pe.destruct();
@@ -685,7 +675,14 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
                     continue;
                 }
                 uint32_t view = c.view > VIEW_MAX ? VIEW_MAX : c.view;
-                p.inputs[tick] = {.tick = tick, .flags = c.flags, .prediction = c.prediction, .view = view, .muzzle = {c.muzzle_x, c.muzzle_y}, .aim = c.aim, .sent = in.send_time};
+                p.inputs[tick] = {.tick = tick,
+                                  .move = {static_cast<float>(c.move_x) / 127.0F, static_cast<float>(c.move_y) / 127.0F},
+                                  .buttons = c.buttons,
+                                  .pressed = c.pressed,
+                                  .prediction = c.prediction,
+                                  .view = view,
+                                  .face = static_cast<float>(c.face) * 0.0001F,
+                                  .sent = in.send_time};
             }
             while (p.inputs.size() > 128) {
                 p.inputs.erase(p.inputs.begin());
@@ -822,39 +819,48 @@ void NetworkServer::pump(flecs::iter& it) {
             if (p.peer == nullptr) {
                 return;
             }
-            flecs::entity tank = pe.target<Controls>();
-            if (tank && tank.is_alive()) {
+            flecs::entity body = pe.target<Controls>();
+            if (body && body.is_alive()) {
                 constexpr size_t CUSHION = 3;
                 if (!p.primed && p.inputs.size() < CUSHION) {
-                    tank.set<InputFlags>({0});
-                    tank.set<Firing>({.prediction = 0, .view = 0});
+                    body.set<InputState>({});
+                    body.set<Firing>({.prediction = 0, .view = 0});
                 } else if (!p.inputs.empty()) {
                     p.primed = true;
                     auto front = p.inputs.begin();
                     const PendingInput& cmd = front->second;
-                    uint32_t flags = cmd.flags;
-                    bool shoot = (flags & static_cast<uint32_t>(InputFlags::Shoot)) != 0;
-                    const auto* ws = tank.try_get<WeaponStats>();
-                    uint64_t cooldown = ws ? ws->cooldown : WeaponStats{}.cooldown;
+                    bool shoot = (cmd.pressed & button::Primary) != 0U;
+                    const auto* ws = body.try_get<ProjectileWeapon>();
+                    uint64_t cooldown = ws ? ws->cooldown : ProjectileWeapon{}.cooldown;
                     if (shoot && host_tick < p.last_fire + cooldown) {
-                        flags &= ~static_cast<uint32_t>(InputFlags::Shoot);
                         shoot = false;
                     }
                     if (shoot) {
                         p.last_fire = host_tick;
                     }
-                    tank.set<InputFlags>({flags});
-                    tank.set<Firing>({.prediction = cmd.prediction, .view = cmd.view, .muzzle = cmd.muzzle, .aim = cmd.aim, .aimed = shoot});
-                    tank.set<ViewLag>({cmd.view});
+                    InputState in;
+                    in.move = cmd.move;
+                    in.aim = math::heading(cmd.face);
+                    in.buttons = static_cast<uint16_t>(cmd.buttons & ~button::Primary);
+                    in.pressed = static_cast<uint16_t>(cmd.pressed & ~button::Primary);
+                    if (shoot) {
+                        in.buttons |= button::Primary;
+                        in.pressed |= button::Primary;
+                    }
+                    body.set<InputState>(in);
+                    body.set<Firing>({.prediction = cmd.prediction, .view = cmd.view});
+                    body.set<ViewLag>({cmd.view});
                     p.consumed = cmd.tick;
                     p.stamp = cmd.sent;
                     p.starved = 0;
                     p.inputs.erase(front);
                 } else {
                     ++p.starved;
-                    uint32_t last = (p.starved <= 2 && tank.has<InputFlags>()) ? tank.get<InputFlags>().value : 0U;
-                    tank.set<InputFlags>({last & ~static_cast<uint32_t>(InputFlags::Shoot)});
-                    tank.set<Firing>({.prediction = 0, .view = 0});
+                    InputState last = (p.starved <= 2 && body.has<InputState>()) ? body.get<InputState>() : InputState{};
+                    last.buttons &= ~button::Primary;
+                    last.pressed &= ~button::Primary;
+                    body.set<InputState>(last);
+                    body.set<Firing>({.prediction = 0, .view = 0});
                 }
             }
             p.simulated = host_tick;
@@ -914,8 +920,8 @@ void NetworkServer::hits(flecs::iter& it) {
 
             flecs::entity victim;
             float vd2 = 1e30F;
-            q.tanks.each([&](flecs::entity tank, const History& h, const CollisionBox& box) -> void {
-                bool is_self = (tank == firer);
+            q.bodies.each([&](flecs::entity body, const History& h, const CollisionBox& box) -> void {
+                bool is_self = (body == firer);
                 TransformSnapshot self_now;
                 const TransformSnapshot* s = nullptr;
                 if (is_self) {
@@ -942,7 +948,7 @@ void NetworkServer::hits(flecs::iter& it) {
                     float dd = math::length_squared(d);
                     if (dd < vd2) {
                         vd2 = dd;
-                        victim = tank;
+                        victim = body;
                     }
                 }
             });
@@ -1014,7 +1020,7 @@ void NetworkServer::replicate(flecs::iter& it) {
             }
             glm::vec2 pos = p->value;
             uint32_t bulletOwner = 0;
-            if (e.has<Bullet>()) {
+            if (e.has<Projectile>()) {
                 if (const auto* o = e.try_get<Owner>()) {
                     bulletOwner = o->peer + 1;
                 }

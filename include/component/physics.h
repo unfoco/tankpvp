@@ -33,6 +33,15 @@ struct ExternalImpulse {
     glm::vec2 value{0};
 };
 
+struct GravityScale {
+    float value = 1.0F;
+};
+
+struct Gravity {
+    float x = 0.0F;
+    float y = 0.0F;
+};
+
 struct Density {
     float value = 1.0F;
 };

@@ -18,8 +18,8 @@
 #include "component/settings.h"
 #include "component/world.h"
 #include "util/ballistics.h"
+#include "util/controller.h"
 #include "util/math.h"
-#include "util/movement.h"
 #include "util/prediction.h"
 #include "util/time.h"
 #include "decode.h"
@@ -28,14 +28,15 @@
 #include "server.h"
 
 struct ClientQueries {
-    flecs::query<const NetworkId, const Interpolation, const CollisionBox> pred_tanks;
+    flecs::query<const NetworkId, const Interpolation, const CollisionBox> pred_bodies;
     flecs::query<Interpolation, Position, Rotation> interp;
     flecs::query<const Dying> dying;
-    flecs::query<InputFlags, Position, Rotation, Interpolation> local_tank;
+    flecs::query<InputState, Position, Rotation, Interpolation> local_body;
     flecs::query<Position, Rotation, VelocityLinear, Predicted> ghosts;
     flecs::query<const NetworkId, const Position, const Rotation, const CollisionBox> enemies;
     flecs::query<const Position, const Predicted> pred_bullets;
     flecs::query<const NetworkId, Position, Rotation> smooth;
+    flecs::query<const Gravity> gravity;
 };
 
 namespace {
@@ -49,16 +50,21 @@ auto prediction(flecs::world& world) -> Prediction* {
 }
 
 void prediction_sync(flecs::world& world, NetworkConnection& conn, Prediction& pred) {
-    std::vector<Prediction::Tank> tanks;
-    world.get<ClientQueries>().pred_tanks.each([&](flecs::entity e, const NetworkId& id, const Interpolation& in, const CollisionBox& box) -> void {
+    glm::vec2 grav{0, 0};
+    world.get<ClientQueries>().gravity.each([&](const Gravity& g) -> void { grav = {g.x, g.y}; });
+    pred.gravity(grav);
+
+    std::vector<Prediction::Body> bodies;
+    world.get<ClientQueries>().pred_bodies.each([&](flecs::entity e, const NetworkId& id, const Interpolation& in, const CollisionBox& box) -> void {
         if (!in.ready) {
             return;
         }
         const auto* dl = e.try_get<DampingLinear>();
         const auto* da = e.try_get<DampingAngular>();
-        tanks.push_back({.id = id.value, .pos = in.position, .angle = in.angle, .box = box, .ldamp = dl ? dl->value : 0.0F, .adamp = da ? da->value : 0.0F, .self = id.value == conn.self});
+        const auto* gs = e.try_get<GravityScale>();
+        bodies.push_back({.id = id.value, .pos = in.position, .angle = in.angle, .box = box, .ldamp = dl ? dl->value : 0.0F, .adamp = da ? da->value : 0.0F, .gravity_scale = gs ? gs->value : 1.0F, .self = id.value == conn.self});
     });
-    pred.sync(tanks);
+    pred.sync(bodies);
 
     if (const auto* grid = world.try_get<WorldGrid>(); grid != nullptr && grid->version != conn.tile_version) {
         conn.tile_version = grid->version;
@@ -113,8 +119,8 @@ struct Smooth {
     int contact = 0;
 };
 
-void prediction_smooth(const flecs::query<const NetworkId, Position, Rotation>& tanks, const std::unordered_map<uint64_t, Prediction::Pose>& shoved) {
-    tanks.each([&](flecs::entity e, const NetworkId& id, Position& p, Rotation& r) -> void {
+void prediction_smooth(const flecs::query<const NetworkId, Position, Rotation>& bodies, const std::unordered_map<uint64_t, Prediction::Pose>& shoved) {
+    bodies.each([&](flecs::entity e, const NetworkId& id, Position& p, Rotation& r) -> void {
         auto* o = e.try_get_mut<Smooth>();
         if (!o) {
             e.add<Smooth>();
@@ -168,6 +174,7 @@ struct Shot {
     uint32_t prediction;
     float life;
     uint64_t sprite;
+    uint64_t sound;
 };
 
 void ghosts_advance(flecs::world& world, const ClientQueries& q, const std::vector<Shot>& shots, float dt) {
@@ -178,7 +185,7 @@ void ghosts_advance(flecs::world& world, const ClientQueries& q, const std::vect
             .set(Rotation{.angle = s.angle})
             .set(VelocityLinear{.value = fwd * s.speed})
             .set(Predicted{.life = s.life, .id = s.prediction})
-            .set(Bullet{.speed = s.speed});
+            .set(Projectile{.speed = s.speed, .sound = s.sound});
         if (s.sprite != 0) {
             ghost.set(Sprite{.texture = s.sprite});
         } else {
@@ -268,11 +275,11 @@ void prediction_hit(const ClientQueries& q, NetworkConnection& conn, glm::vec2 s
 }
 
 static auto host_peer(flecs::world world) -> flecs::entity {
-    flecs::entity tank;
-    world.query_builder().with<Local>().with<Tank>().build().each([&](flecs::entity t) -> void { tank = t; });
+    flecs::entity body;
+    world.query_builder().with<Local>().build().each([&](flecs::entity t) -> void { body = t; });
     flecs::entity peer;
-    if (tank.is_alive()) {
-        world.query_builder().with<Controls>(tank).build().each([&](flecs::entity p) -> void { peer = p; });
+    if (body.is_alive()) {
+        world.query_builder().with<Controls>(body).build().each([&](flecs::entity p) -> void { peer = p; });
     }
     return peer;
 }
@@ -317,14 +324,15 @@ NetworkClient::NetworkClient(flecs::world& world) {
     });
 
     world.set<ClientQueries>({
-        .pred_tanks = world.query_builder<const NetworkId, const Interpolation, const CollisionBox>().with<Tank>().without<Dying>().build(),
+        .pred_bodies = world.query_builder<const NetworkId, const Interpolation, const CollisionBox>().with<Controller>().without<Dying>().build(),
         .interp = world.query_builder<Interpolation, Position, Rotation>().with<Remote>().build(),
         .dying = world.query_builder<const Dying>().build(),
-        .local_tank = world.query_builder<InputFlags, Position, Rotation, Interpolation>().with<Local>().build(),
+        .local_body = world.query_builder<InputState, Position, Rotation, Interpolation>().with<Local>().build(),
         .ghosts = world.query_builder<Position, Rotation, VelocityLinear, Predicted>().build(),
-        .enemies = world.query_builder<const NetworkId, const Position, const Rotation, const CollisionBox>().with<Tank>().without<Dying>().build(),
-        .pred_bullets = world.query_builder<const Position, const Predicted>().with<Bullet>().build(),
-        .smooth = world.query_builder<const NetworkId, Position, Rotation>().with<Tank>().with<Remote>().build(),
+        .enemies = world.query_builder<const NetworkId, const Position, const Rotation, const CollisionBox>().with<Controller>().without<Dying>().build(),
+        .pred_bullets = world.query_builder<const Position, const Predicted>().with<Projectile>().build(),
+        .smooth = world.query_builder<const NetworkId, Position, Rotation>().with<Controller>().with<Remote>().build(),
+        .gravity = world.query_builder<const Gravity>().build(),
     });
 }
 
@@ -448,19 +456,6 @@ void NetworkClient::interpolate(flecs::iter& it) {
             if (!in.ready) {
                 return;
             }
-            if (e.has<Bullet>()) {
-                const Sample& anchor = in.at(0);
-                double age = render - static_cast<double>(anchor.tick);
-                if (e.has<Latent>()) {
-                    if (age >= -2.0) {
-                        e.remove<Latent>();
-                    } else {
-                        pos.value = anchor.position;
-                        rot.angle = in.angle;
-                        return;
-                    }
-                }
-            }
             const Sample* lo = nullptr;
             const Sample* hi = nullptr;
             for (int i = 0; i < in.count; i++) {
@@ -537,7 +532,7 @@ void NetworkClient::predict(flecs::iter& it) {
         glm::vec2 self_pos{};
         bool have_self = false;
 
-        q.local_tank.each([&](flecs::entity self, InputFlags& flags, Position& pos, Rotation& rot, Interpolation& interp) -> void {
+        q.local_body.each([&](flecs::entity self, InputState& in_live, Position& pos, Rotation& rot, Interpolation& interp) -> void {
             if (self.has<Dying>()) {
                 if (interp.ready) {
                     pos.value = glm::mix(pos.value, interp.position, 0.35F);
@@ -545,13 +540,43 @@ void NetworkClient::predict(flecs::iter& it) {
                 }
                 return;
             }
-            uint32_t f = flags.value;
-            const auto* ms = self.try_get<MovementStats>();
-            MovementStats stats = ms ? *ms : MovementStats{};
-            WeaponStats weapon = self.try_get<WeaponStats>() ? *self.try_get<WeaponStats>() : WeaponStats{};
+            const auto* ctrl = self.try_get<Controller>();
+            ControlScheme scheme = ctrl != nullptr ? ctrl->scheme : ControlScheme::Differential;
+            const auto* ms = self.try_get<DifferentialStats>();
+            DifferentialStats dstats{.speed = ms != nullptr ? ms->speed : DifferentialStats{}.speed, .turn = ms != nullptr ? ms->turn : DifferentialStats{}.turn};
+            const auto* tds = self.try_get<TopDownStats>();
+            TopDownStats tstats = tds != nullptr ? *tds : TopDownStats{};
+            const auto* pfs = self.try_get<PlatformerStats>();
+            PlatformerStats pstats = pfs != nullptr ? *pfs : PlatformerStats{};
+            const auto* selfbox = self.try_get<CollisionBox>();
+            float half_w = selfbox != nullptr ? selfbox->width * 0.5F : 0.5F;
+            float half_h = selfbox != nullptr ? selfbox->height * 0.5F : 0.5F;
+            const auto* grid = world.try_get<WorldGrid>();
+            const auto* tileset = world.try_get<Tileset>();
+            ProjectileWeapon weapon = self.try_get<ProjectileWeapon>() ? *self.try_get<ProjectileWeapon>() : ProjectileWeapon{};
             uint64_t cooldown = weapon.cooldown;
+            glm::vec2 seed_vel{0};
+            if (const auto* vl = self.try_get<VelocityLinear>()) {
+                seed_vel = vl->value;
+            }
 
-            bool wants_fire = (f & InputFlags::Shoot) != 0 || conn.fire_pending;
+            auto step_vel = [&](const glm::vec2& move, float face, glm::vec2 spos, glm::vec2 cur, float heading) -> Prediction::Velocity {
+                Prediction::Velocity v;
+                InputState si;
+                si.move = move;
+                if (scheme == ControlScheme::TopDown) {
+                    si.aim = math::heading(face);
+                    controller::top_down(si, heading, tstats, cur, TICK_DT, v.linear, v.angular);
+                } else if (scheme == ControlScheme::Platformer) {
+                    bool g = (grid != nullptr && tileset != nullptr) && ballistics::grounded(*grid, *tileset, spos, half_w, half_h);
+                    controller::platformer(si, cur, g, pstats, v.linear, v.angular, TICK_DT);
+                } else {
+                    controller::differential(si, heading, dstats, v.linear, v.angular);
+                }
+                return v;
+            };
+
+            bool wants_fire = in_live.down(button::Primary) || conn.fire_pending;
             bool advance = !conn.newest || conn.client_tick < ctarget;
             if (wants_fire && !advance) {
                 conn.fire_pending = true;
@@ -565,11 +590,15 @@ void NetworkClient::predict(flecs::iter& it) {
             }
             if (fire) {
                 conn.last_fire = conn.client_tick;
-                f |= InputFlags::Shoot;
-            } else {
-                {
-                    f &= ~static_cast<uint32_t>(InputFlags::Shoot);
-                }
+            }
+
+            glm::vec2 move = in_live.move;
+            float face = glm::dot(in_live.aim, in_live.aim) > 1e-6F ? std::atan2(in_live.aim.y, in_live.aim.x) : rot.angle;
+            uint16_t buttons = static_cast<uint16_t>(in_live.buttons & ~button::Primary);
+            uint16_t pressed = static_cast<uint16_t>(in_live.pressed & ~button::Primary);
+            if (fire) {
+                buttons |= button::Primary;
+                pressed |= button::Primary;
             }
             uint32_t prediction = fire ? ++conn.predictions : 0;
             if (advance) {
@@ -577,7 +606,7 @@ void NetworkClient::predict(flecs::iter& it) {
                 double rtt_half = (std::min(conn.rtt, 1.0) / TICK_DT) * 0.5;
                 uint32_t view = static_cast<uint32_t>(std::max<long long>(0, std::llround(rtt_half + conn.delay)));
                 view = std::min(view, VIEW_MAX);
-                conn.commands.push_back({.tick = target, .flags = f, .prediction = prediction, .view = view, .sent = util::now()});
+                conn.commands.push_back({.tick = target, .move = move, .buttons = buttons, .pressed = pressed, .prediction = prediction, .view = view, .sent = util::now(), .face = face});
                 while (conn.commands.size() > 256) {
                     conn.commands.erase(conn.commands.begin());
                 }
@@ -585,23 +614,15 @@ void NetworkClient::predict(flecs::iter& it) {
 
             if (interp.ready && pred.has_self()) {
                 const auto& cmds = conn.commands;
-                auto velocity = [&](int s, float heading) -> Prediction::Velocity {
-                    Prediction::Velocity v;
-                    movement::velocity(cmds[s].flags, heading, stats, v.linear, v.angular);
-                    return v;
-                };
-                Prediction::Pose now = pred.run(interp.position, interp.angle, static_cast<int>(cmds.size()), TICK_DT, velocity, true);
+                auto velocity = [&](int s, float heading, glm::vec2 spos, glm::vec2 scur) -> Prediction::Velocity { return step_vel(cmds[s].move, cmds[s].face, spos, scur, heading); };
+                Prediction::Pose now = pred.run(interp.position, interp.angle, seed_vel, static_cast<int>(cmds.size()), TICK_DT, velocity, true);
                 glm::vec2 p = now.pos;
                 float a = now.angle;
 
                 if (interp.has_predicted_prev) {
                     Prediction::Pose e = pred.run(
-                        interp.predicted_prev, interp.predicted_prev_angle, 1, TICK_DT,
-                        [&](int, float heading) -> Prediction::Velocity {
-                            Prediction::Velocity v;
-                            movement::velocity(f, heading, stats, v.linear, v.angular);
-                            return v;
-                        },
+                        interp.predicted_prev, interp.predicted_prev_angle, seed_vel, 1, TICK_DT,
+                        [&](int, float heading, glm::vec2 spos, glm::vec2 scur) -> Prediction::Velocity { return step_vel(move, face, spos, scur, heading); },
                         false);
                     interp.vis_error += e.pos - p;
                     interp.vis_error_angle += math::angle_difference(e.angle, a);
@@ -623,7 +644,9 @@ void NetworkClient::predict(flecs::iter& it) {
                 pos.value = p + interp.vis_error;
                 rot.angle = a + interp.vis_error_angle;
             } else {
-                movement::step(f, stats, pos.value, rot.angle, dt);
+                Prediction::Velocity v = step_vel(move, face, pos.value, seed_vel, rot.angle);
+                pos.value += v.linear * dt;
+                rot.angle += v.angular * dt;
             }
             self_pos = pos.value;
             have_self = true;
@@ -633,11 +656,7 @@ void NetworkClient::predict(flecs::iter& it) {
                 glm::vec2 muzzle = pos.value + weapon.muzzle * fwd;
                 const auto* ps = self.try_get<ProjectileSprite>();
                 shots.push_back({.muzzle = muzzle, .angle = rot.angle, .speed = weapon.speed, .prediction = prediction, .life = weapon.life,
-                                 .sprite = ps != nullptr ? ps->texture : 0});
-                if (!conn.commands.empty()) {
-                    conn.commands.back().muzzle = muzzle;
-                    conn.commands.back().aim = rot.angle;
-                }
+                                 .sprite = ps != nullptr ? ps->texture : 0, .sound = weapon.sound});
             }
         });
 
@@ -673,14 +692,15 @@ void NetworkClient::upload(flecs::iter& it) {
                 const Command& c = cmds[n - 1 - j];
                 MessageInputCommand cm;
                 cm.tick_delta = static_cast<uint16_t>(in.newest_tick - c.tick);
-                cm.flags = c.flags;
-                if ((c.flags & InputFlags::Shoot) != 0U) {
+                cm.move_x = static_cast<int8_t>(std::clamp(std::lround(c.move.x * 127.0F), -127L, 127L));
+                cm.move_y = static_cast<int8_t>(std::clamp(std::lround(c.move.y * 127.0F), -127L, 127L));
+                cm.buttons = c.buttons;
+                cm.pressed = c.pressed;
+                cm.face = static_cast<int16_t>(std::clamp(std::lround(c.face / 0.0001F), -32767L, 32767L));
+                if ((c.pressed & button::Primary) != 0U) {
                     has_fire = true;
                     cm.prediction = c.prediction;
                     cm.view = c.view;
-                    cm.muzzle_x = c.muzzle.x;
-                    cm.muzzle_y = c.muzzle.y;
-                    cm.aim = c.aim;
                 }
                 in.commands.push_back(cm);
             }

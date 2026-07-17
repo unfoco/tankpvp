@@ -61,9 +61,10 @@ World::World(flecs::world& world) {
     world.system<const TileChunk>("world::mesh").with<ChunkDirty>().kind(pi ? pi : flecs::OnUpdate).each(World::mesh);
     const auto* cfg = world.try_get<NetworkConfig>();
     if (cfg == nullptr || cfg->role != NetworkRole::Client) {
-        world.system<const Position, VelocityLinear>("world::drag").with<Tank>().kind(pi ? pi : flecs::OnUpdate).each(World::drag);
-        world.system("world::ballistics").kind(flecs::OnUpdate).run(World::ballistics);
+        world.system<const Position, VelocityLinear>("world::drag").with<Controller>().kind(pi ? pi : flecs::OnUpdate).each(World::drag);
     }
+
+    world.system("world::ballistics").kind(flecs::OnUpdate).run(World::ballistics);
 }
 
 void World::ballistics(flecs::iter& it) {
@@ -73,13 +74,15 @@ void World::ballistics(flecs::iter& it) {
     if (grid == nullptr || tileset == nullptr) {
         return;
     }
+    const auto* cfg = world.try_get<NetworkConfig>();
+    bool authoritative = (cfg == nullptr) || cfg->role != NetworkRole::Client;
     float dt = it.delta_time();
     std::vector<flecs::entity> dead;
-    world.query_builder<Position, Rotation, VelocityLinear>().with<Bullet>().without<Predicted>().build().each([&](flecs::entity e, Position& pos, Rotation& rot, VelocityLinear& vel) -> void {
+    world.query_builder<Position, Rotation, VelocityLinear>().with<Projectile>().without<Predicted>().build().each([&](flecs::entity e, Position& pos, Rotation& rot, VelocityLinear& vel) -> void {
         const TileType* hit = nullptr;
         glm::vec2 hit_at{};
         ballistics::Step r = ballistics::step(*grid, *tileset, pos.value, vel.value, dt, hit, hit_at);
-        if (hit != nullptr && hit->hp > 0) {
+        if (hit != nullptr && hit->hp > 0 && authoritative) {
             world.entity().set(RequestDamageTile{.tx = static_cast<int32_t>(std::floor(hit_at.x / TILE_SIZE)), .ty = static_cast<int32_t>(std::floor(hit_at.y / TILE_SIZE)), .amount = 25});
         }
         if (r == ballistics::Step::Absorb) {

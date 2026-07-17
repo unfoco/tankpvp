@@ -11,6 +11,6 @@ struct Input {
     Input(flecs::world& world);
 
    private:
-    static void tank(flecs::iter& it, size_t i, InputFlags& flags);
+    static void gather(flecs::iter& it, size_t i, InputState& in);
     static void screen(flecs::iter& it, size_t i, const InterfacePrevious& prev, InterfacePage& page, const WindowEvents& events);
 };

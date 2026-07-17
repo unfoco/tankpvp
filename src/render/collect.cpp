@@ -1,8 +1,8 @@
-
 #include "render.h"
 
 #include <cmath>
 
+#include "component/input.h"
 #include "component/network.h"
 #include "component/world.h"
 #include "util/ballistics.h"
@@ -543,11 +543,10 @@ void Render::collect(flecs::iter& it) {
                     glm::vec2 origin = pos.value;
                     float facing = self.try_get<Rotation>() ? self.get<Rotation>().angle : 0.0F;
                     if (const auto* cam = self.try_get<Camera>(); cam != nullptr && cam->target != 0) {
+
+                        origin = cam->focus;
                         flecs::entity t = world.entity(cam->target);
                         if (t.is_alive()) {
-                            if (const auto* tp = t.try_get<Position>()) {
-                                origin = tp->value;
-                            }
                             if (const auto* tr = t.try_get<Rotation>()) {
                                 facing = tr->angle;
                             }
@@ -627,6 +626,18 @@ void Render::collect(flecs::iter& it) {
         float pixel_zoom = r.camera.zoom * (internal_px.x / std::max(static_cast<float>(ww), 1.0F));
         glm::vec2 center = r.camera.position - (r.camera.offset / std::max(r.camera.zoom, 0.0001F));
         glm::vec2 shake = r.camera.shakeOffset / std::max(r.camera.zoom, 0.0001F);
+
+        {
+            float mx = 0.0F;
+            float my = 0.0F;
+            SDL_GetMouseState(&mx, &my);
+            float z = std::max(r.camera.zoom, 0.0001F);
+            glm::vec2 rel = (glm::vec2{mx, my} - (glm::vec2{static_cast<float>(ww), static_cast<float>(wh)} * 0.5F)) / z;
+            float cr = std::cos(r.camera.rotation);
+            float sr = std::sin(r.camera.rotation);
+            glm::vec2 world_rel = {(rel.x * cr) - (rel.y * sr), (rel.x * sr) + (rel.y * cr)};
+            world.set<Pointer>({.world = center + world_rel, .valid = true});
+        }
 
         GpuCamera frame = Render::camera_uniform(r, center, internal_px, pixel_zoom, r.camera.rotation, shake);
         r.queue->writeBuffer(*r.frame_ubo.buffer, 0, &frame, sizeof(frame));

@@ -9,8 +9,6 @@
 
 #include "component/object.h"
 
-struct Sounded {};
-
 struct Music {
     short* pcm = nullptr;
     ma_audio_buffer buffer = {};
@@ -27,6 +25,8 @@ struct AudioState {
     glm::vec2 listener = {0.0F, 0.0F};
     bool haveListener = false;
     bool ready = false;
+    uint64_t track_hash = 0;
+    uint64_t game_hash = 0;
 };
 
 struct Audio {
@@ -38,5 +38,4 @@ struct Audio {
     static void listener(flecs::iter& it, size_t i, AudioState& audio, const Position& pos);
     static void music(flecs::iter& it, size_t i, AudioState& audio);
     static void shoot(flecs::iter& it, size_t i, AudioState& audio, const Position& pos);
-    static void puff(flecs::entity entity);
 };

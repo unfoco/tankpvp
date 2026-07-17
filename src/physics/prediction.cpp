@@ -17,6 +17,7 @@ struct Prediction::Impl {
     bool has_self = false;
     b2WorldId world{};
     b2BodyId self{};
+    glm::vec2 grav{0, 0};
     std::unordered_map<uint64_t, Body> others;
     std::unordered_map<uint64_t, Pose> shoved;
     std::vector<b2BodyId> statics;
@@ -33,9 +34,16 @@ struct Prediction::Impl {
             return;
         }
         b2WorldDef wd = b2DefaultWorldDef();
-        wd.gravity = {.x = 0, .y = 0};
+        wd.gravity = {.x = grav.x, .y = grav.y};
         world = b2CreateWorld(&wd);
         ready = true;
+    }
+
+    void set_gravity(glm::vec2 g) {
+        grav = g;
+        if (ready) {
+            b2World_SetGravity(world, {.x = g.x, .y = g.y});
+        }
     }
 
     void reset() {
@@ -74,13 +82,14 @@ struct Prediction::Impl {
         fields.assign(zones.begin(), zones.end());
     }
 
-    auto make_body(const CollisionBox& box, glm::vec2 pos, float angle, float ldamp, float adamp) -> b2BodyId {
+    auto make_body(const CollisionBox& box, glm::vec2 pos, float angle, float ldamp, float adamp, float gscale) -> b2BodyId {
         b2BodyDef bd = b2DefaultBodyDef();
         bd.type = b2_dynamicBody;
         bd.position = {.x = pos.x, .y = pos.y};
         bd.rotation = b2MakeRot(angle);
         bd.linearDamping = ldamp;
         bd.angularDamping = adamp;
+        bd.gravityScale = gscale;
         b2BodyId body = b2CreateBody(world, &bd);
         b2ShapeDef sd = b2DefaultShapeDef();
         b2Polygon poly = b2MakeBox(box.width * 0.5F, box.height * 0.5F);
@@ -88,13 +97,13 @@ struct Prediction::Impl {
         return body;
     }
 
-    void sync(std::span<const Tank> tanks) {
+    void sync(std::span<const Prediction::Body> bodies) {
         ensure();
         std::unordered_set<uint64_t> live;
-        for (const auto& t : tanks) {
+        for (const auto& t : bodies) {
             if (t.self) {
                 if (!has_self) {
-                    self = make_body(t.box, t.pos, t.angle, t.ldamp, t.adamp);
+                    self = make_body(t.box, t.pos, t.angle, t.ldamp, t.adamp, t.gravity_scale);
                     has_self = true;
                 }
                 continue;
@@ -102,7 +111,7 @@ struct Prediction::Impl {
             live.insert(t.id);
             auto it = others.find(t.id);
             if (it == others.end()) {
-                others[t.id] = {.id = make_body(t.box, t.pos, t.angle, t.ldamp, t.adamp), .pos = t.pos, .angle = t.angle};
+                others[t.id] = {.id = make_body(t.box, t.pos, t.angle, t.ldamp, t.adamp, t.gravity_scale), .pos = t.pos, .angle = t.angle};
             } else {
                 it->second.pos = t.pos;
                 it->second.angle = t.angle;
@@ -118,21 +127,22 @@ struct Prediction::Impl {
         }
     }
 
-    auto run(glm::vec2 self_pos, float self_angle, int steps, float dt, const std::function<Velocity(int, float)>& velocity, bool record_contacts) -> Pose {
+    auto run(glm::vec2 self_pos, float self_angle, glm::vec2 self_velocity, int steps, float dt, const std::function<Velocity(int, float, glm::vec2, glm::vec2)>& velocity, bool record_contacts) -> Pose {
         for (auto& [id, o] : others) {
             b2Body_SetTransform(o.id, {.x = o.pos.x, .y = o.pos.y}, b2MakeRot(o.angle));
             b2Body_SetLinearVelocity(o.id, {.x = 0, .y = 0});
             b2Body_SetAngularVelocity(o.id, 0);
         }
         b2Body_SetTransform(self, {.x = self_pos.x, .y = self_pos.y}, b2MakeRot(self_angle));
-        b2Body_SetLinearVelocity(self, {.x = 0, .y = 0});
+        b2Body_SetLinearVelocity(self, {.x = self_velocity.x, .y = self_velocity.y});
         b2Body_SetAngularVelocity(self, 0);
 
         float heading = self_angle;
         for (int s = 0; s < steps; ++s) {
-            Velocity v = velocity(s, heading);
+            b2Vec2 sp = b2Body_GetPosition(self);
+            b2Vec2 sv = b2Body_GetLinearVelocity(self);
+            Velocity v = velocity(s, heading, {sp.x, sp.y}, {sv.x, sv.y});
             if (!fields.empty()) {
-                b2Vec2 sp = b2Body_GetPosition(self);
                 for (const FieldZone& z : fields) {
                     if (std::fabs(sp.x - z.center.x) <= z.half.x && std::fabs(sp.y - z.center.y) <= z.half.y) {
                         float k = std::exp(-z.drag * dt);
@@ -176,8 +186,12 @@ auto Prediction::has_self() const -> bool {
     return impl->has_self;
 }
 
-void Prediction::sync(std::span<const Tank> tanks) {
-    impl->sync(tanks);
+void Prediction::gravity(glm::vec2 g) {
+    impl->set_gravity(g);
+}
+
+void Prediction::sync(std::span<const Body> bodies) {
+    impl->sync(bodies);
 }
 
 void Prediction::boxes(std::span<const StaticBox> boxes) {
@@ -188,8 +202,8 @@ void Prediction::zones(std::span<const FieldZone> zones) {
     impl->zones(zones);
 }
 
-auto Prediction::run(glm::vec2 self_pos, float self_angle, int steps, float dt, const std::function<Velocity(int step, float heading)>& velocity, bool record_contacts) -> Pose {
-    return impl->run(self_pos, self_angle, steps, dt, velocity, record_contacts);
+auto Prediction::run(glm::vec2 self_pos, float self_angle, glm::vec2 self_velocity, int steps, float dt, const std::function<Velocity(int step, float heading, glm::vec2 pos, glm::vec2 current_linear)>& velocity, bool record_contacts) -> Pose {
+    return impl->run(self_pos, self_angle, self_velocity, steps, dt, velocity, record_contacts);
 }
 
 auto Prediction::shoved() const -> const std::unordered_map<uint64_t, Pose>& {

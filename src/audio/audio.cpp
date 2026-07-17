@@ -52,6 +52,20 @@ static auto load_music(ma_engine* engine, const char* path, Music* music) -> boo
     return true;
 }
 
+static void unload_music(Music* music) {
+    if (!music->ok) {
+        return;
+    }
+    ma_sound_uninit(&music->sound);
+    ma_audio_buffer_uninit(&music->buffer);
+    if (music->pcm != nullptr) {
+        free(music->pcm);
+        music->pcm = nullptr;
+    }
+    music->ok = false;
+    music->volume = 0.0F;
+}
+
 static void emit(AudioState& audio, const char* path, glm::vec2 position, float volume, bool global = false) {
     if (!audio.ready) {
         return;
@@ -87,8 +101,12 @@ Audio::Audio(flecs::world& world) {
     world.system<AudioState>("audio::reap").kind(flecs::PreFrame).each(Audio::reap);
     world.system<AudioState, const Position>("audio::listener").with<Local>().kind(flecs::PreFrame).each(Audio::listener);
     world.system<AudioState>("audio::music").kind(flecs::OnStore).each(Audio::music);
-    world.observer<AudioState, const Position>("audio::shoot").with<Bullet>().event(flecs::OnAdd).each(Audio::shoot);
-    world.observer("audio::puff").with<Bullet>().event(flecs::OnRemove).each(Audio::puff);
+    world.observer<AudioState, const Position>("audio::shoot").with<Projectile>().event(flecs::OnAdd).each(Audio::shoot);
+    world.observer<const Soundtrack>("audio::track").event(flecs::OnSet).each([](flecs::entity e, const Soundtrack& t) -> void {
+        if (auto* audio = e.world().try_get_mut<AudioState>()) {
+            audio->track_hash = t.hash;
+        }
+    });
     world.observer<const RequestSound>("audio::custom").event(flecs::OnSet).each([](flecs::entity e, const RequestSound& s) -> void {
         flecs::world world = e.world();
         AudioState& audio = world.get_mut<AudioState>();
@@ -113,7 +131,6 @@ void Audio::init(flecs::iter&, size_t, AudioState& audio) {
     audio.menu = std::make_unique<Music>();
     audio.game = std::make_unique<Music>();
     load_music(audio.engine.get(), "asset/sound/music/menu.ogg", audio.menu.get());
-    load_music(audio.engine.get(), "asset/sound/music/game.ogg", audio.game.get());
 }
 
 void Audio::reap(flecs::iter&, size_t, AudioState& audio) {
@@ -143,6 +160,18 @@ static void drive_music(Music* music, float target, float rate) {
 void Audio::music(flecs::iter& it, size_t, AudioState& audio) {
     if (!audio.ready) {
         return;
+    }
+    if (audio.track_hash != audio.game_hash) {
+        unload_music(audio.game.get());
+        audio.game_hash = 0;
+        if (audio.track_hash != 0) {
+            if (const auto* store = it.world().try_get<AssetStore>()) {
+                auto found = store->ready.find(audio.track_hash);
+                if (found != store->ready.end() && load_music(audio.engine.get(), found->second.c_str(), audio.game.get())) {
+                    audio.game_hash = audio.track_hash;
+                }
+            }
+        }
     }
     const auto* page = it.world().try_get<InterfacePage>();
     float volume = it.world().get<Settings>().music * MUSIC_GAIN;
@@ -178,23 +207,19 @@ void Audio::music(flecs::iter& it, size_t, AudioState& audio) {
 }
 
 void Audio::shoot(flecs::iter& it, size_t i, AudioState& audio, const Position& pos) {
-    it.entity(i).add<Sounded>();
-    static const char* paths[] = {"asset/sound/bullet/shoot0.wav", "asset/sound/bullet/shoot1.wav"};
-    float volume = it.world().get<Settings>().volume;
-    emit(audio, paths[it.entity(i).id() % 2], pos.value, volume);
-}
-
-void Audio::puff(flecs::entity entity) {
-    if (!entity.has<Sounded>()) {
+    const auto* proj = it.entity(i).try_get<Projectile>();
+    uint64_t hash = proj != nullptr ? proj->sound : 0;
+    if (hash == 0) {
         return;
     }
-    flecs::world world = entity.world();
-    auto& audio = world.get_mut<AudioState>();
-    static const char* paths[] = {"asset/sound/bullet/puff0.wav", "asset/sound/bullet/puff1.wav", "asset/sound/bullet/puff2.wav"};
-    glm::vec2 position = audio.listener;
-    if (const auto* pos = entity.try_get<Position>()) {
-        position = pos->value;
+    const auto* store = it.world().try_get<AssetStore>();
+    if (store == nullptr) {
+        return;
     }
-    float volume = world.get<Settings>().volume;
-    emit(audio, paths[entity.id() % 3], position, volume);
+    auto sit = store->ready.find(hash);
+    if (sit == store->ready.end()) {
+        return;
+    }
+    float volume = it.world().has<Settings>() ? it.world().get<Settings>().volume : 1.0F;
+    emit(audio, sit->second.c_str(), pos.value, volume);
 }

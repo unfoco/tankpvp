@@ -97,6 +97,17 @@ Physics::Physics(flecs::world& world) {
     world.observer<const B2Body, const DampingLinear>("physics::ldamp").event(flecs::OnSet).each(Physics::ldamp);
     world.observer<const B2Body, const DampingAngular>("physics::adamp").event(flecs::OnSet).each(Physics::adamp);
     world.observer<const B2Body, const CollisionLayers>("physics::filter").event(flecs::OnSet).each(Physics::filter);
+
+    world.observer<const B2Body, const GravityScale>("physics::gscale").event(flecs::OnSet).each([](const B2Body& b, const GravityScale& g) -> void {
+        if (b2Body_IsValid(b.id)) {
+            b2Body_SetGravityScale(b.id, g.value);
+        }
+    });
+    world.observer<const PhysicsConfig>("physics::gravity").event(flecs::OnSet).each([](flecs::entity e, const PhysicsConfig& cfg) -> void {
+        if (auto* eng = e.world().try_get_mut<PhysicsEngine>(); eng != nullptr && b2World_IsValid(eng->world_id)) {
+            b2World_SetGravity(eng->world_id, {.x = cfg.gravity.x, .y = cfg.gravity.y});
+        }
+    });
 }
 
 void Physics::init(flecs::iter& it, size_t i, const Position& pos, const Rotation& rot) {
@@ -115,6 +126,9 @@ void Physics::init(flecs::iter& it, size_t i, const Position& pos, const Rotatio
     }
     if (const auto* v = e.try_get<DampingAngular>()) {
         def.angularDamping = v->value;
+    }
+    if (const auto* v = e.try_get<GravityScale>()) {
+        def.gravityScale = v->value;
     }
 
     b2BodyId body = b2CreateBody(eng.world_id, &def);

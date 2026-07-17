@@ -19,7 +19,7 @@
 #include "audio/audio.h"
 #include "input/input.h"
 #include "interface/interface.h"
-#include "logic/logic.h"
+#include "sim/sim.h"
 #include "network/network.h"
 #include "network/query.h"
 #include "persist/persist.h"
@@ -92,7 +92,7 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
     world.import<Physics>();
     world.import<World>();
     world.import<Network>();
-    world.import<Logic>();
+    world.import<Sim>();
     world.import<Script>();
 
     if (!state->headless) {
@@ -104,7 +104,7 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
         world.import<NetworkQuery>();
     }
 
-    world.component<Decay>().member<float>("seconds");
+    world.component<Lifetime>().member<float>("seconds");
 
     if (cfg.role == NetworkRole::Server) {
         world.entity().set(RequestHost{.address = cfg.address, .port = cfg.port});

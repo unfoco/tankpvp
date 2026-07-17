@@ -75,7 +75,7 @@ static auto mirror(flecs::world& world, NetworkConnection& conn, uint64_t nid) -
     }
     flecs::entity e = world.entity().set<NetworkId>({nid});
     if (nid == conn.self) {
-        e.add<Local>().add<InputFlags>().set<Interpolation>({});
+        e.add<Local>().set<InputState>({}).set<Interpolation>({});
     } else {
         e.add<Remote>().set<Interpolation>({});
     }
@@ -86,7 +86,6 @@ static auto mirror(flecs::world& world, NetworkConnection& conn, uint64_t nid) -
 static void apply_components(flecs::world& world, const NetworkRegistry& reg, NetworkConnection& conn, flecs::entity e, const std::vector<MessageComponentData>& comps, uint64_t tick) {
     bool got_pos = false;
     bool got_rot = false;
-    bool is_bullet = false;
     glm::vec2 pos{0};
     float rot = 0;
     bool had_spawn = e.has<Spawn>();
@@ -110,16 +109,8 @@ static void apply_components(flecs::world& world, const NetworkRegistry& reg, Ne
             rot = t.angle;
             got_rot = true;
         } else {
-            if (c->name == "Bullet") {
-                is_bullet = true;
-            }
             NetworkRegistry::read(world, e, *c, cr);
         }
-    }
-
-    glm::vec2 bvel{0};
-    if (is_bullet && e.is_alive() && e.has<Bullet>()) {
-        bvel = math::heading(rot) * e.get<Bullet>().speed;
     }
 
     bool teleported = had_spawn && e.is_alive() && e.has<Spawn>() && e.get<Spawn>().epoch != old_epoch;
@@ -130,7 +121,25 @@ static void apply_components(flecs::world& world, const NetworkRegistry& reg, Ne
         }
     }
 
-    if (e.is_alive() && (got_pos || got_rot)) {
+    if (e.is_alive() && e.has<Projectile>()) {
+        if (e.has<Interpolation>()) {
+            e.remove<Interpolation>();
+        }
+        if (got_pos) {
+            if (e.has<Position>()) {
+                e.get_mut<Position>().value = pos;
+            } else {
+                e.set<Position>({pos});
+            }
+        }
+        float a = got_rot ? rot : (e.has<Rotation>() ? e.get<Rotation>().angle : 0.0F);
+        if (e.has<Rotation>()) {
+            e.get_mut<Rotation>().angle = a;
+        } else {
+            e.set<Rotation>({a});
+        }
+        e.set<VelocityLinear>({math::heading(a) * e.get<Projectile>().speed});
+    } else if (e.is_alive() && (got_pos || got_rot)) {
         bool has_interp = e.has<Interpolation>();
         bool ready = has_interp && e.get<Interpolation>().ready;
         if (got_pos || ready) {
@@ -152,8 +161,19 @@ static void apply_components(flecs::world& world, const NetworkRegistry& reg, Ne
             }
         }
     }
-    if (is_bullet && e.is_alive()) {
-        e.set<VelocityLinear>({bvel});
+
+    if (e.is_alive() && conn.peer_id != 0 && !e.has<Local>() && e.has<Controller>() && e.has<Owner>() && e.get<Owner>().peer == conn.peer_id) {
+        if (e.has<Remote>()) {
+            e.remove<Remote>();
+        }
+        e.add<Local>().set<InputState>({});
+        if (!e.has<Interpolation>()) {
+            e.set<Interpolation>({});
+        }
+        if (e.has<NetworkId>()) {
+            conn.self = e.get<NetworkId>().value;
+        }
+        SDL_Log("network: claimed avatar nid=%llu as local (peer %u)", static_cast<unsigned long long>(conn.self), conn.peer_id);
     }
 }
 
@@ -175,7 +195,7 @@ static void apply_welcome(flecs::world& world, NetworkConnection& conn, serializ
         SDL_Log("network: server tickrate %u != client %d — timing will desync (only %d Hz supported)", msg.tickrate, static_cast<int>(std::lround(1.0 / TICK_DT)), static_cast<int>(std::lround(1.0 / TICK_DT)));
     }
     conn.peer_id = msg.peer_id;
-    conn.self = msg.controlled_entity;
+    conn.self = 0;
     conn.registry_version = msg.registry_version;
     uint64_t tick = msg.tick;
 
@@ -201,17 +221,6 @@ static void apply_welcome(flecs::world& world, NetworkConnection& conn, serializ
     wire::send(conn.server, w, CHANNEL_RELIABLE, true);
 
     SDL_Log("network: welcome peer=%u self=%llu components=%zu", conn.peer_id, static_cast<unsigned long long>(conn.self), world.get<NetworkRegistry>().components.size());
-}
-
-static auto peek_is_bullet(const NetworkRegistry& reg, NetworkConnection& conn, const std::vector<MessageComponentData>& comps) -> bool {
-    for (const auto& cb : comps) {
-        auto rit = conn.remap.find(cb.server_id);
-        const NetworkRegistry::Component* c = (rit != conn.remap.end()) ? reg.find(rit->second) : nullptr;
-        if ((c != nullptr) && c->name == "Bullet") {
-            return true;
-        }
-    }
-    return false;
 }
 
 static void apply_snapshot(flecs::world& world, NetworkConnection& conn, serialize::Reader& r, std::span<const uint8_t> raw) {
@@ -284,13 +293,9 @@ static void apply_structural(flecs::world& world, NetworkConnection& conn, seria
 
     for (const auto& sp : s.spawns) {
         uint64_t nid = sp.network_id;
-        bool fresh = !conn.entities.contains(nid);
-        bool newBullet = fresh && peek_is_bullet(reg, conn, sp.components);
+
         flecs::entity e = mirror(world, conn, nid);
         apply_components(world, reg, conn, e, sp.components, tick);
-        if (newBullet && e.is_alive()) {
-            e.add<Latent>();
-        }
         auto& dq = conn.despawn_queue;
         std::erase_if(dq, [&](const auto& d) -> auto { return d.first == nid; });
     }
