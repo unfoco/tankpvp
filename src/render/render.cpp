@@ -28,6 +28,17 @@ Render::Render(flecs::world& world) {
     auto transition = world.entity("render::transition_phase").add<Rendering>().depends_on(ui);
     auto present = world.entity("render::present_phase").add<Rendering>().depends_on(transition);
 
+    world.system<const Position>("render::capture").kind(flecs::OnLoad).each([](flecs::entity e, const Position& p) -> void {
+        const auto* r = e.try_get<Rotation>();
+        float angle = r != nullptr ? r->angle : 0.0F;
+        if (auto* prev = e.try_get_mut<PrevPose>()) {
+            prev->position = p.value;
+            prev->angle = angle;
+        } else {
+            e.set<PrevPose>({.position = p.value, .angle = angle});
+        }
+    });
+
     world.system("render::begin").kind(begin).immediate().run(Render::begin);
     world.system<RenderState, const Position>("render::camera").kind(camera).with<Local>().each(Render::camera);
     world.system("render::collect").kind(collect).immediate().run(Render::collect);

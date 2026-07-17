@@ -92,7 +92,7 @@ void send_snapshot(flecs::world& world, const NetworkRegistry& reg, NetworkHost&
 
     MessageSnapshot snap;
     snap.tick = host.tick;
-    snap.acknowledged_tick = peer.simulated;
+    snap.acknowledged_tick = peer.consumed;
     snap.input_buffer = peer.buffer;
     snap.send_time = peer.stamp;
     snap.registry_version = reg.version;

@@ -1,5 +1,6 @@
 #include "world.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <utility>
@@ -78,17 +79,45 @@ void World::ballistics(flecs::iter& it) {
     bool authoritative = (cfg == nullptr) || cfg->role != NetworkRole::Client;
     float dt = it.delta_time();
     std::vector<flecs::entity> dead;
+    const auto* clock = world.try_get<RenderClock>();
     world.query_builder<Position, Rotation, VelocityLinear>().with<Projectile>().without<Predicted>().build().each([&](flecs::entity e, Position& pos, Rotation& rot, VelocityLinear& vel) -> void {
-        const TileType* hit = nullptr;
-        glm::vec2 hit_at{};
-        ballistics::Step r = ballistics::step(*grid, *tileset, pos.value, vel.value, dt, hit, hit_at);
-        if (hit != nullptr && hit->hp > 0 && authoritative) {
-            world.entity().set(RequestDamageTile{.tx = static_cast<int32_t>(std::floor(hit_at.x / TILE_SIZE)), .ty = static_cast<int32_t>(std::floor(hit_at.y / TILE_SIZE)), .amount = 25});
+        auto advance = [&](float step_dt) -> ballistics::Step {
+            const TileType* hit = nullptr;
+            glm::vec2 hit_at{};
+            ballistics::Step r = ballistics::step(*grid, *tileset, pos.value, vel.value, step_dt, hit, hit_at);
+            if (hit != nullptr && hit->hp > 0 && authoritative) {
+                world.entity().set(RequestDamageTile{.tx = static_cast<int32_t>(std::floor(hit_at.x / TILE_SIZE)), .ty = static_cast<int32_t>(std::floor(hit_at.y / TILE_SIZE)), .amount = 25});
+            }
+            if (r == ballistics::Step::Bounce) {
+                rot.angle = std::atan2(vel.value.y, vel.value.x);
+            }
+            return r;
+        };
+        if (auto* trace = e.try_get_mut<Trace>()) {
+            if (clock == nullptr || !clock->valid) {
+                return;
+            }
+            if (clock->now <= trace->cursor) {
+                return;
+            }
+            double remaining = std::min(clock->now - trace->cursor, 16.0);
+            trace->cursor = clock->now;
+            while (remaining > 1e-6) {
+                double slice = std::min(remaining, 1.0);
+                remaining -= slice;
+                ballistics::Step step_result = advance(static_cast<float>(slice * RenderClock::PERIOD));
+                if (step_result == ballistics::Step::Absorb) {
+                    dead.push_back(e);
+                    return;
+                }
+                if (step_result == ballistics::Step::Bounce) {
+                    trace->offset = {0, 0};
+                }
+            }
+            return;
         }
-        if (r == ballistics::Step::Absorb) {
+        if (advance(dt) == ballistics::Step::Absorb) {
             dead.push_back(e);
-        } else if (r == ballistics::Step::Bounce) {
-            rot.angle = std::atan2(vel.value.y, vel.value.x);
         }
     });
     for (auto e : dead) {

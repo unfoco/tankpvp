@@ -21,6 +21,15 @@ struct Decoration {};
 
 struct Hidden {};
 
+struct PrevPose {
+    glm::vec2 position{0};
+    float angle = 0;
+};
+
+struct FrameMix {
+    float alpha = 1.0F;
+};
+
 enum class BlendMode : uint8_t {
     Normal = 0,
     Add = 1,

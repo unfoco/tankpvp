@@ -22,6 +22,8 @@ struct NetworkConfig {
 
 struct Frozen {};
 
+struct NetworkDiagnose {};
+
 struct SimulationClock {
     double scale = 1.0;
 };
@@ -116,6 +118,23 @@ struct ViewLag {
 };
 
 struct Teleported {};
+
+struct RenderClock {
+    static constexpr double PERIOD = 1.0 / 60.0;
+    double tick = 0;
+    double now = 0;
+    bool valid = false;
+};
+
+struct Trace {
+    double cursor = 0;
+    glm::vec2 offset{0};
+};
+
+struct Flight {
+    glm::vec2 last{0};
+    bool armed = false;
+};
 
 struct Dying {
     uint64_t revive = 0;

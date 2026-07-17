@@ -305,7 +305,7 @@ struct Viewport {
 
 struct Quality {
     float internal_scale = 1.0F;
-    float light_scale = 1.0F;
+    float light_scale = 0.5F;
     uint32_t particle_cap = PARTICLE_CAP;
     uint32_t max_lights = 256;
     uint32_t max_shadow_lights = 32;
@@ -370,6 +370,18 @@ struct RenderState {
     SDL_Window* window = nullptr;
     float dpi = 1.0F;
     bool vsync = true;
+
+    struct Diagnostics {
+        double last_log = 0;
+        double prev_wall = 0;
+        int frames = 0;
+        float max_dt = 0;
+        float step_max = 0;
+        float step_sum = 0;
+        glm::vec2 prev_self{0};
+        bool has_prev = false;
+    };
+    Diagnostics diagnostics;
 
     wgpu::raii::Instance instance;
     wgpu::raii::Surface surface;

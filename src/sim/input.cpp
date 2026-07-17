@@ -36,6 +36,14 @@ void Sim::input(flecs::iter& it, size_t i, const InputState& in, const Position&
         controller::differential(in, rot.angle, ds, vel.value, ang.value);
     }
 
+}
+
+void Sim::fire(flecs::iter& it, size_t i, const InputState& in, const Position& pos, const Rotation& rot) {
+    if (is_client(it.world())) {
+        return;
+    }
+    flecs::entity body = it.entity(i);
+
     auto* ammo = body.try_get_mut<Ammo>();
     bool out_of_ammo = ammo != nullptr && (ammo->reloading > 0.0F || ammo->mag == 0);
 
@@ -51,6 +59,19 @@ void Sim::input(flecs::iter& it, size_t i, const InputState& in, const Position&
         ProjectileWeapon weapon = ws ? *ws : ProjectileWeapon{};
         float aim = rot.angle;
         glm::vec2 muzzle = pos.value + weapon.muzzle * math::heading(aim);
+        const auto* grid = it.world().try_get<WorldGrid>();
+        const auto* tileset = it.world().try_get<Tileset>();
+        if (grid != nullptr && tileset != nullptr) {
+            glm::vec2 clear = pos.value;
+            for (int k = 1; k <= 8; ++k) {
+                glm::vec2 pt = glm::mix(pos.value, muzzle, static_cast<float>(k) / 8.0F);
+                if (ballistics::solid(ballistics::tile_at(*grid, *tileset, pt.x, pt.y))) {
+                    break;
+                }
+                clear = pt;
+            }
+            muzzle = clear;
+        }
         if (const auto* f = body.try_get<Firing>()) {
             prediction = f->prediction;
             view = f->view;

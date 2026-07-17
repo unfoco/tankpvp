@@ -13,6 +13,7 @@
 #include "component/network.h"
 #include "component/object.h"
 #include "component/physics.h"
+#include "component/render.h"
 #include "component/settings.h"
 
 #include "asset/asset.h"
@@ -35,7 +36,7 @@ struct State {
     uint64_t last_ticks = 0;
 };
 
-static auto parse_args(int argc, char** argv, bool& headless) -> NetworkConfig {
+static auto parse_args(int argc, char** argv, bool& headless, bool& netgraph) -> NetworkConfig {
     NetworkConfig cfg;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -43,6 +44,8 @@ static auto parse_args(int argc, char** argv, bool& headless) -> NetworkConfig {
             cfg.role = NetworkRole::Server;
         } else if (arg == "--headless") {
             headless = true;
+        } else if (arg == "--netgraph") {
+            netgraph = true;
         } else if (arg == "--connect" && i + 1 < argc) {
             cfg.role = NetworkRole::Client;
             std::string target = argv[++i];
@@ -84,9 +87,13 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
 
     world.set<PhysicsConfig>({.gravity = {0.0F, 0.0F}});
 
-    auto cfg = parse_args(argc, argv, state->headless);
+    bool netgraph = false;
+    auto cfg = parse_args(argc, argv, state->headless, netgraph);
     world.set<NetworkConfig>(cfg);
     world.set<SimulationClock>({});
+    if (netgraph) {
+        world.add<NetworkDiagnose>();
+    }
 
     world.import<Asset>();
     world.import<Physics>();
@@ -151,21 +158,27 @@ auto SDL_AppIterate(void* appstate) -> SDL_AppResult {
     double frame = static_cast<double>(now - state->last_ticks) / 1000.0;
     state->last_ticks = now;
 
+    double step = TICK_DT;
+    if (const auto* clock = world.try_get<SimulationClock>()) {
+        step = TICK_DT / std::clamp(clock->scale, 0.9, 1.1);
+    }
+
     if (frame > 0.35) {
-        state->accumulator = TICK_DT;
+        state->accumulator = step;
     } else {
         state->accumulator = std::min(state->accumulator + frame, 0.1);
     }
 
-    int ticks = static_cast<int>(state->accumulator / static_cast<double>(TICK_DT));
+    int ticks = static_cast<int>(state->accumulator / step);
     for (int i = 0; i < ticks; ++i) {
         tick_once();
-        state->accumulator -= TICK_DT;
+        state->accumulator -= step;
     }
 
     if (state->headless) {
         SDL_Delay(1);
     } else {
+        world.set<FrameMix>({.alpha = static_cast<float>(std::clamp(state->accumulator / step, 0.0, 1.0))});
         world.run_pipeline(world.get<RenderPipeline>().value);
     }
 

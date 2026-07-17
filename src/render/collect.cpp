@@ -6,6 +6,8 @@
 #include "component/network.h"
 #include "component/world.h"
 #include "util/ballistics.h"
+#include "util/math.h"
+#include "util/time.h"
 
 namespace {
 
@@ -64,6 +66,14 @@ void Render::camera(flecs::iter& it, size_t i, RenderState& render, const Positi
     auto* cam = self.try_get_mut<Camera>();
 
     glm::vec2 focus = pos.value;
+    if (const auto* prev = self.try_get<PrevPose>()) {
+        if (const auto* fm = it.world().try_get<FrameMix>()) {
+            glm::vec2 d = focus - prev->position;
+            if (glm::dot(d, d) < 24.0F * 24.0F) {
+                focus = glm::mix(prev->position, focus, std::clamp(fm->alpha, 0.0F, 1.0F));
+            }
+        }
+    }
     float zoom = base_zoom;
     float rotation = 0.0F;
     glm::vec2 offset{0};
@@ -181,6 +191,25 @@ void Render::collect(flecs::iter& it) {
         r.params.dt = dt;
         r.time += dt;
 
+        auto& dg = r.diagnostics;
+        ++dg.frames;
+        double wall = util::now();
+        if (dg.prev_wall > 0) {
+            dg.max_dt = std::max(dg.max_dt, static_cast<float>(wall - dg.prev_wall));
+        }
+        dg.prev_wall = wall;
+        if (dg.last_log == 0 || !world.has<NetworkDiagnose>()) {
+            dg.last_log = wall;
+        } else if (wall - dg.last_log >= 2.0) {
+            float avg = dg.frames > 1 ? dg.step_sum / static_cast<float>(dg.frames - 1) : 0.0F;
+            SDL_Log("rendergraph: fps=%.1f frame_max=%.1fms self_step_max=%.2f self_step_avg=%.2f",
+                    static_cast<double>(dg.frames) / (wall - dg.last_log), dg.max_dt * 1000.0F, dg.step_max, avg);
+            double keep = dg.prev_wall;
+            dg = {};
+            dg.last_log = wall;
+            dg.prev_wall = keep;
+        }
+
         const RenderQueries& q = r.queries;
 
         int ww = 0;
@@ -190,11 +219,27 @@ void Render::collect(flecs::iter& it) {
         auto& by_nid = scratch.by_nid;
         q.nids.each([&](flecs::entity e, const NetworkId& id) -> void { by_nid[id.value] = e.id(); });
 
+        float mix_alpha = 1.0F;
+        if (const auto* fm = world.try_get<FrameMix>()) {
+            mix_alpha = std::clamp(fm->alpha, 0.0F, 1.0F);
+        }
+        auto sample = [&](flecs::entity e, const Position* p, const Rotation* rr, glm::vec2& pos, float& rot) -> void {
+            pos = p != nullptr ? p->value : glm::vec2{0};
+            rot = rr != nullptr ? rr->angle : 0.0F;
+            const auto* prev = e.try_get<PrevPose>();
+            if (prev != nullptr && mix_alpha < 1.0F) {
+                glm::vec2 d = pos - prev->position;
+                if (glm::dot(d, d) < 24.0F * 24.0F) {
+                    pos = glm::mix(prev->position, pos, mix_alpha);
+                    rot = prev->angle + (math::angle_difference(rot, prev->angle) * mix_alpha);
+                }
+            }
+        };
+
         auto transform_of = [&](flecs::entity e, glm::vec2& pos, float& rot, flecs::entity& out_parent) -> bool {
             const auto* p = e.try_get<Position>();
             const auto* rr = e.try_get<Rotation>();
-            pos = p != nullptr ? p->value : glm::vec2{0};
-            rot = rr != nullptr ? rr->angle : 0.0F;
+            sample(e, p, rr, pos, rot);
             bool attached = false;
             if (const auto* attach = e.try_get<Attach>()) {
                 flecs::entity parent;
@@ -211,8 +256,9 @@ void Render::collect(flecs::iter& it) {
                     attached = true;
                     const auto* pp = parent.try_get<Position>();
                     const auto* pr = parent.try_get<Rotation>();
-                    glm::vec2 base = pp != nullptr ? pp->value : glm::vec2{0};
-                    float prot = pr != nullptr ? pr->angle : 0.0F;
+                    glm::vec2 base{0};
+                    float prot = 0.0F;
+                    sample(parent, pp, pr, base, prot);
                     float c = std::cos(prot);
                     float s = std::sin(prot);
                     pos = base + glm::vec2{(attach->offset.x * c) - (attach->offset.y * s), (attach->offset.x * s) + (attach->offset.y * c)};
@@ -249,6 +295,19 @@ void Render::collect(flecs::iter& it) {
             flecs::entity attach_parent;
             if (!transform_of(e, pos, rot, attach_parent)) {
                 return;
+            }
+            if (const auto* trace = e.try_get<Trace>()) {
+                pos += trace->offset;
+            }
+            if (e.has<Local>()) {
+                auto& dg2 = r.diagnostics;
+                if (dg2.has_prev) {
+                    float step = glm::distance(pos, dg2.prev_self);
+                    dg2.step_max = std::max(dg2.step_max, step);
+                    dg2.step_sum += step;
+                }
+                dg2.prev_self = pos;
+                dg2.has_prev = true;
             }
             if (attach_parent && (attach_parent.has<Dying>() || attach_parent.has<Hidden>())) {
                 return;

@@ -34,7 +34,7 @@ struct ClientQueries {
     flecs::query<InputState, Position, Rotation, Interpolation> local_body;
     flecs::query<Position, Rotation, VelocityLinear, Predicted> ghosts;
     flecs::query<const NetworkId, const Position, const Rotation, const CollisionBox> enemies;
-    flecs::query<const Position, const Predicted> pred_bullets;
+    flecs::query<const Position, const VelocityLinear, const Predicted> pred_bullets;
     flecs::query<const NetworkId, Position, Rotation> smooth;
     flecs::query<const Gravity> gravity;
 };
@@ -154,13 +154,13 @@ void prediction_smooth(const flecs::query<const NetworkId, Position, Rotation>& 
             o->vang = ta;
             o->vinit = true;
             e.remove<Teleported>();
-        } else if (!present && glm::length(o->vpos - tp) < 0.5F) {
-            o->vpos = tp;
-            o->vang = ta;
-        } else {
+        } else if (present) {
             constexpr float k = 0.30F;
             o->vpos += (tp - o->vpos) * k;
             o->vang += math::angle_difference(ta, o->vang) * k;
+        } else {
+            o->vpos = tp;
+            o->vang = ta;
         }
         p.value = o->vpos;
         r.angle = o->vang;
@@ -240,13 +240,20 @@ void prediction_hit(const ClientQueries& q, NetworkConnection& conn, glm::vec2 s
     }
 
     std::vector<flecs::entity> impacted;
-    q.pred_bullets.each([&](flecs::entity b, const Position& p, const Predicted& pred) -> void {
+    q.pred_bullets.each([&](flecs::entity b, const Position& p, const VelocityLinear& v, const Predicted& pred) -> void {
         bool pointblank = have_self && glm::distance(p.value, self_pos) < 80.0F;
+        glm::vec2 prev = p.value - (v.value * TICK_DT);
         const Enemy* best = nullptr;
         float bestd2 = 1e30F;
         for (const auto& e : enemies) {
+            if (e.nid == conn.self) {
+                continue;
+            }
             bool hit = math::point_in_box(p.value, e.pos, e.angle, e.hw, e.hh);
-            if (!hit && pointblank && e.nid != conn.self) {
+            for (int k = 1; k <= 4 && !hit; ++k) {
+                hit = math::point_in_box(glm::mix(prev, p.value, static_cast<float>(k) / 4.0F), e.pos, e.angle, e.hw, e.hh);
+            }
+            if (!hit && pointblank) {
                 for (int k = 0; k <= 4 && !hit; ++k) {
                     hit = math::point_in_box(glm::mix(self_pos, p.value, static_cast<float>(k) / 4.0F), e.pos, e.angle, e.hw, e.hh);
                 }
@@ -330,7 +337,7 @@ NetworkClient::NetworkClient(flecs::world& world) {
         .local_body = world.query_builder<InputState, Position, Rotation, Interpolation>().with<Local>().build(),
         .ghosts = world.query_builder<Position, Rotation, VelocityLinear, Predicted>().build(),
         .enemies = world.query_builder<const NetworkId, const Position, const Rotation, const CollisionBox>().with<Controller>().without<Dying>().build(),
-        .pred_bullets = world.query_builder<const Position, const Predicted>().with<Projectile>().build(),
+        .pred_bullets = world.query_builder<const Position, const VelocityLinear, const Predicted>().with<Projectile>().build(),
         .smooth = world.query_builder<const NetworkId, Position, Rotation>().with<Controller>().with<Remote>().build(),
         .gravity = world.query_builder<const Gravity>().build(),
     });
@@ -434,6 +441,7 @@ void NetworkClient::interpolate(flecs::iter& it) {
             conn.playback += (server_time - conn.playback) * 0.1;
         }
         double render = conn.playback - conn.delay;
+        world.set<RenderClock>({.tick = render, .now = conn.playback, .valid = conn.newest != 0U});
 
         auto& dq = conn.despawn_queue;
         for (auto it = dq.begin(); it != dq.end();) {
@@ -454,6 +462,53 @@ void NetworkClient::interpolate(flecs::iter& it) {
 
         world.get<ClientQueries>().interp.each([&](flecs::entity e, Interpolation& in, Position& pos, Rotation& rot) -> void {
             if (!in.ready) {
+                return;
+            }
+            if (e.has<Controller>() && in.count >= 2) {
+                const Sample& newest = in.at(in.count - 1);
+                const Sample& older = in.at(in.count - 2);
+                double span = newest.tick - older.tick;
+                glm::vec2 vel{0};
+                if (const auto* vl = e.try_get<VelocityLinear>()) {
+                    vel = vl->value;
+                } else if (span > 1e-9) {
+                    vel = (newest.position - older.position) / static_cast<float>(span * TICK_DT);
+                }
+                float avel = span > 1e-9 ? math::angle_difference(newest.angle, older.angle) / static_cast<float>(span * TICK_DT) : 0.0F;
+                double ahead = std::clamp(conn.playback - newest.tick, 0.0, 4.0);
+                glm::vec2 target = newest.position + (vel * static_cast<float>(ahead * TICK_DT));
+                float target_angle = newest.angle + (avel * static_cast<float>(ahead * TICK_DT));
+
+                if (e.has<Teleported>()) {
+                    in.vis_error = {0, 0};
+                    in.vis_error_angle = 0;
+                    in.has_predicted_prev = false;
+                }
+                if (in.has_predicted_prev) {
+                    glm::vec2 expected = in.predicted_prev + (vel * TICK_DT);
+                    glm::vec2 jump = target - expected;
+                    float jump_angle = math::angle_difference(target_angle, in.predicted_prev_angle + (avel * TICK_DT));
+                    if (glm::length(jump) < 48.0F) {
+                        in.vis_error -= jump;
+                        in.vis_error_angle -= jump_angle;
+                    } else {
+                        in.vis_error = {0, 0};
+                        in.vis_error_angle = 0;
+                    }
+                }
+                in.predicted_prev = target;
+                in.predicted_prev_angle = target_angle;
+                in.has_predicted_prev = true;
+
+                float decay = std::exp(-TICK_DT / 0.08F);
+                in.vis_error *= decay;
+                in.vis_error_angle *= decay;
+                if (std::fabs(in.vis_error_angle) > 0.6F) {
+                    in.vis_error_angle = 0;
+                }
+
+                pos.value = target + in.vis_error;
+                rot.angle = target_angle + in.vis_error_angle;
                 return;
             }
             const Sample* lo = nullptr;
@@ -500,11 +555,25 @@ void NetworkClient::predict(flecs::iter& it) {
         double server_now = (conn.newest != 0U) ? static_cast<double>(conn.newest) + elapsed : 0.0;
         double rtt_ticks = std::min(conn.rtt, 1.0) / TICK_DT;
         conn.buffer_avg += (static_cast<double>(conn.buffer) - conn.buffer_avg) * 0.05;
-        double lead = std::clamp(BUFFER_TARGET - conn.buffer_avg, -2.0, 3.0);
-        uint64_t ctarget = static_cast<uint64_t>(server_now + rtt_ticks + BUFFER_TARGET + lead);
-        if ((conn.newest != 0U) && (conn.client_tick + 8 < ctarget || conn.client_tick > ctarget + 8)) {
-            conn.client_tick = ctarget;
+        double pace_gap = (conn.newest != 0U) ? ((server_now + rtt_ticks + BUFFER_TARGET + conn.lead) - static_cast<double>(conn.client_tick)) : 0.0;
+        if (std::abs(pace_gap) < 4.0) {
+            conn.lead = std::clamp(conn.lead + ((BUFFER_TARGET - conn.buffer_avg) * 0.02), -6.0, 4.0);
+        }
+        double ctarget_f = server_now + rtt_ticks + BUFFER_TARGET + conn.lead;
+        uint64_t ctarget = static_cast<uint64_t>(ctarget_f);
+        bool generate = true;
+        if (conn.newest != 0U && conn.client_tick + 8 < ctarget) {
+            uint64_t floor_tick = conn.commands.empty() ? ctarget : conn.commands.back().tick + 1;
+            conn.client_tick = std::max(ctarget, floor_tick);
             conn.last_fire = std::min(conn.last_fire, conn.client_tick);
+            ++conn.diagnostics.resyncs;
+        } else if (conn.newest != 0U && conn.client_tick > ctarget + 8) {
+            generate = false;
+            ++conn.diagnostics.stall_ticks;
+        }
+        if (conn.newest != 0U) {
+            double pace_error = ctarget_f - static_cast<double>(conn.client_tick);
+            world.set<SimulationClock>({.scale = 1.0 + std::clamp(pace_error * 0.01, -0.02, 0.02)});
         }
 
         {
@@ -576,19 +645,18 @@ void NetworkClient::predict(flecs::iter& it) {
                 return v;
             };
 
-            bool wants_fire = in_live.down(button::Primary) || conn.fire_pending;
-            bool advance = !conn.newest || conn.client_tick < ctarget;
-            if (wants_fire && !advance) {
+            double now_time = util::now();
+            if (in_live.down(button::Primary)) {
                 conn.fire_pending = true;
+                conn.fire_pending_at = now_time;
             }
+            bool wants_fire = conn.fire_pending && (now_time - conn.fire_pending_at) < 0.08;
             bool cooled = !conn.newest || conn.client_tick >= conn.last_fire + cooldown;
             const auto* ammo = self.try_get<Ammo>();
             bool has_ammo = ammo == nullptr || (ammo->mag > 0 && ammo->reloading <= 0.0F);
-            bool fire = advance && wants_fire && cooled && has_ammo;
-            if (advance && wants_fire) {
-                conn.fire_pending = false;
-            }
+            bool fire = generate && wants_fire && cooled && has_ammo;
             if (fire) {
+                conn.fire_pending = false;
                 conn.last_fire = conn.client_tick;
             }
 
@@ -601,12 +669,17 @@ void NetworkClient::predict(flecs::iter& it) {
                 pressed |= button::Primary;
             }
             uint32_t prediction = fire ? ++conn.predictions : 0;
-            if (advance) {
-                uint64_t target = conn.client_tick++;
+            if (fire) {
+                ++conn.diagnostics.fires;
+            }
+            int made = 0;
+            if (generate) {
                 double rtt_half = (std::min(conn.rtt, 1.0) / TICK_DT) * 0.5;
-                uint32_t view = static_cast<uint32_t>(std::max<long long>(0, std::llround(rtt_half + conn.delay)));
+                uint32_t view = static_cast<uint32_t>(std::max<long long>(0, std::llround(rtt_half + BUFFER_TARGET + conn.lead)));
                 view = std::min(view, VIEW_MAX);
+                uint64_t target = conn.client_tick++;
                 conn.commands.push_back({.tick = target, .move = move, .buttons = buttons, .pressed = pressed, .prediction = prediction, .view = view, .sent = util::now(), .face = face});
+                made = 1;
                 while (conn.commands.size() > 256) {
                     conn.commands.erase(conn.commands.begin());
                 }
@@ -620,10 +693,14 @@ void NetworkClient::predict(flecs::iter& it) {
                 float a = now.angle;
 
                 if (interp.has_predicted_prev) {
-                    Prediction::Pose e = pred.run(
-                        interp.predicted_prev, interp.predicted_prev_angle, seed_vel, 1, TICK_DT,
-                        [&](int, float heading, glm::vec2 spos, glm::vec2 scur) -> Prediction::Velocity { return step_vel(move, face, spos, scur, heading); },
-                        false);
+                    Prediction::Pose e{.pos = interp.predicted_prev, .angle = interp.predicted_prev_angle};
+                    if (made > 0 && cmds.size() >= static_cast<size_t>(made)) {
+                        auto expected_velocity = [&](int s, float heading, glm::vec2 spos, glm::vec2 scur) -> Prediction::Velocity {
+                            const Command& c = cmds[cmds.size() - static_cast<size_t>(made) + static_cast<size_t>(s)];
+                            return step_vel(c.move, c.face, spos, scur, heading);
+                        };
+                        e = pred.run(interp.predicted_prev, interp.predicted_prev_angle, seed_vel, made, TICK_DT, expected_velocity, false);
+                    }
                     interp.vis_error += e.pos - p;
                     interp.vis_error_angle += math::angle_difference(e.angle, a);
                     if (glm::length(interp.vis_error) > 120.0F) {
@@ -640,6 +717,19 @@ void NetworkClient::predict(flecs::iter& it) {
                 float k = std::exp(-dt / 0.08F);
                 interp.vis_error *= k;
                 interp.vis_error_angle *= k;
+                conn.diagnostics.vis_error_peak = std::max(conn.diagnostics.vis_error_peak, glm::length(interp.vis_error));
+
+                auto& diag_pose = conn.diagnostics;
+                if (diag_pose.has_prev_pose) {
+                    float step = glm::distance(p, diag_pose.prev_pose);
+                    if (step < 64.0F) {
+                        diag_pose.pose_step_max = std::max(diag_pose.pose_step_max, step);
+                        diag_pose.pose_step_sum += step;
+                        ++diag_pose.pose_steps;
+                    }
+                }
+                diag_pose.prev_pose = p;
+                diag_pose.has_prev_pose = true;
 
                 pos.value = p + interp.vis_error;
                 rot.angle = a + interp.vis_error_angle;
@@ -654,6 +744,17 @@ void NetworkClient::predict(flecs::iter& it) {
             if (fire) {
                 glm::vec2 fwd = math::heading(rot.angle);
                 glm::vec2 muzzle = pos.value + weapon.muzzle * fwd;
+                if (grid != nullptr && tileset != nullptr) {
+                    glm::vec2 clear = pos.value;
+                    for (int k = 1; k <= 8; ++k) {
+                        glm::vec2 pt = glm::mix(pos.value, muzzle, static_cast<float>(k) / 8.0F);
+                        if (ballistics::solid(ballistics::tile_at(*grid, *tileset, pt.x, pt.y))) {
+                            break;
+                        }
+                        clear = pt;
+                    }
+                    muzzle = clear;
+                }
                 const auto* ps = self.try_get<ProjectileSprite>();
                 shots.push_back({.muzzle = muzzle, .angle = rot.angle, .speed = weapon.speed, .prediction = prediction, .life = weapon.life,
                                  .sprite = ps != nullptr ? ps->texture : 0, .sound = weapon.sound});
@@ -666,6 +767,19 @@ void NetworkClient::predict(flecs::iter& it) {
 
         ghosts_advance(world, q, shots, dt);
         prediction_hit(q, conn, self_pos, have_self);
+
+        double log_now = util::now();
+        auto& diag = conn.diagnostics;
+        if (diag.last_log == 0 || !world.has<NetworkDiagnose>()) {
+            diag.last_log = log_now;
+        } else if (log_now - diag.last_log >= 2.0) {
+            float pose_avg = diag.pose_steps > 0 ? diag.pose_step_sum / static_cast<float>(diag.pose_steps) : 0.0F;
+            SDL_Log("netgraph: rtt=%.1fms jitter=%.2f buffer=%.1f delay=%.1f commands=%zu resyncs=%u fires=%u error_peak=%.1f pose_step_max=%.2f pose_step_avg=%.2f",
+                    conn.rtt * 1000.0, conn.jitter, conn.buffer_avg, conn.delay, conn.commands.size(),
+                    diag.resyncs, diag.fires, diag.vis_error_peak, diag.pose_step_max, pose_avg);
+            diag = {};
+            diag.last_log = log_now;
+        }
     }
 }
 

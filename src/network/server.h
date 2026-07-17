@@ -50,6 +50,13 @@ struct Peer {
 
     std::unordered_set<int64_t> known_chunks;
     uint32_t grid_wipe = 0;
+
+    uint64_t diag_tick = 0;
+    double diag_pump_wall = 0;
+    double diag_gap_max = 0;
+    uint32_t diag_starved = 0;
+    uint32_t diag_drained = 0;
+    uint32_t diag_fires = 0;
 };
 
 struct Interest {

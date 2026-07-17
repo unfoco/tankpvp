@@ -11,7 +11,7 @@
 
 #include "component/network.h"
 
-constexpr double BUFFER_TARGET = 4.0;
+constexpr double BUFFER_TARGET = 2.5;
 
 struct Sample {
     glm::vec2 position{0};
@@ -88,12 +88,29 @@ struct NetworkConnection {
     uint64_t simulated = 0;
     uint32_t predictions = 0;
     bool fire_pending = false;
+    double fire_pending_at = 0;
     uint64_t last_fire = 0;
 
     uint32_t buffer = 0;
     double buffer_avg = 2.0;
+    double lead = 0;
     double rtt = 0;
     double last_stamp = 0;
+
+    struct Diagnostics {
+        double last_log = 0;
+        uint32_t stall_ticks = 0;
+        uint32_t double_ticks = 0;
+        uint32_t fires = 0;
+        uint32_t resyncs = 0;
+        float vis_error_peak = 0;
+        glm::vec2 prev_pose{0};
+        bool has_prev_pose = false;
+        float pose_step_max = 0;
+        float pose_step_sum = 0;
+        uint32_t pose_steps = 0;
+    };
+    Diagnostics diagnostics;
 };
 
 struct NetworkClient {

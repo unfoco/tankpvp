@@ -22,6 +22,7 @@
 #include "component/script.h"
 #include "component/world.h"
 #include "util/math.h"
+#include "util/time.h"
 
 #include "protocol.h"
 #include "registry.h"
@@ -351,6 +352,20 @@ NetworkServer::NetworkServer(flecs::world& world) {
         }
     });
 
+    world.system("network::server::freeze_static").interval(1.0).kind(flecs::OnUpdate).run([](flecs::iter& it) -> void {
+        flecs::world world = it.world();
+        if (!world.has<NetworkHost>()) {
+            return;
+        }
+        std::vector<flecs::entity> freeze;
+        world.query_builder().with<Replicated>().without<Frozen>().without<Controller>().without<Projectile>().without<VelocityLinear>().without<Owner>().build().each([&](flecs::entity e) -> void {
+            freeze.push_back(e);
+        });
+        for (auto e : freeze) {
+            e.add<Frozen>();
+        }
+    });
+
     world.system("network::server::interest").interval(0.25).kind(flecs::OnUpdate).run([](flecs::iter& it) -> void {
         flecs::world world = it.world();
         if (!world.has<NetworkHost>()) {
@@ -666,6 +681,9 @@ static void handle_packet(flecs::world& world, ENetPeer* epeer, ENetPacket* pack
             if (!r.valid()) {
                 break;
             }
+            if (in.send_time > p.stamp) {
+                p.stamp = in.send_time;
+            }
             for (const auto& c : in.commands) {
                 if (c.tick_delta > in.newest_tick) {
                     continue;
@@ -827,16 +845,30 @@ void NetworkServer::pump(flecs::iter& it) {
                     body.set<Firing>({.prediction = 0, .view = 0});
                 } else if (!p.inputs.empty()) {
                     p.primed = true;
-                    auto front = p.inputs.begin();
-                    const PendingInput& cmd = front->second;
-                    bool shoot = (cmd.pressed & button::Primary) != 0U;
                     const auto* ws = body.try_get<ProjectileWeapon>();
                     uint64_t cooldown = ws ? ws->cooldown : ProjectileWeapon{}.cooldown;
-                    if (shoot && host_tick < p.last_fire + cooldown) {
-                        shoot = false;
+                    size_t backlog = p.inputs.size();
+                    size_t take = backlog > CUSHION * 3 ? backlog - (CUSHION * 2) : 1;
+                    bool shoot = false;
+                    uint32_t shoot_prediction = 0;
+                    uint32_t shoot_view = 0;
+                    PendingInput cmd{};
+                    if (take > 1) {
+                        p.diag_drained += static_cast<uint32_t>(take - 1);
+                    }
+                    for (size_t k = 0; k < take; ++k) {
+                        auto front = p.inputs.begin();
+                        cmd = front->second;
+                        if ((cmd.pressed & button::Primary) != 0U && cmd.tick >= p.last_fire + cooldown) {
+                            shoot = true;
+                            shoot_prediction = cmd.prediction;
+                            shoot_view = cmd.view;
+                            p.last_fire = cmd.tick;
+                        }
+                        p.inputs.erase(front);
                     }
                     if (shoot) {
-                        p.last_fire = host_tick;
+                        ++p.diag_fires;
                     }
                     InputState in;
                     in.move = cmd.move;
@@ -848,14 +880,13 @@ void NetworkServer::pump(flecs::iter& it) {
                         in.pressed |= button::Primary;
                     }
                     body.set<InputState>(in);
-                    body.set<Firing>({.prediction = cmd.prediction, .view = cmd.view});
-                    body.set<ViewLag>({cmd.view});
+                    body.set<Firing>({.prediction = shoot_prediction, .view = shoot_view});
+                    body.set<ViewLag>({shoot ? shoot_view : cmd.view});
                     p.consumed = cmd.tick;
-                    p.stamp = cmd.sent;
                     p.starved = 0;
-                    p.inputs.erase(front);
                 } else {
                     ++p.starved;
+                    ++p.diag_starved;
                     InputState last = (p.starved <= 2 && body.has<InputState>()) ? body.get<InputState>() : InputState{};
                     last.buttons &= ~button::Primary;
                     last.pressed &= ~button::Primary;
@@ -865,6 +896,26 @@ void NetworkServer::pump(flecs::iter& it) {
             }
             p.simulated = host_tick;
             p.buffer = static_cast<uint32_t>(p.inputs.size());
+            double pump_wall = util::now();
+            if (p.diag_pump_wall > 0) {
+                p.diag_gap_max = std::max(p.diag_gap_max, pump_wall - p.diag_pump_wall);
+            }
+            p.diag_pump_wall = pump_wall;
+            if (p.diag_tick == 0 || !world.has<NetworkDiagnose>()) {
+                p.diag_tick = host_tick;
+                p.diag_starved = 0;
+                p.diag_drained = 0;
+                p.diag_fires = 0;
+                p.diag_gap_max = 0;
+            } else if (host_tick - p.diag_tick >= 120) {
+                SDL_Log("netgraph[server]: peer=%u buffer=%zu starved=%u drained=%u fires=%u tick_gap_max=%.1fms",
+                        p.id, p.inputs.size(), p.diag_starved, p.diag_drained, p.diag_fires, p.diag_gap_max * 1000.0);
+                p.diag_starved = 0;
+                p.diag_drained = 0;
+                p.diag_fires = 0;
+                p.diag_gap_max = 0;
+                p.diag_tick = host_tick;
+            }
         });
     }
 }
@@ -889,8 +940,11 @@ void NetworkServer::hits(flecs::iter& it) {
         };
         std::vector<Kill> kills;
 
+        std::vector<std::pair<flecs::entity, glm::vec2>> tracks;
         q.bullets.each([&](flecs::entity bullet, const Position& bp, const Owner& o) -> void {
             flecs::entity firer = bullet.parent();
+            auto* flight = bullet.try_get_mut<Flight>();
+            glm::vec2 prev = flight != nullptr ? flight->last : bp.value;
             uint32_t lag = 0;
             if (const auto* vl = bullet.try_get<ViewLag>()) {
                 lag = vl->ticks;
@@ -925,12 +979,18 @@ void NetworkServer::hits(flecs::iter& it) {
                 TransformSnapshot self_now;
                 const TransformSnapshot* s = nullptr;
                 if (is_self) {
-                    if (fpos == nullptr) {
+                    if (fpos == nullptr || flight == nullptr) {
                         return;
                     }
                     const auto* frot = firer.try_get<Rotation>();
                     self_now = {.tick = tick, .pos = fpos->value, .rot = (frot != nullptr) ? frot->angle : 0.0F};
                     s = &self_now;
+                    if (!flight->armed) {
+                        if (!in_obb(bp.value, s, box)) {
+                            flight->armed = true;
+                        }
+                        return;
+                    }
                 } else {
                     s = h.at(view);
                 }
@@ -938,6 +998,9 @@ void NetworkServer::hits(flecs::iter& it) {
                     return;
                 }
                 bool hit = in_obb(bp.value, s, box);
+                for (int k = 1; k <= 4 && !hit; ++k) {
+                    hit = in_obb(glm::mix(prev, bp.value, static_cast<float>(k) / 4.0F), s, box);
+                }
                 if (!hit && pointblank && fpos && !is_self) {
                     for (int k = 0; k <= 4 && !hit; ++k) {
                         hit = in_obb(glm::mix(fpos->value, bp.value, static_cast<float>(k) / 4.0F), s, box);
@@ -956,8 +1019,18 @@ void NetworkServer::hits(flecs::iter& it) {
                 dead_bullets.push_back(bullet);
                 kills.push_back({.victim = victim, .firer = firer, .point = bp.value});
             }
+            if (flight != nullptr) {
+                flight->last = bp.value;
+            } else {
+                tracks.emplace_back(bullet, bp.value);
+            }
         });
 
+        for (auto& [bullet, at] : tracks) {
+            if (bullet.is_alive()) {
+                bullet.set<Flight>({.last = at, .armed = false});
+            }
+        }
         for (auto e : dead_bullets) {
             if (e.is_alive()) {
                 e.destruct();

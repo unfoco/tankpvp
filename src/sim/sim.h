@@ -18,6 +18,7 @@ struct Sim {
 
    private:
     static void input(flecs::iter& it, size_t i, const InputState& in, const Position& pos, const Rotation& rot, VelocityLinear& vel, VelocityAngular& ang);
+    static void fire(flecs::iter& it, size_t i, const InputState& in, const Position& pos, const Rotation& rot);
     static void reload(flecs::iter& it, size_t i, Ammo& ammo);
     static void decay(flecs::entity e, Lifetime& decay);
     static void camera_decay(flecs::iter& it, size_t i, Camera& cam);

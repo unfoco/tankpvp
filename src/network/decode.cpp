@@ -125,20 +125,38 @@ static void apply_components(flecs::world& world, const NetworkRegistry& reg, Ne
         if (e.has<Interpolation>()) {
             e.remove<Interpolation>();
         }
-        if (got_pos) {
-            if (e.has<Position>()) {
-                e.get_mut<Position>().value = pos;
-            } else {
+        if (!e.has<Position>()) {
+            float a = got_rot ? rot : 0.0F;
+            if (got_pos) {
                 e.set<Position>({pos});
             }
-        }
-        float a = got_rot ? rot : (e.has<Rotation>() ? e.get<Rotation>().angle : 0.0F);
-        if (e.has<Rotation>()) {
-            e.get_mut<Rotation>().angle = a;
-        } else {
             e.set<Rotation>({a});
+            e.set<VelocityLinear>({math::heading(a) * e.get<Projectile>().speed});
+            glm::vec2 nozzle_offset{0};
+            if (got_pos && e.has<Owner>()) {
+                uint32_t shooter_peer = e.get<Owner>().peer;
+                world.query_builder<const Position, const Rotation, const Owner>().with<Controller>().build().each(
+                    [&](flecs::entity body, const Position& bp, const Rotation& br, const Owner& bo) -> void {
+                        if (bo.peer != shooter_peer || body == e) {
+                            return;
+                        }
+                        float reach = 20.0F;
+                        if (const auto* w = body.try_get<ProjectileWeapon>()) {
+                            reach = w->muzzle;
+                        }
+                        glm::vec2 muzzle = bp.value + reach * math::heading(br.angle);
+                        glm::vec2 d = muzzle - pos;
+                        if (glm::dot(d, d) < 200.0F * 200.0F) {
+                            nozzle_offset = d;
+                        }
+                    });
+            }
+            e.set<Trace>({.cursor = static_cast<double>(tick), .offset = nozzle_offset});
+            if (world.has<NetworkDiagnose>()) {
+                double server_now = conn.newest != 0 ? static_cast<double>(conn.newest) + ((util::now() - conn.newest_time) / TICK_DT) : 0.0;
+                SDL_Log("bulletgraph: age=%.1f ticks nozzle_offset=%.1f", server_now - static_cast<double>(tick), glm::length(nozzle_offset));
+            }
         }
-        e.set<VelocityLinear>({math::heading(a) * e.get<Projectile>().speed});
     } else if (e.is_alive() && (got_pos || got_rot)) {
         bool has_interp = e.has<Interpolation>();
         bool ready = has_interp && e.get<Interpolation>().ready;
@@ -252,7 +270,9 @@ static void apply_snapshot(flecs::world& world, NetworkConnection& conn, seriali
     if (conn.newest != 0 && tick > conn.newest) {
         double arrived = (t - conn.newest_time) / TICK_DT;
         auto expected = static_cast<double>(tick - conn.newest);
-        conn.jitter = (conn.jitter * 0.9) + (std::abs(arrived - expected) * 0.1);
+        double deviation = std::abs(arrived - expected);
+        deviation = deviation > 1.0 ? deviation - 1.0 : 0.0;
+        conn.jitter = (conn.jitter * 0.9) + (deviation * 0.1);
     }
     if (conn.newest != 0 && tick < conn.newest) {
         return;
@@ -261,7 +281,7 @@ static void apply_snapshot(flecs::world& world, NetworkConnection& conn, seriali
         conn.newest = tick;
         conn.newest_time = t;
     }
-    conn.delay = std::clamp(2.0 + (conn.jitter * 2.0) + 1.0, 3.0, 12.0);
+    conn.delay = std::clamp(1.5 + (conn.jitter * 2.0), 2.0, 12.0);
 
     conn.simulated = std::max(conn.simulated, ack);
     conn.buffer = buffer;
@@ -302,12 +322,18 @@ static void apply_structural(flecs::world& world, NetworkConnection& conn, seria
 
     for (uint64_t nid : s.despawns) {
         auto eit = conn.entities.find(nid);
-        if (eit != conn.entities.end()) {
-            conn.despawn_queue.emplace_back(nid, tick);
-            flecs::entity e = world.entity(eit->second);
-            if (e.is_alive() && e.has<Dying>()) {
-                e.set<Dying>({UINT64_MAX});
-            }
+        if (eit == conn.entities.end()) {
+            continue;
+        }
+        flecs::entity e = world.entity(eit->second);
+        if (e.is_alive() && e.has<Projectile>()) {
+            e.destruct();
+            conn.entities.erase(eit);
+            continue;
+        }
+        conn.despawn_queue.emplace_back(nid, tick);
+        if (e.is_alive() && e.has<Dying>()) {
+            e.set<Dying>({UINT64_MAX});
         }
     }
 }
