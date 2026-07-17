@@ -17,7 +17,7 @@ auto Interface::pause(flecs::iter& it, InterfaceState& state, InterfacePage& pag
                   .layoutDirection = CLAY_TOP_TO_BOTTOM,
               },
           .backgroundColor = {20, 20, 25, 128}}) {
-        CLAY_TEXT(Str("TANK GAME"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 64}));
+        CLAY_TEXT(Str("EMBRIK"), CLAY_TEXT_CONFIG({.textColor = {255, 255, 255, 255}, .fontSize = 64}));
 
         CLAY({.layout = {.sizing = {CLAY_SIZING_FIXED(0), CLAY_SIZING_FIXED(40)}}}) {}
 

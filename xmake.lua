@@ -5,7 +5,7 @@ add_requires("box2d", "clay", "enet", "glm", "libsdl3", "sdl3webgpu", "wgpu-nati
 add_requires("miniaudio", "stb", "glaze")
 add_requires("luau", "luabridge3")
 
-target("tankpvp")
+target("embrik")
     set_kind("binary")
     set_languages("c23", "c++23")
     set_rundir("$(projectdir)")
