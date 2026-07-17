@@ -6,10 +6,6 @@ One binary is the whole stack: client, listen-server, or headless dedicated serv
 
 ![Planting the bomb in CS-mode](asset/image/plant.png)
 
-## Why it exists
-
-Most 2D multiplayer projects hardcode one game and bolt networking on top. tankpvp inverts that: the engine owns the hard, generic problems (netcode, prediction, rendering, physics, asset delivery) and exposes them to scripts as data. A mod never touches a socket, never interpolates a position, and never worries about packet loss. It declares what exists; the engine makes it true on every screen.
-
 ## The netcode
 
 Built from scratch, tuned until two side-by-side clients match almost 1:1:
@@ -74,16 +70,6 @@ command.register("give", function(sender, target: Player, gun: string)
     M.give(target.body, gun)
 end)
 ```
-
-## CS-mode in screenshots
-
-Every capture shows engine line-of-sight vision: fog rendered by the lighting pass, casting shadows off tiles and occluders, so you only see what your tank sees.
-
-![Buy menu](asset/image/shop.png)
-**Buy menu.** A server-driven view sent to one player during buy time. Weapons, equipment, prices, and the economy are pure mod state.
-
-![Round win](asset/image/preview.png)
-**Round flow.** Round banners, timers, plant and defuse progress, and win logic all run from the mod's tick handler on the server; clients render what they are told.
 
 ## Build & run
 
