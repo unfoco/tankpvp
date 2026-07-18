@@ -5,14 +5,22 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SDK="${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}"
-# build-tools 34 dexer/signer require a Java 17-era JRE (Java 21+ breaks d8 internals)
-if [ -d /opt/homebrew/opt/openjdk@17 ]; then
-    export JAVA_HOME=/opt/homebrew/opt/openjdk@17
-    export PATH="$JAVA_HOME/bin:$PATH"
+SDK="${ANDROID_SDK_ROOT:-}"
+if [ -z "$SDK" ]; then
+    for candidate in "$HOME/Library/Android/sdk" "$HOME/Android/Sdk" "$HOME/android-sdk"; do
+        [ -d "$candidate" ] && SDK="$candidate" && break
+    done
 fi
-BT="$SDK/build-tools/34.0.0"
-PLATFORM="$SDK/platforms/android-34/android.jar"
+# The build-tools dexer/signer require a Java 17-era JRE (Java 21+ breaks d8 internals)
+if [ -z "${JAVA_HOME:-}" ]; then
+    for candidate in /opt/homebrew/opt/openjdk@17 /usr/lib/jvm/java-17-openjdk* /usr/lib/jvm/temurin-17*; do
+        [ -d "$candidate" ] && export JAVA_HOME="$candidate" && break
+    done
+fi
+[ -n "${JAVA_HOME:-}" ] && export PATH="$JAVA_HOME/bin:$PATH"
+BT="$SDK/build-tools/$(ls "$SDK/build-tools" | sort -V | tail -1)"
+PLATFORM="$SDK/platforms/$(ls "$SDK/platforms" | sort -V | tail -1)/android.jar"
+[ -f "$PLATFORM" ] || { echo "Android SDK not found at $SDK (set ANDROID_SDK_ROOT)"; exit 1; }
 OUT="$ROOT/build/apk"
 SO="$ROOT/build/android/arm64-v8a/release/libmain.so"
 
@@ -26,7 +34,7 @@ cp "$SO" "$OUT/staging/lib/arm64-v8a/libmain.so"
 
 # 2. Game content: asset/ and mods/ bundled as APK assets, plus a file list the
 #    engine reads at first launch to extract them to internal storage.
-(cd "$ROOT" && find asset mods -type f ! -name ".DS_Store" | LC_ALL=C sort) > "$OUT/asset_list.txt"
+(cd "$ROOT" && find asset $([ -d mods ] && echo mods) -type f ! -name ".DS_Store" | LC_ALL=C sort) > "$OUT/asset_list.txt"
 while IFS= read -r f; do
     mkdir -p "$OUT/staging/assets/$(dirname "$f")"
     cp "$ROOT/$f" "$OUT/staging/assets/$f"

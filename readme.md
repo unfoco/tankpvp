@@ -111,6 +111,18 @@ xmake run embrik -- --connect 127.0.0.1:5000 --netgraph   # with live net teleme
 
 The engine loads mods from `mods/` at startup, ordered by their manifest dependencies. The CS-mode gamemode and its dust2 map shown above are not part of this repository yet; they will be published as reference mods.
 
+### Android
+
+Requires the Android SDK command-line tools (no Android Studio) with an NDK, one platform, and build-tools installed via `sdkmanager`, plus a Java 17 JRE for the packaging step:
+
+```sh
+xmake f -p android -a arm64-v8a --ndk=$ANDROID_SDK_ROOT/ndk/<version> --ndk_sdkver=28 -y
+xmake                    # builds libmain.so with SDL statically linked
+./android/build-apk.sh   # packages a debug-signed build/apk/embrik.apk with asset/ and mods/ bundled
+```
+
+The APK extracts its bundled content to app storage on launch, runs landscape fullscreen with the touch overlay (left half: floating joystick; lower right: primary action button; swipe down from the top: chat), and connects to any embrik server over the network.
+
 ## Status
 
 The engine is feature-complete across its planned phases: netcode (stable and measured), renderer, physics and control schemes, asset pipeline, server-driven UI, graphics settings, touch controls, and the mod manifest system. What remains is content and polish: publishing the reference mods, mod-driven menu branding, and playtesting the touch overlay on real touch hardware. TankPvP itself becomes just another mod.
