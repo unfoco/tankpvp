@@ -9,6 +9,7 @@
 #include <fstream>
 #include <iterator>
 
+#include "component/object.h"
 #include "component/render.h"
 
 namespace fs = std::filesystem;
@@ -220,4 +221,30 @@ Asset::Asset(flecs::world& world) {
     world.system("asset::scan").with<RequestAssetScan>().without<ResponseAssetScan>().kind(flecs::OnUpdate).each(Asset::scan);
     world.system<const RequestAssetAdopt>("asset::adopt").without<ResponseAssetAdopt>().kind(flecs::OnUpdate).each(Asset::adopt);
     world.system<const RequestAssetStore>("asset::store").kind(flecs::OnUpdate).each(Asset::store);
+
+    world.system("asset::resolve_pending").interval(0.25).kind(flecs::OnUpdate).run([](flecs::iter& it) -> void {
+        flecs::world world = it.world();
+        const auto* catalog = world.try_get<AssetCatalog>();
+        if (catalog == nullptr || catalog->names.empty()) {
+            return;
+        }
+        world.query_builder<const SpritePending>().build().each([&](flecs::entity e, const SpritePending& pending) -> void {
+            uint64_t hash = catalog->hash_of(pending.name);
+            if (hash == 0) {
+                return;
+            }
+            Sprite s = e.has<Sprite>() ? e.get<Sprite>() : Sprite{};
+            s.texture = hash;
+            e.set<Sprite>(s);
+            e.remove<SpritePending>();
+        });
+        world.query_builder<const ProjectileSpritePending>().build().each([&](flecs::entity e, const ProjectileSpritePending& pending) -> void {
+            uint64_t hash = catalog->hash_of(pending.name);
+            if (hash == 0) {
+                return;
+            }
+            e.set(ProjectileSprite{.texture = hash});
+            e.remove<ProjectileSpritePending>();
+        });
+    });
 }

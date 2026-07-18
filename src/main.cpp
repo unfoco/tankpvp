@@ -45,12 +45,14 @@ struct State {
     uint64_t last_ticks = 0;
 };
 
-static auto parse_args(int argc, char** argv, bool& headless, bool& netgraph) -> NetworkConfig {
+static auto parse_args(int argc, char** argv, bool& headless, bool& netgraph, bool& listen) -> NetworkConfig {
     NetworkConfig cfg;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--server") {
             cfg.role = NetworkRole::Server;
+        } else if (arg == "--listen") {
+            listen = true;
         } else if (arg == "--headless") {
             headless = true;
         } else if (arg == "--netgraph") {
@@ -77,7 +79,7 @@ static auto parse_args(int argc, char** argv, bool& headless, bool& netgraph) ->
             }
         }
     }
-    if (cfg.role == NetworkRole::Server) {
+    if (cfg.role == NetworkRole::Server && !listen) {
         headless = true;
     }
     return cfg;
@@ -148,7 +150,8 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
     world.set<PhysicsConfig>({.gravity = {0.0F, 0.0F}});
 
     bool netgraph = false;
-    auto cfg = parse_args(argc, argv, state->headless, netgraph);
+    bool listen = false;
+    auto cfg = parse_args(argc, argv, state->headless, netgraph, listen);
     world.set<NetworkConfig>(cfg);
     world.set<SimulationClock>({});
     if (netgraph) {
@@ -173,8 +176,11 @@ auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
 
     world.component<Lifetime>().member<float>("seconds");
 
-    if (cfg.role == NetworkRole::Server) {
+    if (cfg.role == NetworkRole::Server || listen) {
         world.entity().set(RequestHost{.address = cfg.address, .port = cfg.port});
+        if (listen && !state->headless) {
+            world.set(InterfacePage::Ingame);
+        }
     } else if (cfg.role == NetworkRole::Client) {
         world.set<ConnectionStatus>({.state = ConnectionState::Connecting, .reason = ""});
         world.entity().set(RequestJoin{.address = cfg.address, .port = cfg.port});

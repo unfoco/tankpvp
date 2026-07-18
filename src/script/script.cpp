@@ -1056,17 +1056,14 @@ static void setup_api(flecs::world world, lua_State* lua) {
         }
         flecs::world world = self->entity.world();
         const auto* catalog = world.try_get<AssetCatalog>();
-        if (catalog == nullptr) {
-            return;
-        }
-        uint64_t hash = catalog->hash_of(name);
-        if (hash == 0) {
-            return;
-        }
+        uint64_t hash = catalog != nullptr ? catalog->hash_of(name) : 0;
         flecs::entity target = index == 0 ? self->entity : sprite_part(self->entity, static_cast<uint8_t>(index));
         Sprite s = target.has<Sprite>() ? target.get<Sprite>() : Sprite{};
         s.texture = hash;
         target.set<Sprite>(s);
+        if (hash == 0) {
+            target.set<SpritePending>({name});
+        }
     };
 
     api_method(entity, state, "Entity", "sprite", "(self: Entity, string | { { tex: string, pivot: { number }?, offset: { number }? } }) -> ()", [sprite_part, clear_parts, set_layer](const ScriptEntity* self, const LuaRef& spec) -> void {
@@ -1082,9 +1079,6 @@ static void setup_api(flecs::world world, lua_State* lua) {
             return;
         }
         const auto* catalog = self->entity.world().try_get<AssetCatalog>();
-        if (catalog == nullptr) {
-            return;
-        }
         int count = spec.length();
         clear_parts(self->entity, static_cast<uint8_t>(std::max(count, 1)));
         for (int i = 1; i <= count; ++i) {
@@ -1096,10 +1090,8 @@ static void setup_api(flecs::world world, lua_State* lua) {
             if (!tex.isString()) {
                 continue;
             }
-            uint64_t hash = catalog->hash_of(tex.unsafe_cast<std::string>());
-            if (hash == 0) {
-                continue;
-            }
+            std::string tex_name = tex.unsafe_cast<std::string>();
+            uint64_t hash = catalog != nullptr ? catalog->hash_of(tex_name) : 0;
             glm::vec2 pivot{0.5F, 0.5F};
             glm::vec2 offset{0.0F};
             if (LuaRef p = layer["pivot"]; p.isTable() && p.length() >= 2) {
@@ -1114,10 +1106,16 @@ static void setup_api(flecs::world world, lua_State* lua) {
                 s.pivot = pivot;
                 s.offset = offset;
                 self->entity.set<Sprite>(s);
+                if (hash == 0) {
+                    self->entity.set<SpritePending>({tex_name});
+                }
             } else {
                 flecs::entity part = sprite_part(self->entity, static_cast<uint8_t>(i - 1));
                 part.set(Sprite{.texture = hash, .pivot = pivot});
                 part.set(Attach{.parent = 0, .offset = offset, .rotation = 0.0F, .inherit_rotation = true});
+                if (hash == 0) {
+                    part.set<SpritePending>({tex_name});
+                }
             }
         }
     });
@@ -1127,12 +1125,11 @@ static void setup_api(flecs::world world, lua_State* lua) {
             return;
         }
         const auto* catalog = self->entity.world().try_get<AssetCatalog>();
-        if (catalog == nullptr) {
-            return;
-        }
-        uint64_t hash = catalog->hash_of(name);
+        uint64_t hash = catalog != nullptr ? catalog->hash_of(name) : 0;
         if (hash != 0) {
             self->entity.set(ProjectileSprite{.texture = hash});
+        } else {
+            self->entity.set<ProjectileSpritePending>({name});
         }
     });
     api_method(entity, state, "Entity", "apply", "(self: Entity, any) -> ()", [](const ScriptEntity* self, const LuaRef& def) -> void {

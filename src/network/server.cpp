@@ -377,7 +377,7 @@ NetworkServer::NetworkServer(flecs::world& world) {
         }
         constexpr float CHUNK_UNITS = CHUNK_SIZE * TILE_SIZE;
         world.query_builder<Peer>().build().each([&](flecs::entity pe, Peer& p) -> void {
-            if (!p.welcomed || p.peer == nullptr) {
+            if (!p.welcomed) {
                 return;
             }
             flecs::entity body = pe.target<Controls>();
@@ -390,6 +390,7 @@ NetworkServer::NetworkServer(flecs::world& world) {
             int chunks = std::max(1, static_cast<int>(std::ceil(radius / CHUNK_UNITS)));
             glm::vec2 vc = view_center(body);
             auto [ccx, ccy] = WorldGrid::chunk_coord(static_cast<int>(std::floor(vc.x / TILE_SIZE)), static_cast<int>(std::floor(vc.y / TILE_SIZE)));
+
 
             if (p.grid_wipe != grid->wipe) {
                 for (int64_t key : p.known_chunks) {
@@ -835,6 +836,24 @@ void NetworkServer::pump(flecs::iter& it) {
 
         world.get<ServerQueries>().inputs.each([&](flecs::entity pe, Peer& p) -> void {
             if (p.peer == nullptr) {
+                if (world.has<NetworkDiagnose>() && host_tick % 120 == 0) {
+                    flecs::entity host_body = pe.target<Controls>();
+                    if (host_body.is_alive()) {
+                        const auto* in = host_body.try_get<InputState>();
+                        const auto* hp = host_body.try_get<Position>();
+                        const auto* hv = host_body.try_get<VelocityLinear>();
+                        const auto* page = world.try_get<InterfacePage>();
+                        const auto* capture = world.try_get<InputCapture>();
+                        size_t chunk_count = world.try_get<WorldGrid>() != nullptr ? world.get<WorldGrid>().data.size() : 0;
+                        SDL_Log("hostgraph: move=%.2f,%.2f buttons=%u vel=%.1f,%.1f pos=%.1f,%.1f dying=%d local=%d page=%d capture=%d chunks=%zu",
+                                in != nullptr ? in->move.x : -9.0F, in != nullptr ? in->move.y : -9.0F, in != nullptr ? in->buttons : 0U,
+                                hv != nullptr ? hv->value.x : 0.0F, hv != nullptr ? hv->value.y : 0.0F,
+                                hp != nullptr ? hp->value.x : 0.0F, hp != nullptr ? hp->value.y : 0.0F,
+                                host_body.has<Dying>() ? 1 : 0, host_body.has<Local>() ? 1 : 0,
+                                page != nullptr ? static_cast<int>(*page) : -1,
+                                (capture != nullptr && capture->active) ? 1 : 0, chunk_count);
+                    }
+                }
                 return;
             }
             flecs::entity body = pe.target<Controls>();

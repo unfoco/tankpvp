@@ -58,8 +58,8 @@ World::World(flecs::world& world) {
     world.system("world::updates").kind(flecs::OnUpdate).run(World::updates);
     world.system("world::resolve").kind(flecs::OnUpdate).run(World::resolve);
 
+    world.observer<const TileChunk>("world::mesh").event(flecs::OnSet).each(World::mesh);
     flecs::entity pi = world.lookup("physics::Init");
-    world.system<const TileChunk>("world::mesh").with<ChunkDirty>().kind(pi ? pi : flecs::OnUpdate).each(World::mesh);
     const auto* cfg = world.try_get<NetworkConfig>();
     if (cfg == nullptr || cfg->role != NetworkRole::Client) {
         world.system<const Position, VelocityLinear>("world::drag").with<Controller>().kind(pi ? pi : flecs::OnUpdate).each(World::drag);

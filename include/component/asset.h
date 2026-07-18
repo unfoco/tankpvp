@@ -68,6 +68,14 @@ struct AssetCatalog {
     }
 };
 
+struct SpritePending {
+    std::string name;
+};
+
+struct ProjectileSpritePending {
+    std::string name;
+};
+
 struct AssetManifest {
     struct Entry {
         std::string name;
