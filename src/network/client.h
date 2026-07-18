@@ -89,6 +89,7 @@ struct NetworkConnection {
     uint32_t predictions = 0;
     bool fire_pending = false;
     double fire_pending_at = 0;
+    double fire_wall = 0;
     uint64_t last_fire = 0;
 
     uint32_t buffer = 0;

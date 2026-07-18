@@ -5,6 +5,7 @@
 #include <functional>
 #include <string>
 
+#include "component/input.h"
 #include "component/network.h"
 #include "component/script.h"
 #include "util/format.h"
@@ -253,7 +254,9 @@ auto Interface::chat(flecs::iter& it, InterfaceState& state, InterfacePage& page
     chatInput.scroll = std::clamp(chatInput.scroll, 0.0F, maxScroll);
     float offsetY = chatInput.scroll;
 
-    if (state.focusedId != chatId) {
+    const auto* touch = it.world().try_get<TouchOverlay>();
+    bool touch_mode = touch != nullptr && touch->active;
+    if (!touch_mode && state.focusedId != chatId) {
         state.focusedId = chatId;
         SDL_StartTextInput(events.target);
     }

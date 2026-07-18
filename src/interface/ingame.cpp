@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "component/input.h"
+#include "component/render.h"
 #include "util/time.h"
 
 static constexpr double CHAT_FADE_HOLD = 10.0;
@@ -72,6 +73,10 @@ auto Interface::ingame(flecs::iter& it, InterfaceState& state, InterfacePage& pa
             }
             SDL_free(windows);
         }
+        if (const auto* ui = it.world().try_get<UiScale>(); ui != nullptr && ui->dpi > 0.0F) {
+            screen.width /= ui->dpi;
+            screen.height /= ui->dpi;
+        }
         float radius = 0.09F * screen.width;
         if (overlay->stick_held) {
             glm::vec2 base{overlay->stick_center.x * screen.width, overlay->stick_center.y * screen.height};
@@ -88,13 +93,14 @@ auto Interface::ingame(flecs::iter& it, InterfaceState& state, InterfacePage& pa
                   .cornerRadius = CLAY_CORNER_RADIUS(nub),
                   .floating = {.offset = {tip.x - nub, tip.y - nub}, .attachTo = CLAY_ATTACH_TO_ROOT}}) {}
         }
-        float fire = radius * 0.7F;
-        Clay_Color fire_color = overlay->fire_held ? Clay_Color{255, 120, 90, 90} : Clay_Color{255, 255, 255, 24};
-        CLAY({.id = CLAY_ID("TouchFire"),
-              .layout = {.sizing = {CLAY_SIZING_FIXED(fire * 2.0F), CLAY_SIZING_FIXED(fire * 2.0F)}},
-              .backgroundColor = fire_color,
-              .cornerRadius = CLAY_CORNER_RADIUS(fire),
-              .floating = {.offset = {screen.width - (fire * 2.0F) - 40.0F, screen.height - (fire * 2.0F) - 40.0F}, .attachTo = CLAY_ATTACH_TO_ROOT}}) {}
+        glm::vec2 primary_center{TouchOverlay::PRIMARY_X * screen.width, TouchOverlay::PRIMARY_Y * screen.height};
+        float primary_radius = TouchOverlay::PRIMARY_RADIUS * screen.height;
+        Clay_Color primary_color = overlay->primary_held ? Clay_Color{255, 120, 90, 90} : Clay_Color{255, 255, 255, 24};
+        CLAY({.id = CLAY_ID("TouchPrimary"),
+              .layout = {.sizing = {CLAY_SIZING_FIXED(primary_radius * 2.0F), CLAY_SIZING_FIXED(primary_radius * 2.0F)}},
+              .backgroundColor = primary_color,
+              .cornerRadius = CLAY_CORNER_RADIUS(primary_radius),
+              .floating = {.offset = {primary_center.x - primary_radius, primary_center.y - primary_radius}, .attachTo = CLAY_ATTACH_TO_ROOT}}) {}
     }
 
     widget::view(it.world(), state, events);

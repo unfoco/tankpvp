@@ -54,7 +54,11 @@ void Interface::frame(flecs::iter&, size_t, InterfaceState& state) {
     state.textPool.clear();
 }
 
-void Interface::event(flecs::iter&, size_t, InterfaceState& state, const WindowEvents& events) {
+void Interface::event(flecs::iter& it, size_t, InterfaceState& state, const WindowEvents& events) {
+    float to_layout = 1.0F;
+    if (const auto* ui = it.world().try_get<UiScale>(); ui != nullptr && ui->dpi > 0.0F) {
+        to_layout = ui->density / ui->dpi;
+    }
     for (const auto& e : events) {
         if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) {
             state.mousePressed = true;
@@ -64,8 +68,8 @@ void Interface::event(flecs::iter&, size_t, InterfaceState& state, const WindowE
             state.mouseReleased = true;
             state.activeId = 0;
         } else if (e.type == SDL_EVENT_MOUSE_MOTION) {
-            state.mouseX = e.motion.x;
-            state.mouseY = e.motion.y;
+            state.mouseX = e.motion.x * to_layout;
+            state.mouseY = e.motion.y * to_layout;
         }
     }
 }

@@ -36,12 +36,19 @@ struct Pointer {
 };
 
 struct TouchOverlay {
+    static constexpr float PRIMARY_X = 0.86F;
+    static constexpr float PRIMARY_Y = 0.72F;
+    static constexpr float PRIMARY_RADIUS = 0.16F;
+
     bool active = false;
     bool stick_held = false;
     uint64_t stick_finger = 0;
     glm::vec2 stick_center{0.0F};
     glm::vec2 stick_vector{0.0F};
-    bool fire_held = false;
-    bool fire_pressed = false;
-    uint64_t fire_finger = 0;
+    bool primary_held = false;
+    bool primary_pressed = false;
+    uint64_t primary_finger = 0;
+    bool swipe_held = false;
+    uint64_t swipe_finger = 0;
+    float swipe_start = 0.0F;
 };

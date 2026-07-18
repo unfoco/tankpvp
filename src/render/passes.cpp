@@ -131,7 +131,9 @@ void Render::begin(flecs::iter& it) {
         int lw = 0;
         int lh = 0;
         SDL_GetWindowSize(r.window, &lw, &lh);
-        r.dpi = lw > 0 ? static_cast<float>(pw) / static_cast<float>(lw) : 1.0F;
+        float density = lw > 0 ? static_cast<float>(pw) / static_cast<float>(lw) : 1.0F;
+        r.dpi = std::clamp(static_cast<float>(ph) / static_cast<float>(HEIGHT), 1.0F, 4.0F);
+        world.set<UiScale>({.dpi = r.dpi, .density = density});
 
         if (r.frame.surface.texture != nullptr) {
             wgpuTextureRelease(r.frame.surface.texture);

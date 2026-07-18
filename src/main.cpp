@@ -9,6 +9,15 @@
 #include <cstdlib>
 #include <string>
 
+#ifdef SDL_PLATFORM_ANDROID
+#include <unistd.h>
+
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <vector>
+#endif
+
 #include "component/event.h"
 #include "component/network.h"
 #include "component/object.h"
@@ -74,7 +83,58 @@ static auto parse_args(int argc, char** argv, bool& headless, bool& netgraph) ->
     return cfg;
 }
 
+#ifdef SDL_PLATFORM_ANDROID
+static auto unpack_bundled_content() -> bool {
+    char* pref = SDL_GetPrefPath("dev.embrik", "embrik");
+    if (pref == nullptr) {
+        return false;
+    }
+    std::filesystem::path root(pref);
+    SDL_free(pref);
+
+    size_t list_size = 0;
+    void* list_data = SDL_LoadFile("embrik_assets.txt", &list_size);
+    if (list_data == nullptr) {
+        SDL_Log("android: no bundled asset list");
+        return false;
+    }
+    std::stringstream lines(std::string(static_cast<char*>(list_data), list_size));
+    SDL_free(list_data);
+
+    std::string line;
+    int unpacked = 0;
+    while (std::getline(lines, line)) {
+        if (line.empty()) {
+            continue;
+        }
+        size_t size = 0;
+        void* data = SDL_LoadFile(line.c_str(), &size);
+        if (data == nullptr) {
+            SDL_Log("android: missing bundled file %s", line.c_str());
+            continue;
+        }
+        std::filesystem::path destination = root / line;
+        std::filesystem::create_directories(destination.parent_path());
+        std::ofstream out(destination, std::ios::binary | std::ios::trunc);
+        out.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
+        SDL_free(data);
+        ++unpacked;
+    }
+    if (chdir(root.string().c_str()) != 0) {
+        SDL_Log("android: chdir to %s failed", root.string().c_str());
+        return false;
+    }
+    SDL_Log("android: unpacked %d bundled files to %s", unpacked, root.string().c_str());
+    return true;
+}
+#endif
+
 auto SDL_AppInit(void** appstate, int argc, char** argv) -> SDL_AppResult {
+#ifdef SDL_PLATFORM_ANDROID
+    SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    unpack_bundled_content();
+#endif
     auto* state = new State();
     auto& world = state->world;
 
@@ -136,7 +196,14 @@ auto SDL_AppEvent(void* appstate, SDL_Event* event) -> SDL_AppResult {
     }
 
     if (auto* events = world.try_get_mut<WindowEvents>()) {
-        events->push(*event);
+        if ((event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) && event->key.key == SDLK_AC_BACK) {
+            SDL_Event escape = *event;
+            escape.key.key = SDLK_ESCAPE;
+            escape.key.scancode = SDL_SCANCODE_ESCAPE;
+            events->push(escape);
+        } else {
+            events->push(*event);
+        }
     }
 
     return SDL_APP_CONTINUE;

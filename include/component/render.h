@@ -30,6 +30,11 @@ struct FrameMix {
     float alpha = 1.0F;
 };
 
+struct UiScale {
+    float dpi = 1.0F;
+    float density = 1.0F;
+};
+
 enum class BlendMode : uint8_t {
     Normal = 0,
     Add = 1,

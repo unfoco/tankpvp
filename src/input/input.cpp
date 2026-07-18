@@ -7,6 +7,7 @@
 #include "component/interface.h"
 #include "component/network.h"
 #include "component/object.h"
+#include "component/render.h"
 
 Input::Input(flecs::world& world) {
     world.set<TouchOverlay>({});
@@ -19,7 +20,7 @@ void Input::touch(flecs::iter& it) {
     while (it.next()) {
         flecs::world world = it.world();
         auto& overlay = world.get_mut<TouchOverlay>();
-        overlay.fire_pressed = false;
+        overlay.primary_pressed = false;
         constexpr float STICK_RADIUS = 0.09F;
 
         const auto& events = world.get<WindowEvents>();
@@ -29,15 +30,42 @@ void Input::touch(flecs::iter& it) {
                     overlay.active = true;
                     glm::vec2 at{event.tfinger.x, event.tfinger.y};
                     auto finger = static_cast<uint64_t>(event.tfinger.fingerID);
-                    if (at.x < 0.5F && !overlay.stick_held) {
+                    const auto* page = world.try_get<InterfacePage>();
+                    bool in_chat = page != nullptr && *page == InterfacePage::Chat;
+                    float aspect = 1.0F;
+                    int window_count = 0;
+                    if (SDL_Window** windows = SDL_GetWindows(&window_count); windows != nullptr) {
+                        if (window_count > 0) {
+                            int ww = 0;
+                            int wh = 0;
+                            SDL_GetWindowSize(windows[0], &ww, &wh);
+                            aspect = wh > 0 ? static_cast<float>(ww) / static_cast<float>(wh) : 1.0F;
+                        }
+                        SDL_free(windows);
+                    }
+                    float dx = (at.x - TouchOverlay::PRIMARY_X) * aspect;
+                    float dy = at.y - TouchOverlay::PRIMARY_Y;
+                    bool in_primary = (dx * dx) + (dy * dy) <= TouchOverlay::PRIMARY_RADIUS * TouchOverlay::PRIMARY_RADIUS;
+                    bool in_swipe = at.y < 0.12F && at.x > 0.35F && at.x < 0.65F;
+                    if (in_chat) {
+                        if (!overlay.swipe_held) {
+                            overlay.swipe_held = true;
+                            overlay.swipe_finger = finger;
+                            overlay.swipe_start = at.y;
+                        }
+                    } else if (in_primary && !overlay.primary_held) {
+                        overlay.primary_held = true;
+                        overlay.primary_pressed = true;
+                        overlay.primary_finger = finger;
+                    } else if (in_swipe && !overlay.swipe_held) {
+                        overlay.swipe_held = true;
+                        overlay.swipe_finger = finger;
+                        overlay.swipe_start = at.y;
+                    } else if (at.x < 0.5F && !overlay.stick_held) {
                         overlay.stick_held = true;
                         overlay.stick_finger = finger;
                         overlay.stick_center = at;
                         overlay.stick_vector = {0.0F, 0.0F};
-                    } else if (at.x >= 0.5F && !overlay.fire_held) {
-                        overlay.fire_held = true;
-                        overlay.fire_pressed = true;
-                        overlay.fire_finger = finger;
                     }
                     break;
                 }
@@ -51,6 +79,23 @@ void Input::touch(flecs::iter& it) {
                             v /= len;
                         }
                         overlay.stick_vector = v;
+                    } else if (overlay.swipe_held && finger == overlay.swipe_finger) {
+                        const auto* page = world.try_get<InterfacePage>();
+                        bool in_chat = page != nullptr && *page == InterfacePage::Chat;
+                        bool ingame = page != nullptr && *page == InterfacePage::Ingame;
+                        if (ingame && event.tfinger.y - overlay.swipe_start > 0.15F) {
+                            overlay.swipe_held = false;
+                            world.set(InterfacePage::Chat);
+                        } else if (in_chat && overlay.swipe_start - event.tfinger.y > 0.15F) {
+                            overlay.swipe_held = false;
+                            if (auto* pending = world.try_get_mut<WindowEvents>()) {
+                                SDL_Event escape{};
+                                escape.type = SDL_EVENT_KEY_DOWN;
+                                escape.key.key = SDLK_ESCAPE;
+                                escape.key.scancode = SDL_SCANCODE_ESCAPE;
+                                pending->push(escape);
+                            }
+                        }
                     }
                     break;
                 }
@@ -61,8 +106,11 @@ void Input::touch(flecs::iter& it) {
                         overlay.stick_held = false;
                         overlay.stick_vector = {0.0F, 0.0F};
                     }
-                    if (overlay.fire_held && finger == overlay.fire_finger) {
-                        overlay.fire_held = false;
+                    if (overlay.primary_held && finger == overlay.primary_finger) {
+                        overlay.primary_held = false;
+                    }
+                    if (overlay.swipe_held && finger == overlay.swipe_finger) {
+                        overlay.swipe_held = false;
                     }
                     break;
                 }
@@ -121,10 +169,10 @@ void Input::gather(flecs::iter& it, size_t i, InputState& in) {
                 in.move.x = std::clamp(in.move.x + overlay->stick_vector.x, -1.0F, 1.0F);
                 in.move.y = std::clamp(in.move.y - overlay->stick_vector.y, -1.0F, 1.0F);
             }
-            if (overlay->fire_held) {
+            if (overlay->primary_held) {
                 in.buttons |= button::Primary;
             }
-            if (overlay->fire_pressed) {
+            if (overlay->primary_pressed) {
                 in.buttons |= button::Primary;
                 in.pressed |= button::Primary;
             }
@@ -168,6 +216,11 @@ void Input::screen(flecs::iter& it, size_t i, const InterfacePrevious& prev, Int
     float mouseX;
     float mouseY;
     bool mouseDown = (SDL_GetMouseState(&mouseX, &mouseY) & SDL_BUTTON_LMASK) != 0U;
+    if (const auto* ui = it.world().try_get<UiScale>(); ui != nullptr && ui->dpi > 0.0F) {
+        float to_layout = ui->density / ui->dpi;
+        mouseX *= to_layout;
+        mouseY *= to_layout;
+    }
     Clay_SetPointerState({.x = mouseX, .y = mouseY}, mouseDown);
     Clay_UpdateScrollContainers(false, {.x = 0, .y = 0}, it.delta_time());
 }

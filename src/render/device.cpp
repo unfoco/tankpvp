@@ -41,7 +41,11 @@ void Render::write_buffer(RenderState& r, GpuBuffer& buf, const void* data, uint
 void Render::init(flecs::iter& it, size_t) {
     flecs::world world = it.world();
 
-    auto* window = SDL_CreateWindow("Embrik", WIDTH, HEIGHT, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    SDL_WindowFlags window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+#ifdef SDL_PLATFORM_ANDROID
+    window_flags |= SDL_WINDOW_FULLSCREEN;
+#endif
+    auto* window = SDL_CreateWindow("Embrik", WIDTH, HEIGHT, window_flags);
     if (window == nullptr) {
         SDL_Log("render: failed to create window: %s", SDL_GetError());
         exit(EXIT_FAILURE);

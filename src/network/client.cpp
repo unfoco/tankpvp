@@ -652,12 +652,14 @@ void NetworkClient::predict(flecs::iter& it) {
             }
             bool wants_fire = conn.fire_pending && (now_time - conn.fire_pending_at) < 0.08;
             bool cooled = !conn.newest || conn.client_tick >= conn.last_fire + cooldown;
+            bool cooled_wall = now_time - conn.fire_wall >= static_cast<double>(cooldown) * TICK_DT * 0.9;
             const auto* ammo = self.try_get<Ammo>();
             bool has_ammo = ammo == nullptr || (ammo->mag > 0 && ammo->reloading <= 0.0F);
-            bool fire = generate && wants_fire && cooled && has_ammo;
+            bool fire = generate && wants_fire && cooled && cooled_wall && has_ammo;
             if (fire) {
                 conn.fire_pending = false;
                 conn.last_fire = conn.client_tick;
+                conn.fire_wall = now_time;
             }
 
             glm::vec2 move = in_live.move;
